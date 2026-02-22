@@ -3,6 +3,7 @@
 local cells = require("sagefs.cells")
 local format = require("sagefs.format")
 local model = require("sagefs.model")
+local sessions = require("sagefs.sessions")
 local sse_parser = require("sagefs.sse")
 
 local M = {}
@@ -24,6 +25,8 @@ M.config = {
 -- ─── State ───────────────────────────────────────────────────────────────────
 
 M.state = model.new()
+M.active_session = nil -- {id, status, projects, working_directory, ...}
+M.session_list = {}    -- cached from last list_sessions call
 local ns = nil -- extmark namespace, created on setup()
 local sse_job = nil
 local sse_buffer = ""
@@ -333,6 +336,223 @@ local function stop_sse()
   M.state = model.set_status(M.state, "disconnected")
 end
 
+-- ─── Session API: generic HTTP helper ────────────────────────────────────────
+
+local function session_http(method, path, body, callback)
+  local cmd = { "curl", "-X", method, base_url() .. path,
+    "-H", "Content-Type: application/json",
+    "--max-time", "5", "--silent", "--show-error" }
+  if body then
+    table.insert(cmd, "-d")
+    table.insert(cmd, vim.fn.json_encode(body))
+  end
+
+  local stdout_data = {}
+  vim.fn.jobstart(cmd, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      if data then stdout_data = data end
+    end,
+    on_exit = function(_, exit_code)
+      vim.schedule(function()
+        local raw = table.concat(stdout_data, "\n")
+        callback(exit_code == 0, raw)
+      end)
+    end,
+  })
+end
+
+-- ─── Session API: public functions ───────────────────────────────────────────
+
+function M.list_sessions(callback)
+  session_http("GET", "/api/sessions", nil, function(ok, raw)
+    local result = sessions.parse_sessions_response(ok and raw or nil)
+    if result.ok then
+      M.session_list = result.sessions
+      -- Auto-detect active session for current working directory
+      local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
+      if cwd_session then
+        M.active_session = cwd_session
+      end
+    end
+    if callback then callback(result) end
+  end)
+end
+
+function M.create_session(projects, working_dir, callback)
+  working_dir = working_dir or vim.fn.getcwd()
+  session_http("POST", "/api/sessions/create", {
+    projects = projects,
+    workingDirectory = working_dir,
+  }, function(ok, raw)
+    local result = sessions.parse_action_response(ok and raw or nil)
+    if result.ok then
+      notify(result.message or "Session created")
+      -- Refresh session list to pick up the new session
+      M.list_sessions()
+    else
+      notify(result.error or "Failed to create session", vim.log.levels.ERROR)
+    end
+    if callback then callback(result) end
+  end)
+end
+
+function M.switch_session(session_id, callback)
+  session_http("POST", "/api/sessions/switch", {
+    sessionId = session_id,
+  }, function(ok, raw)
+    local result = sessions.parse_action_response(ok and raw or nil)
+    if result.ok then
+      notify("Switched to session " .. (result.session_id or session_id))
+      M.list_sessions() -- refresh
+    else
+      notify(result.error or "Failed to switch", vim.log.levels.ERROR)
+    end
+    if callback then callback(result) end
+  end)
+end
+
+function M.stop_session(session_id, callback)
+  session_http("POST", "/api/sessions/stop", {
+    sessionId = session_id,
+  }, function(ok, raw)
+    local result = sessions.parse_action_response(ok and raw or nil)
+    if result.ok then
+      notify(result.message or "Session stopped")
+      if M.active_session and M.active_session.id == session_id then
+        M.active_session = nil
+      end
+      M.list_sessions() -- refresh
+    else
+      notify(result.error or "Failed to stop session", vim.log.levels.ERROR)
+    end
+    if callback then callback(result) end
+  end)
+end
+
+-- ─── Session Picker (vim.ui.select) ──────────────────────────────────────────
+
+function M.session_picker()
+  M.list_sessions(function(result)
+    if not result.ok then
+      notify("Failed to list sessions: " .. (result.error or ""), vim.log.levels.ERROR)
+      return
+    end
+
+    local items = {}
+    local lookup = {}
+
+    for _, s in ipairs(result.sessions) do
+      local line = sessions.format_session_line(s)
+      table.insert(items, line)
+      lookup[line] = s
+    end
+
+    -- Always add "Create new session..." option
+    local create_label = "+ Create new session..."
+    table.insert(items, create_label)
+
+    vim.ui.select(items, { prompt = "SageFs Sessions:" }, function(choice)
+      if not choice then return end
+
+      if choice == create_label then
+        M.discover_and_create()
+        return
+      end
+
+      local session = lookup[choice]
+      if not session then return end
+
+      -- Sub-menu: what to do with this session?
+      local actions = sessions.session_actions(session)
+      local action_labels = {}
+      for _, a in ipairs(actions) do
+        table.insert(action_labels, a.label)
+      end
+
+      vim.ui.select(action_labels, {
+        prompt = session.id .. ":",
+      }, function(action_choice)
+        if not action_choice then return end
+        for _, a in ipairs(actions) do
+          if a.label == action_choice then
+            if a.name == "switch" then
+              M.switch_session(session.id)
+            elseif a.name == "stop" then
+              M.stop_session(session.id)
+            elseif a.name == "create" then
+              M.discover_and_create()
+            end
+            return
+          end
+        end
+      end)
+    end)
+  end)
+end
+
+-- ─── Auto-discover projects and offer creation ───────────────────────────────
+
+function M.discover_and_create(working_dir)
+  working_dir = working_dir or vim.fn.getcwd()
+
+  -- Find .fsproj files in the working directory
+  local fsproj_files = vim.fn.glob(working_dir .. "/**/*.fsproj", false, true)
+
+  if #fsproj_files == 0 then
+    notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    return
+  end
+
+  -- Make paths relative for display
+  local items = {}
+  for _, path in ipairs(fsproj_files) do
+    local rel = path:sub(#working_dir + 2) -- strip working_dir + separator
+    table.insert(items, rel)
+  end
+
+  vim.ui.select(items, {
+    prompt = "Select project to load:",
+  }, function(choice)
+    if not choice then return end
+    M.create_session({ choice }, working_dir)
+  end)
+end
+
+-- ─── Smart eval: intercept "no session" and offer creation ───────────────────
+
+local function smart_eval_with_session_check(eval_fn)
+  return function()
+    -- If we have a known active session, just eval
+    if M.active_session then
+      eval_fn()
+      return
+    end
+
+    -- Check if SageFs has any sessions for our cwd
+    M.list_sessions(function(result)
+      if result.ok and #result.sessions > 0 then
+        local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
+        if cwd_session then
+          M.active_session = cwd_session
+          eval_fn()
+          return
+        end
+      end
+
+      -- No session — offer to create one
+      notify("No active session for this directory", vim.log.levels.WARN)
+      vim.ui.select({ "Create session now", "Cancel" }, {
+        prompt = "No SageFs session found. Create one?",
+      }, function(choice)
+        if choice == "Create session now" then
+          M.discover_and_create(vim.fn.getcwd())
+        end
+      end)
+    end)
+  end
+end
+
 -- ─── Health Check ────────────────────────────────────────────────────────────
 
 function M.health_check()
@@ -350,6 +570,10 @@ end
 -- ─── Statusline Component ────────────────────────────────────────────────────
 
 function M.statusline()
+  -- Session-aware statusline
+  if M.active_session then
+    return sessions.format_statusline(M.active_session)
+  end
   local icon = M.state.status == "connected" and "⚡" or "💤"
   local cell_count = model.cell_count(M.state)
   if cell_count > 0 then
@@ -386,26 +610,36 @@ local function register_commands()
   vim.api.nvim_create_user_command("SageFsStatus", function()
     M.health_check()
   end, { desc = "Check SageFs status" })
+
+  vim.api.nvim_create_user_command("SageFsSessions", function()
+    M.session_picker()
+  end, { desc = "Manage SageFs sessions" })
+
+  vim.api.nvim_create_user_command("SageFsCreateSession", function()
+    M.discover_and_create()
+  end, { desc = "Create new SageFs session" })
 end
 
 local function register_keymaps()
-  -- Alt-Enter: evaluate current cell
-  vim.keymap.set("n", "<A-CR>", function() M.eval_cell() end,
+  -- Alt-Enter: evaluate current cell (with smart session check)
+  local smart_eval = smart_eval_with_session_check(function() M.eval_cell() end)
+  local smart_eval_sel = smart_eval_with_session_check(function() M.eval_selection() end)
+
+  vim.keymap.set("n", "<A-CR>", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })
 
-  -- Alt-Enter in visual: evaluate selection
-  vim.keymap.set("v", "<A-CR>", function() M.eval_selection() end,
+  vim.keymap.set("v", "<A-CR>", smart_eval_sel,
     { desc = "SageFs: Evaluate selection", silent = true })
 
   -- Leader mappings
-  vim.keymap.set("n", "<leader>se", function() M.eval_cell() end,
+  vim.keymap.set("n", "<leader>se", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })
   vim.keymap.set("n", "<leader>sc", function()
     M.state = model.clear_cells(M.state)
     clear_extmarks(vim.api.nvim_get_current_buf())
   end, { desc = "SageFs: Clear results", silent = true })
-  vim.keymap.set("n", "<leader>ss", function() M.health_check() end,
-    { desc = "SageFs: Check status", silent = true })
+  vim.keymap.set("n", "<leader>ss", function() M.session_picker() end,
+    { desc = "SageFs: Sessions", silent = true })
 end
 
 local function register_autocmds()
@@ -450,6 +684,7 @@ function M.setup(opts)
     vim.defer_fn(function()
       if M.health_check() then
         start_sse()
+        M.list_sessions() -- populate session list + detect active session
       end
     end, 500)
   end

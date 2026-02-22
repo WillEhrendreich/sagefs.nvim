@@ -99,6 +99,12 @@ describe("format.format_inline", function()
     -- Should show first line, indicate more lines exist
     assert.is_not_nil(result.text)
   end)
+
+  it("strips carriage returns from Windows line endings", function()
+    local result = format.format_inline({ ok = true, output = "val it: int = 42\r" })
+    assert.is_falsy(result.text:find("\r"))
+    assert.is_truthy(result.text:find("42"))
+  end)
 end)
 
 -- ─── format_virtual_lines: format result for virtual lines below ;; ──────────
@@ -138,6 +144,13 @@ describe("format.format_virtual_lines", function()
     local result = format.format_virtual_lines({ ok = true, output = "" })
     assert.are.equal(1, #result)
     -- Should show something like "(no output)"
+  end)
+
+  it("strips carriage returns from Windows line endings", function()
+    local result = format.format_virtual_lines({ ok = true, output = "line1\r\nline2\r" })
+    for _, line in ipairs(result) do
+      assert.is_falsy(line.text:find("\r"))
+    end
   end)
 end)
 

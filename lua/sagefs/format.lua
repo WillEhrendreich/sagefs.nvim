@@ -45,6 +45,8 @@ function M.format_inline(result)
   if result.ok then
     hl = "SageFsSuccess"
     text = result.output or ""
+    -- Strip \r from Windows line endings
+    text = text:gsub("\r", "")
     -- Take first line only for inline display
     local first_line = text:match("^([^\n]*)")
     if first_line then text = first_line end
@@ -77,6 +79,7 @@ end
 function M.format_virtual_lines(result)
   local hl = result.ok and "SageFsOutput" or "SageFsError"
   local raw = result.ok and (result.output or "") or (result.error or "error")
+  raw = raw:gsub("\r", "")
 
   if raw == "" then
     return { { text = "(no output)", hl = hl } }
