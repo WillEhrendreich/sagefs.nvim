@@ -556,10 +556,14 @@ end
 -- ─── Health Check ────────────────────────────────────────────────────────────
 
 function M.health_check()
-  local cmd = { "curl", "-s", "--max-time", "1", base_url() .. "/health" }
+  local cmd = { "curl", "-s", "--max-time", "2", base_url() .. "/health" }
   local result = vim.fn.system(cmd)
+  -- SageFs is "up" if we get any JSON back (even error = no session)
   if result:match('"healthy"') then
     notify("Connected to SageFs on port " .. M.config.port)
+    return true
+  elseif result:match('"error"') or result:match('"success"') then
+    notify("SageFs reachable (no session for this directory)")
     return true
   else
     notify("SageFs not available on port " .. M.config.port, vim.log.levels.ERROR)
