@@ -39,6 +39,10 @@ local function base_url()
   return "http://localhost:" .. M.config.port
 end
 
+local function dashboard_url()
+  return "http://localhost:" .. M.config.dashboard_port
+end
+
 local function notify(msg, level)
   vim.notify("[SageFs] " .. msg, level or vim.log.levels.INFO)
 end
@@ -302,6 +306,59 @@ function M.eval_file()
   M.state = model.set_cell_state(M.state, 0, "running")
   flash_cell(buf, 1, #lines)
   post_exec(code, buf, 0)
+end
+
+-- ─── Code Completion ─────────────────────────────────────────────────────────
+
+function M.omnifunc(findstart, base)
+  if findstart == 1 then
+    local line = vim.api.nvim_get_current_line()
+    local col = vim.fn.col(".") - 1
+    while col > 0 and line:sub(col, col):match("[%w_]") do
+      col = col - 1
+    end
+    return col
+  end
+
+  local buf = vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local text = table.concat(lines, "\n")
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local offset = 0
+  for i = 1, cursor[1] - 1 do
+    offset = offset + #lines[i] + 1
+  end
+  offset = offset + cursor[2]
+
+  local json_body = vim.fn.json_encode({
+    code = text,
+    cursor_position = offset,
+    working_directory = vim.fn.getcwd(),
+  })
+
+  -- Synchronous curl for omnifunc (must return results immediately)
+  local result = vim.fn.system({
+    "curl", "-X", "POST", dashboard_url() .. "/dashboard/completions",
+    "-H", "Content-Type: application/json",
+    "-d", json_body,
+    "--max-time", "5", "--silent", "--show-error",
+  })
+
+  local ok, parsed = pcall(vim.fn.json_decode, result)
+  if not ok or not parsed or not parsed.completions then
+    return {}
+  end
+
+  local items = {}
+  for _, c in ipairs(parsed.completions) do
+    table.insert(items, {
+      word = c.insertText or c.label,
+      abbr = c.label,
+      kind = c.kind or "",
+      menu = "[SageFs]",
+    })
+  end
+  return items
 end
 
 -- ─── SSE Subscription ────────────────────────────────────────────────────────
@@ -948,6 +1005,15 @@ local function register_autocmds()
     pattern = "*.fsx",
     callback = function(ev)
       render_all_extmarks(ev.buf)
+    end,
+  })
+
+  -- Set omnifunc for F# files
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    pattern = { "fsharp", "fsx" },
+    callback = function()
+      vim.bo.omnifunc = "v:lua.require'sagefs'.omnifunc"
     end,
   })
 end
