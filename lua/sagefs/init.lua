@@ -285,6 +285,25 @@ function M.eval_selection()
   post_exec(code, buf, 0)
 end
 
+-- ─── Eval file ───────────────────────────────────────────────────────────────
+
+function M.eval_file()
+  local buf = vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local text = table.concat(lines, "\n")
+  local code = cells.prepare_code(text)
+
+  if not code then
+    notify("File is empty", vim.log.levels.WARN)
+    return
+  end
+
+  notify("Evaluating file: " .. vim.fn.expand("%:t"))
+  M.state = model.set_cell_state(M.state, 0, "running")
+  flash_cell(buf, 1, #lines)
+  post_exec(code, buf, 0)
+end
+
 -- ─── SSE Subscription ────────────────────────────────────────────────────────
 
 local function start_sse()
@@ -810,6 +829,10 @@ local function register_commands()
     M.eval_cell()
   end, { desc = "Evaluate current cell" })
 
+  vim.api.nvim_create_user_command("SageFsEvalFile", function()
+    M.eval_file()
+  end, { desc = "Evaluate entire file" })
+
   vim.api.nvim_create_user_command("SageFsClear", function()
     M.state = model.clear_cells(M.state)
     local buf = vim.api.nvim_get_current_buf()
@@ -949,7 +972,23 @@ function M.setup(opts)
     vim.defer_fn(function()
       if M.health_check() then
         start_sse()
-        M.list_sessions() -- populate session list + detect active session
+        M.list_sessions(function(result)
+          if result.ok and not M.active_session and #result.sessions == 0 then
+            -- No sessions — look for .fsproj files and offer to create one
+            local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
+            if #fsproj_files > 0 then
+              local names = {}
+              for _, f in ipairs(fsproj_files) do
+                table.insert(names, vim.fn.fnamemodify(f, ":~:."))
+              end
+              vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
+                if choice then
+                  M.create_session(choice)
+                end
+              end)
+            end
+          end
+        end)
       end
     end, 500)
   end
