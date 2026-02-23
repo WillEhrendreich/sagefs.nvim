@@ -1,6 +1,6 @@
 # Copilot Instructions — sagefs.nvim
 
-Neovim plugin (pure Lua) that provides Jupyter-notebook-like F# development powered by [SageFs](https://github.com/WillEhrendreich/SageFs). Users write F# in `.fsx` files with `;;`-delimited cells and evaluate them with `<Alt-Enter>`, seeing results inline via extmarks.
+Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs), a live F# development server with sub-second hot reload, MCP for AI agents, multi-session management, and file watching. This plugin connects Neovim to the running SageFs daemon — providing cell evaluation with inline results, session management, hot reload controls, and SSE live updates.
 
 ## Build & Test
 
