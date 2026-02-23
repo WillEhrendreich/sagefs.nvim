@@ -133,6 +133,16 @@ local function render_all_extmarks(buf)
 
   for _, cell in ipairs(all_cells) do
     render_cell_result(buf, cell.end_line, cell.id)
+
+    -- CodeLens-style "▶ Eval" virtual text above the ;; line
+    local cell_state = model.get_cell_state(M.state, cell.id)
+    if cell_state.status == "idle" or cell_state.status == "stale" then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns, cell.end_line - 1, 0, {
+        id = cell.id * 1000 + 2,
+        virt_lines = { { { "▶ Eval", "SageFsRunning" } } },
+        virt_lines_above = true,
+      })
+    end
   end
 end
 
