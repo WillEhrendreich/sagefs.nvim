@@ -116,6 +116,8 @@ function M.session_actions(s)
   local actions = {}
   table.insert(actions, { name = "switch", label = "Switch to this session" })
   table.insert(actions, { name = "stop", label = "Stop this session" })
+  table.insert(actions, { name = "reset", label = "Reset session (soft)" })
+  table.insert(actions, { name = "hard_reset", label = "Hard reset (rebuild)" })
   table.insert(actions, { name = "create", label = "Create new session" })
   return actions
 end

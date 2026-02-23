@@ -327,6 +327,7 @@ local function start_sse()
 
   if sse_job and sse_job > 0 then
     M.state = model.set_status(M.state, "connected")
+    M.start_diagnostics()
   end
 end
 
@@ -335,6 +336,7 @@ local function stop_sse()
     pcall(vim.fn.jobstop, sse_job)
     sse_job = nil
   end
+  M.stop_diagnostics()
   M.state = model.set_status(M.state, "disconnected")
 end
 
@@ -432,6 +434,215 @@ function M.stop_session(session_id, callback)
   end)
 end
 
+-- ─── Reset / Hard-Reset ──────────────────────────────────────────────────────
+
+function M.reset_session(callback)
+  session_http("POST", "/reset", {}, function(ok, raw)
+    if ok then
+      notify("Session reset")
+    else
+      notify("Failed to reset session", vim.log.levels.ERROR)
+    end
+    if callback then callback(ok) end
+  end)
+end
+
+function M.hard_reset(callback)
+  session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
+    if ok then
+      notify("Hard reset complete (rebuild)")
+    else
+      notify("Failed to hard reset", vim.log.levels.ERROR)
+    end
+    if callback then callback(ok) end
+  end)
+end
+
+-- ─── Session Context ─────────────────────────────────────────────────────────
+
+function M.show_session_context()
+  local sid = M.active_session and M.active_session.id or nil
+  if not sid then
+    notify("No active session", vim.log.levels.WARN)
+    return
+  end
+  local url = string.format(
+    "http://localhost:%d/api/sessions/%s/warmup-context",
+    M.config.dashboard_port, sid)
+  local cmd = { "curl", "-X", "GET", url,
+    "--max-time", "5", "--silent", "--show-error" }
+  local stdout_data = {}
+  vim.fn.jobstart(cmd, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      if data then stdout_data = data end
+    end,
+    on_exit = function(_, exit_code)
+      vim.schedule(function()
+        local raw = table.concat(stdout_data, "\n")
+        if exit_code ~= 0 or raw == "" then
+          notify("Failed to fetch session context", vim.log.levels.ERROR)
+          return
+        end
+        local ok, ctx = pcall(vim.json.decode, raw)
+        if not ok or type(ctx) ~= "table" then
+          notify("Invalid session context response", vim.log.levels.ERROR)
+          return
+        end
+        -- Build display lines
+        local lines = { "SageFs Session Context", string.rep("─", 40) }
+        table.insert(lines, string.format("Session: %s", sid))
+        if ctx.WarmupDurationMs then
+          table.insert(lines, string.format("Warmup: %dms", ctx.WarmupDurationMs))
+        end
+        if ctx.AssembliesLoaded then
+          table.insert(lines, "")
+          table.insert(lines, string.format("Assemblies (%d):", #ctx.AssembliesLoaded))
+          for _, a in ipairs(ctx.AssembliesLoaded) do
+            table.insert(lines, string.format("  %s (%d ns, %d mod)",
+              a.Name or "?", a.NamespaceCount or 0, a.ModuleCount or 0))
+          end
+        end
+        if ctx.NamespacesOpened then
+          table.insert(lines, "")
+          table.insert(lines, string.format("Namespaces Opened (%d):", #ctx.NamespacesOpened))
+          for _, n in ipairs(ctx.NamespacesOpened) do
+            local kind = n.IsModule and "module" or "namespace"
+            table.insert(lines, string.format("  %s (%s, %s)",
+              n.Name or "?", kind, n.Source or "?"))
+          end
+        end
+        if ctx.FailedOpens and #ctx.FailedOpens > 0 then
+          table.insert(lines, "")
+          table.insert(lines, string.format("Failed Opens (%d):", #ctx.FailedOpens))
+          for _, f in ipairs(ctx.FailedOpens) do
+            if type(f) == "table" then
+              table.insert(lines, "  " .. table.concat(f, " → "))
+            else
+              table.insert(lines, "  " .. tostring(f))
+            end
+          end
+        end
+        -- Show in floating window
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
+        vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+        local width = 60
+        for _, l in ipairs(lines) do
+          if #l + 2 > width then width = #l + 2 end
+        end
+        local height = math.min(#lines, 30)
+        local win = vim.api.nvim_open_win(buf, true, {
+          relative = "editor",
+          width = width,
+          height = height,
+          row = math.floor((vim.o.lines - height) / 2),
+          col = math.floor((vim.o.columns - width) / 2),
+          style = "minimal",
+          border = "rounded",
+          title = " Session Context ",
+          title_pos = "center",
+        })
+        vim.keymap.set("n", "q", function()
+          vim.api.nvim_win_close(win, true)
+        end, { buffer = buf, nowait = true })
+      end)
+    end,
+  })
+end
+
+-- ─── Diagnostics Integration ─────────────────────────────────────────────────
+
+local diag_ns = nil
+local diag_sse_job = nil
+local diag_buffer = ""
+
+function M.start_diagnostics()
+  if diag_sse_job then return end
+  diag_ns = diag_ns or vim.api.nvim_create_namespace("sagefs_diagnostics")
+  local url = string.format("http://localhost:%d/diagnostics", M.config.port)
+  diag_buffer = ""
+
+  diag_sse_job = vim.fn.jobstart({ "curl", "-N", "--silent", "--show-error", url }, {
+    on_stdout = function(_, data)
+      if not data then return end
+      for _, chunk in ipairs(data) do
+        diag_buffer = diag_buffer .. chunk .. "\n"
+      end
+      -- Parse SSE events
+      while true do
+        local idx = diag_buffer:find("\n\n")
+        if not idx then break end
+        local event = diag_buffer:sub(1, idx - 1)
+        diag_buffer = diag_buffer:sub(idx + 2)
+        for line in event:gmatch("[^\n]+") do
+          if line:sub(1, 6) == "data: " then
+            vim.schedule(function()
+              local ok, data_obj = pcall(vim.json.decode, line:sub(7))
+              if ok and data_obj and data_obj.diagnostics then
+                M.apply_diagnostics(data_obj.diagnostics)
+              end
+            end)
+          end
+        end
+      end
+    end,
+    on_exit = function()
+      diag_sse_job = nil
+      -- Auto-reconnect after delay
+      vim.defer_fn(function()
+        if M.state.status == "connected" then
+          M.start_diagnostics()
+        end
+      end, 3000)
+    end,
+  })
+end
+
+function M.stop_diagnostics()
+  if diag_sse_job then
+    vim.fn.jobstop(diag_sse_job)
+    diag_sse_job = nil
+  end
+  if diag_ns then
+    vim.diagnostic.reset(diag_ns)
+  end
+end
+
+function M.apply_diagnostics(diags)
+  if not diag_ns then return end
+  -- Group by file
+  local by_file = {}
+  for _, d in ipairs(diags) do
+    local file = d.file
+    if file then
+      by_file[file] = by_file[file] or {}
+      local severity = vim.diagnostic.severity.HINT
+      if d.severity == "error" then severity = vim.diagnostic.severity.ERROR
+      elseif d.severity == "warning" then severity = vim.diagnostic.severity.WARN
+      elseif d.severity == "info" then severity = vim.diagnostic.severity.INFO
+      end
+      table.insert(by_file[file], {
+        lnum = (d.startLine or 1) - 1,
+        col = (d.startColumn or 1) - 1,
+        end_lnum = (d.endLine or d.startLine or 1) - 1,
+        end_col = (d.endColumn or d.startColumn or 1) - 1,
+        message = d.message or "",
+        severity = severity,
+        source = "sagefs",
+      })
+    end
+  end
+  -- Apply to each buffer
+  for file, file_diags in pairs(by_file) do
+    local bufnr = vim.fn.bufnr(file)
+    if bufnr ~= -1 then
+      vim.diagnostic.set(diag_ns, bufnr, file_diags)
+    end
+  end
+end
+
 -- ─── Session Picker (vim.ui.select) ──────────────────────────────────────────
 
 function M.session_picker()
@@ -482,6 +693,10 @@ function M.session_picker()
               M.switch_session(session.id)
             elseif a.name == "stop" then
               M.stop_session(session.id)
+            elseif a.name == "reset" then
+              M.reset_session()
+            elseif a.name == "hard_reset" then
+              M.hard_reset()
             elseif a.name == "create" then
               M.discover_and_create()
             end
@@ -651,6 +866,18 @@ local function register_commands()
       notify("Unwatched all files")
     end)
   end, { desc = "Unwatch all files for hot reload" })
+
+  vim.api.nvim_create_user_command("SageFsReset", function()
+    M.reset_session()
+  end, { desc = "Reset active FSI session" })
+
+  vim.api.nvim_create_user_command("SageFsHardReset", function()
+    M.hard_reset()
+  end, { desc = "Hard reset (rebuild) active FSI session" })
+
+  vim.api.nvim_create_user_command("SageFsContext", function()
+    M.show_session_context()
+  end, { desc = "Show session context (assemblies, namespaces, warmup)" })
 end
 
 local function register_keymaps()
