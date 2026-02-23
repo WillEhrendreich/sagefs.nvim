@@ -5,6 +5,7 @@ local format = require("sagefs.format")
 local model = require("sagefs.model")
 local sessions = require("sagefs.sessions")
 local sse_parser = require("sagefs.sse")
+local hotreload = require("sagefs.hotreload")
 
 local M = {}
 
@@ -12,6 +13,7 @@ local M = {}
 
 M.config = {
   port = 37749,
+  dashboard_port = 37750,
   auto_connect = true,
   highlight = {
     success = { fg = "#a6e3a1", italic = true },
@@ -622,6 +624,33 @@ local function register_commands()
   vim.api.nvim_create_user_command("SageFsCreateSession", function()
     M.discover_and_create()
   end, { desc = "Create new SageFs session" })
+
+  vim.api.nvim_create_user_command("SageFsHotReload", function()
+    local sid = M.active_session and M.active_session.id or nil
+    hotreload.picker(sid)
+  end, { desc = "Manage hot-reload file selection" })
+
+  vim.api.nvim_create_user_command("SageFsWatchAll", function()
+    local sid = M.active_session and M.active_session.id or nil
+    if not sid then
+      notify("No active session", vim.log.levels.WARN)
+      return
+    end
+    hotreload.watch_all(sid, function()
+      notify(string.format("Watching all %d files", #hotreload.files))
+    end)
+  end, { desc = "Watch all files for hot reload" })
+
+  vim.api.nvim_create_user_command("SageFsUnwatchAll", function()
+    local sid = M.active_session and M.active_session.id or nil
+    if not sid then
+      notify("No active session", vim.log.levels.WARN)
+      return
+    end
+    hotreload.unwatch_all(sid, function()
+      notify("Unwatched all files")
+    end)
+  end, { desc = "Unwatch all files for hot reload" })
 end
 
 local function register_keymaps()
@@ -644,6 +673,10 @@ local function register_keymaps()
   end, { desc = "SageFs: Clear results", silent = true })
   vim.keymap.set("n", "<leader>ss", function() M.session_picker() end,
     { desc = "SageFs: Sessions", silent = true })
+  vim.keymap.set("n", "<leader>sh", function()
+    local sid = M.active_session and M.active_session.id or nil
+    hotreload.picker(sid)
+  end, { desc = "SageFs: Hot Reload Files", silent = true })
 end
 
 local function register_autocmds()
@@ -682,6 +715,7 @@ function M.setup(opts)
   register_commands()
   register_keymaps()
   register_autocmds()
+  hotreload.setup(M.config.dashboard_port)
 
   -- Auto-connect
   if M.config.auto_connect then
