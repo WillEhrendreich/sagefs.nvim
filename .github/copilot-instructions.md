@@ -38,3 +38,4 @@ Tests require `busted` and `dkjson` from LuaRocks. `test.cmd` sets `LUA_PATH`/`L
 ## MCP Servers
 
 **Neovim MCP** — Use the `NeovimMCP` tools (`vim_buffer`, `vim_command`, `vim_edit`, etc.) for integration testing and debugging inside a live Neovim instance. This is useful for verifying extmark rendering, keymap behavior, command registration, and the full eval → extmark pipeline that can't be tested under busted alone. The pure module tests (busted) cover logic; Neovim MCP covers the `init.lua` integration layer.
+

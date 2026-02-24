@@ -1,0 +1,25 @@
+# gitignore for sagefs.nvim
+docs/expertPanel/
+
+# Lua build artifacts
+*.luac
+luac.out
+
+# LuaRocks
+lua_modules/
+.luarocks/
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+luacov.stats.out
+luacov.report.out
