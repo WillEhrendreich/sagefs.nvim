@@ -42,6 +42,21 @@ end
 function M.format_inline(result)
   local text, hl
 
+  if result.stale then
+    hl = "SageFsStale"
+    text = result.output or ""
+    text = text:gsub("\r", "")
+    local first_line = text:match("^([^\n]*)")
+    if first_line then text = first_line end
+    if (result.output or ""):find("\n") then
+      text = text .. " …"
+    end
+    if #text > MAX_INLINE_LEN then
+      text = text:sub(1, MAX_INLINE_LEN - 1) .. "…"
+    end
+    return { text = "~ " .. text, hl = hl }
+  end
+
   if result.ok then
     hl = "SageFsSuccess"
     text = result.output or ""
@@ -77,7 +92,7 @@ end
 ---@param result {ok: boolean, output: string?, error: string?}
 ---@return {text: string, hl: string}[]
 function M.format_virtual_lines(result)
-  local hl = result.ok and "SageFsOutput" or "SageFsError"
+  local hl = result.stale and "SageFsStale" or (result.ok and "SageFsOutput" or "SageFsError")
   local raw = result.ok and (result.output or "") or (result.error or "error")
   raw = raw:gsub("\r", "")
 
@@ -112,6 +127,43 @@ function M.gutter_sign(status)
   else
     return { text = " ", hl = "Normal" }
   end
+end
+
+--- Build extmark render options from cell state
+---@param cell {status: string, output: string?}
+---@param cell_id number
+---@return table|nil
+function M.build_render_options(cell, cell_id)
+  if not cell or cell.status == "idle" then
+    return nil
+  end
+
+  local sign = M.gutter_sign(cell.status)
+
+  if cell.status == "running" then
+    return { sign = sign }
+  end
+
+  local is_stale = cell.status == "stale"
+  local is_ok = cell.status == "success" or is_stale
+  local result
+  if is_ok then
+    result = { ok = true, output = cell.output, stale = is_stale }
+  else
+    result = { ok = false, error = cell.output }
+  end
+
+  local opts = {
+    sign = sign,
+    inline = M.format_inline(result),
+    virtual_lines = M.format_virtual_lines(result),
+  }
+
+  if is_stale then
+    opts.codelens = { text = "▶ Eval" }
+  end
+
+  return opts
 end
 
 return M

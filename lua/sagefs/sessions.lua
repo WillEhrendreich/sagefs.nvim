@@ -112,12 +112,20 @@ end
 
 -- ─── Available actions per session ───────────────────────────────────────────
 
-function M.session_actions(s)
+function M.session_actions(s, is_active)
   local actions = {}
-  table.insert(actions, { name = "switch", label = "Switch to this session" })
-  table.insert(actions, { name = "stop", label = "Stop this session" })
-  table.insert(actions, { name = "reset", label = "Reset session (soft)" })
-  table.insert(actions, { name = "hard_reset", label = "Hard reset (rebuild)" })
+  local status = s and s.status or ""
+
+  if not is_active then
+    table.insert(actions, { name = "switch", label = "Switch to this session" })
+  end
+
+  if status ~= "Stopped" then
+    table.insert(actions, { name = "stop", label = "Stop this session" })
+    table.insert(actions, { name = "reset", label = "Reset session (soft)" })
+    table.insert(actions, { name = "hard_reset", label = "Hard reset (rebuild)" })
+  end
+
   table.insert(actions, { name = "create", label = "Create new session" })
   return actions
 end

@@ -1,6 +1,35 @@
--- sagefs/model.lua — Global model for cell state management
+-- sagefs/model.lua — Elmish-inspired model for cell state management
 -- Pure Lua, no vim API dependencies — fully testable with busted
+--
+-- State machine: idle → running → success|error → stale → running
+-- stale is only reachable via mark_stale, not set_cell_state.
+-- idle is the default state (via clear_cells or unknown cell).
 local M = {}
+
+-- Valid cell evaluation statuses
+M.VALID_CELL_STATUSES = {
+  idle = true,
+  running = true,
+  success = true,
+  error = true,
+  stale = true,
+}
+
+-- Valid connection statuses
+M.VALID_CONNECTION_STATUSES = {
+  connected = true,
+  disconnected = true,
+  reconnecting = true,
+}
+
+-- Valid transitions for set_cell_state
+local TRANSITIONS = {
+  idle = { running = true },
+  running = { success = true, error = true, running = true },
+  success = { running = true },
+  error = { running = true },
+  stale = { running = true },
+}
 
 --- Create a new empty model
 ---@return table
@@ -20,13 +49,31 @@ function M.cell_count(m)
   return count
 end
 
---- Set cell evaluation state
+--- Set cell evaluation state with transition validation
 ---@param m table
 ---@param cell_id number
----@param status string "idle"|"running"|"success"|"error"|"stale"
+---@param status string "running"|"success"|"error"
 ---@param output string|nil
 ---@return table
 function M.set_cell_state(m, cell_id, status, output)
+  if not status or not M.VALID_CELL_STATUSES[status] then
+    error(string.format("invalid cell status: %s", tostring(status)))
+  end
+  if status == "stale" then
+    error("invalid cell status: stale (use mark_stale)")
+  end
+  if status == "idle" then
+    error("invalid cell status: idle (use clear_cells)")
+  end
+
+  local current = m.cells[cell_id]
+  local from = current and current.status or "idle"
+  local allowed = TRANSITIONS[from]
+
+  if not allowed or not allowed[status] then
+    error(string.format("invalid transition: %s → %s", from, status))
+  end
+
   m.cells[cell_id] = {
     status = status,
     output = output,
@@ -78,11 +125,14 @@ function M.clear_cells(m)
   return m
 end
 
---- Set connection status
+--- Set connection status with validation
 ---@param m table
 ---@param status string "connected"|"disconnected"|"reconnecting"
 ---@return table
 function M.set_status(m, status)
+  if not status or not M.VALID_CONNECTION_STATUSES[status] then
+    error(string.format("invalid connection status: %s", tostring(status)))
+  end
   m.status = status
   return m
 end

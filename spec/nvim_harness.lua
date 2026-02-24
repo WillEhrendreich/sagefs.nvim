@@ -215,6 +215,7 @@ end)
 describe("model to extmark pipeline", function()
   it("model state drives gutter sign selection", function()
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", "42")
     local cell = model.get_cell_state(m, 1)
     local sign = format.gutter_sign(cell.status)
@@ -225,6 +226,7 @@ describe("model to extmark pipeline", function()
 
   it("stale cells get stale formatting", function()
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", "42")
     m = model.mark_stale(m, 1)
     local cell = model.get_cell_state(m, 1)
@@ -235,6 +237,7 @@ describe("model to extmark pipeline", function()
 
   it("error cells get error formatting", function()
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "error", "type mismatch")
     local cell = model.get_cell_state(m, 1)
     local inline = format.format_inline({ ok = false, error = cell.output })
@@ -318,6 +321,7 @@ describe("SSE to model pipeline", function()
     local data = vim.json.decode(events[1].data)
     local m = model.new()
     if data.success then
+      m = model.set_cell_state(m, data.cellId, "running")
       m = model.set_cell_state(m, data.cellId, "success", data.result)
     end
     assert_eq("success", model.get_cell_state(m, 1).status)
@@ -446,7 +450,9 @@ describe("edit detection pipeline", function()
       "let y = x + 1;;",
     })
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", "42")
+    m = model.set_cell_state(m, 2, "running")
     m = model.set_cell_state(m, 2, "success", "43")
 
     -- Simulate what init.lua does on TextChanged
@@ -471,6 +477,7 @@ describe("eval pipeline (mock HTTP response)", function()
 
     -- Model update
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", result.output)
 
     -- Format for extmark
@@ -527,9 +534,11 @@ end)
 describe("multi-buffer state isolation", function()
   it("model tracks cells per-id independently", function()
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", "buf1-result")
+    m = model.set_cell_state(m, 2, "running")
     m = model.set_cell_state(m, 2, "error", "buf2-error")
-    m = model.set_cell_state(m, 3, "running", nil)
+    m = model.set_cell_state(m, 3, "running")
 
     assert_eq("success", model.get_cell_state(m, 1).status)
     assert_eq("error", model.get_cell_state(m, 2).status)
@@ -584,7 +593,9 @@ describe("cell lifecycle", function()
 
     -- Step 2: simulate eval results in model
     local m = model.new()
+    m = model.set_cell_state(m, 1, "running")
     m = model.set_cell_state(m, 1, "success", "42")
+    m = model.set_cell_state(m, 2, "running")
     m = model.set_cell_state(m, 2, "success", "43")
 
     -- Step 3: render extmarks for each cell
@@ -639,6 +650,7 @@ describe("SSE multi-event streaming", function()
     for _, ev in ipairs(events) do
       local data = vim.json.decode(ev.data)
       if data.success then
+        m = model.set_cell_state(m, data.cellId, "running")
         m = model.set_cell_state(m, data.cellId, "success", data.result)
       end
     end
@@ -664,6 +676,7 @@ describe("SSE multi-event streaming", function()
       local data = vim.json.decode(ev.data)
       local status = data.success and "success" or "error"
       local output = data.result
+      m = model.set_cell_state(m, data.cellId, "running")
       m = model.set_cell_state(m, data.cellId, status, output)
     end
 

@@ -59,4 +59,32 @@ function M.parse_chunk(chunk)
   return events, remainder
 end
 
+--- Calculate reconnection delay with exponential backoff
+---@param attempt number Attempt number (1-based)
+---@return number Delay in milliseconds
+function M.reconnect_delay(attempt)
+  local delay = 1000 * (2 ^ (attempt - 1))
+  if delay > 32000 then delay = 32000 end
+  return delay
+end
+
+--- Classify an SSE event into an action type
+---@param event {type: string?, data: string?}|nil
+---@return {action: string, data: string?}|nil
+function M.classify_event(event)
+  if not event then return nil end
+
+  local type_to_action = {
+    EvalCompleted = "eval_completed",
+    TestRunCompleted = "test_run_completed",
+    SessionCreated = "session_created",
+    SessionStopped = "session_stopped",
+    DiagnosticsUpdated = "diagnostics_updated",
+    state = "state_update",
+  }
+
+  local action = type_to_action[event.type] or "unknown"
+  return { action = action, data = event.data }
+end
+
 return M
