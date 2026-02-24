@@ -135,10 +135,11 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | Module | Purpose |
 |--------|---------|
 | `cells.lua` | `;;` boundary detection, cell finding |
-| `format.lua` | Result formatting for extmarks |
-| `model.lua` | Cell state machine (idle -> running -> success/error -> stale) |
-| `sse.lua` | SSE event stream parser |
-| `sessions.lua` | Session response parsing, directory matching, formatting |
+| `format.lua` | Result formatting with stale-awareness, `build_render_options` |
+| `model.lua` | Elmish state machine with validated transitions (idle→running→success/error→stale) |
+| `sse.lua` | SSE event stream parser, exponential backoff, event classification |
+| `sessions.lua` | Session response parsing, context-sensitive action filtering |
+| `diagnostics.lua` | Pure diagnostic grouping and vim.diagnostic conversion |
 | `testing.lua` | Live testing state model — status tracking, summaries, gutter signs |
 | `hotreload.lua` | Hot reload file state and toggle API |
 | `init.lua` | Neovim integration (keymaps, extmarks, curl, autocmds) |
@@ -169,10 +170,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 250 | Pure module logic — cells, format, model, SSE, sessions, testing. Property tests, snapshot tests, composition, idempotency. |
+| **Busted (pure)** | `busted` via LuaRocks | 305 | Pure module logic — cells, format, model, SSE, sessions, testing, diagnostics. State machine validation, property tests, snapshot tests, composition, idempotency. |
 | **Integration** | Headless Neovim (`nvim -l`) | 49 | Real vim APIs — plugin setup, command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation. |
 | **RED (planned)** | `busted` | 63 | API contracts for features not yet implemented — coverage module, hotreload pure extraction, testing UI functions. These tests define what GREEN looks like. |
-| **Total** | | **362** | |
+| **Total** | | **368+49** | |
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
 
