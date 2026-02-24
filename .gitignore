@@ -1,5 +1,5 @@
 # gitignore for sagefs.nvim
-docs/expertPanel/
+expertPanel/
 
 # Lua build artifacts
 *.luac
