@@ -176,4 +176,18 @@ function M.prepare_code(code)
   return code
 end
 
+--- Find cell boundaries from treesitter-parsed nodes
+--- Takes pre-extracted boundary nodes with position and context
+---@param nodes table[] — { row, col, text, in_string?, in_comment? }
+---@return number[] — 1-indexed line numbers of boundaries
+function M.find_boundaries_treesitter(nodes)
+  local boundaries = {}
+  for _, node in ipairs(nodes) do
+    if not node.in_string and not node.in_comment then
+      table.insert(boundaries, node.row + 1) -- convert 0-indexed to 1-indexed
+    end
+  end
+  return boundaries
+end
+
 return M

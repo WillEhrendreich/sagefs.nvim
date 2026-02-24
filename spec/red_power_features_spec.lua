@@ -176,6 +176,8 @@ end)
 -- Uses testing.lua functions already tested above — just needs format_pipeline_statusline
 -- =============================================================================
 
+local testing = require("sagefs.testing")
+
 describe("testing.format_pipeline_statusline [RED T4]", function()
   it("returns compact pipeline info for statusline", function()
     assert.is_function(testing.format_pipeline_statusline)
