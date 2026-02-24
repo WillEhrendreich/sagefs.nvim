@@ -888,6 +888,84 @@ describe("virtual lines placement", function()
   end)
 end)
 
+-- ─── Test gutter signs ───────────────────────────────────────────────────────
+
+describe("test gutter sign rendering", function()
+  it("renders test signs in separate namespace", function()
+    local render = require("sagefs.render")
+    local testing_mod = require("sagefs.testing")
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "module Tests", "let test1 () = ()", "let test2 () = ()",
+    })
+    local test_file = "/tmp/test_gutter_" .. tostring(buf) .. ".fs"
+    vim.api.nvim_buf_set_name(buf, test_file)
+    local resolved = vim.api.nvim_buf_get_name(buf)
+
+    local state = testing_mod.new()
+    state = testing_mod.set_enabled(state, true)
+    testing_mod.update_test(state, {
+      testId = "t1", displayName = "test1", fullName = "test1",
+      category = "Unit", currentPolicy = "OnEveryChange", status = "Passed",
+      origin = { Case = "SourceMapped", Fields = { resolved, 2 } },
+    })
+
+    render.render_test_signs(buf, state)
+    local tns = vim.api.nvim_create_namespace("sagefs_tests")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, tns, 0, -1, { details = true })
+    assert_truthy(#marks > 0, "should have test sign extmarks")
+    assert_eq("SageFsTestPassed", marks[1][4].sign_hl_group, "passed test sign")
+  end)
+
+  it("coverage signs use separate namespace", function()
+    local render = require("sagefs.render")
+    local cov = require("sagefs.coverage")
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "line1", "line2", "line3" })
+    local cov_file = "/tmp/cov_gutter_" .. tostring(buf) .. ".fs"
+    vim.api.nvim_buf_set_name(buf, cov_file)
+    local resolved = vim.api.nvim_buf_get_name(buf)
+
+    local state = cov.new()
+    state = cov.update_file(state, resolved, {
+      { line = 1, hits = 5 },
+      { line = 3, hits = 0 },
+    })
+
+    render.render_coverage_signs(buf, state)
+    local cns = vim.api.nvim_create_namespace("sagefs_coverage")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, cns, 0, -1, { details = true })
+    assert_eq(2, #marks, "should have 2 coverage signs")
+    assert_eq("SageFsCovered", marks[1][4].sign_hl_group, "covered line")
+    assert_eq("SageFsUncovered", marks[2][4].sign_hl_group, "uncovered line")
+  end)
+end)
+
+-- ─── Statusline integration ──────────────────────────────────────────────────
+
+describe("statusline integration", function()
+  it("returns combined statusline with testing info", function()
+    local sagefs = require("sagefs")
+    local testing_mod = require("sagefs.testing")
+
+    -- Prime testing state
+    sagefs.testing_state = testing_mod.new()
+    sagefs.testing_state = testing_mod.set_enabled(sagefs.testing_state, true)
+    testing_mod.update_test(sagefs.testing_state, {
+      testId = "t1", displayName = "t1", fullName = "t1",
+      category = "Unit", currentPolicy = "OnEveryChange", status = "Passed",
+    })
+
+    local sl = sagefs.statusline()
+    assert_type("string", sl, "statusline should be string")
+    assert_truthy(#sl > 0, "statusline should not be empty")
+    -- Should contain separator when testing info present
+    assert_contains(sl, "│", "should have separator between sections")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
