@@ -51,9 +51,9 @@ This plugin provides the Neovim integration layer. Here is what is implemented a
 
 | Feature | SageFs Support | Plugin Status |
 |---------|---------------|---------------|
-| **Live test gutter markers** | Full pipeline: discovery, execution, SSE push of results | Not yet — needs extmark signs for test pass/fail/pending indicators |
-| **Live test status panel** | `get_live_test_status` MCP tool with file filtering | Not yet — could show in floating window or quickfix |
-| **Run policy controls** | `set_run_policy` MCP tool (per-category: every/save/demand/disabled) | Not yet — needs UI for toggling policies |
+| **Live test gutter markers** | Full pipeline: discovery, execution, SSE push of results | Pure state model ready (`testing.lua`) — needs extmark integration in `init.lua` |
+| **Live test status panel** | `get_live_test_status` MCP tool with file filtering | Pure parsing/summary ready — needs floating window or quickfix UI |
+| **Run policy controls** | `set_run_policy` MCP tool (per-category: every/save/demand/disabled) | Pure model ready — needs UI for toggling policies |
 | **Toggle live testing** | `toggle_live_testing` MCP tool | Not yet — needs command/keymap |
 | **Pipeline trace** | `get_pipeline_trace` MCP tool (debug the three-speed pipeline) | Not yet |
 | **Explicit test runner** | `run_tests` MCP tool with name/category filters | Not yet |
@@ -139,6 +139,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `model.lua` | Cell state machine (idle -> running -> success/error -> stale) |
 | `sse.lua` | SSE event stream parser |
 | `sessions.lua` | Session response parsing, directory matching, formatting |
+| `testing.lua` | Live testing state model — status tracking, summaries, gutter signs |
 | `hotreload.lua` | Hot reload file state and toggle API |
 | `init.lua` | Neovim integration (keymaps, extmarks, curl, autocmds) |
 
