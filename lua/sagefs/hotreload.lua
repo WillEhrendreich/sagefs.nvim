@@ -1,113 +1,78 @@
 -- sagefs/hotreload.lua — Hot reload file selection for Neovim
--- Shows hot-reload file state via signs + provides toggle/watch-all/unwatch-all commands
+-- Uses transport.lua for HTTP, hotreload_model.lua for pure logic
+
+local transport = require("sagefs.transport")
+local hr_model = require("sagefs.hotreload_model")
 
 local M = {}
 
 -- ─── State ───────────────────────────────────────────────────────────────────
 
-M.files = {}       -- { path = string, watched = bool }[]
-M.watched_count = 0
-local ns = nil     -- sign namespace
+M.state = hr_model.new()
 local dashboard_port = 37750
-
--- ─── HTTP Helpers ────────────────────────────────────────────────────────────
-
-local function hot_reload_url(session_id, endpoint)
-  return string.format(
-    "http://localhost:%d/api/sessions/%s/hotreload%s",
-    dashboard_port, session_id, endpoint or ""
-  )
-end
-
-local function http_get(url, callback)
-  local stdout_data = {}
-  vim.fn.jobstart(
-    { "curl", "-s", "--max-time", "5", url },
-    {
-      stdout_buffered = true,
-      on_stdout = function(_, data)
-        if data then stdout_data = data end
-      end,
-      on_exit = function(_, exit_code)
-        vim.schedule(function()
-          callback(exit_code == 0, table.concat(stdout_data, "\n"))
-        end)
-      end,
-    }
-  )
-end
-
-local function http_post(url, body, callback)
-  local json = body and vim.fn.json_encode(body) or "{}"
-  local stdout_data = {}
-  vim.fn.jobstart(
-    { "curl", "-X", "POST", url, "-H", "Content-Type: application/json",
-      "-d", json, "--max-time", "5", "-s" },
-    {
-      stdout_buffered = true,
-      on_stdout = function(_, data)
-        if data then stdout_data = data end
-      end,
-      on_exit = function(_, exit_code)
-        vim.schedule(function()
-          if callback then
-            callback(exit_code == 0, table.concat(stdout_data, "\n"))
-          end
-        end)
-      end,
-    }
-  )
-end
 
 -- ─── API ─────────────────────────────────────────────────────────────────────
 
 function M.fetch_state(session_id, callback)
-  http_get(hot_reload_url(session_id, ""), function(ok, raw)
-    if ok and raw ~= "" then
-      local decoded = vim.fn.json_decode(raw)
-      if decoded and decoded.files then
-        M.files = decoded.files
-        M.watched_count = decoded.watchedCount or 0
+  transport.http_json({
+    method = "GET",
+    url = hr_model.build_url(dashboard_port, session_id, ""),
+    callback = function(ok, raw)
+      if ok and raw ~= "" then
+        local decoded = vim.fn.json_decode(raw)
+        hr_model.apply_response(M.state, decoded)
+      else
+        M.state = hr_model.new()
       end
-    else
-      M.files = {}
-      M.watched_count = 0
-    end
-    if callback then callback() end
-  end)
+      if callback then callback() end
+    end,
+  })
 end
 
 function M.toggle(session_id, path, callback)
-  http_post(hot_reload_url(session_id, "/toggle"), { path = path }, function(ok)
-    if ok then
-      M.fetch_state(session_id, callback)
-    elseif callback then
-      callback()
-    end
-  end)
+  transport.http_json({
+    method = "POST",
+    url = hr_model.build_url(dashboard_port, session_id, "/toggle"),
+    body = { path = path },
+    callback = function(ok)
+      if ok then
+        M.fetch_state(session_id, callback)
+      elseif callback then
+        callback()
+      end
+    end,
+  })
 end
 
 function M.watch_all(session_id, callback)
-  http_post(hot_reload_url(session_id, "/watch-all"), nil, function(ok)
-    if ok then
-      M.fetch_state(session_id, callback)
-    elseif callback then
-      callback()
-    end
-  end)
+  transport.http_json({
+    method = "POST",
+    url = hr_model.build_url(dashboard_port, session_id, "/watch-all"),
+    callback = function(ok)
+      if ok then
+        M.fetch_state(session_id, callback)
+      elseif callback then
+        callback()
+      end
+    end,
+  })
 end
 
 function M.unwatch_all(session_id, callback)
-  http_post(hot_reload_url(session_id, "/unwatch-all"), nil, function(ok)
-    if ok then
-      M.fetch_state(session_id, callback)
-    elseif callback then
-      callback()
-    end
-  end)
+  transport.http_json({
+    method = "POST",
+    url = hr_model.build_url(dashboard_port, session_id, "/unwatch-all"),
+    callback = function(ok)
+      if ok then
+        M.fetch_state(session_id, callback)
+      elseif callback then
+        callback()
+      end
+    end,
+  })
 end
 
--- ─── Telescope-style Picker ──────────────────────────────────────────────────
+-- ─── Picker ──────────────────────────────────────────────────────────────────
 
 function M.picker(session_id)
   if not session_id then
@@ -116,58 +81,56 @@ function M.picker(session_id)
   end
 
   M.fetch_state(session_id, function()
-    if #M.files == 0 then
+    local picker_items = hr_model.format_picker_items(M.state)
+    if #picker_items == 0 then
       vim.notify("[SageFs] No project files found", vim.log.levels.WARN)
       return
     end
 
-    local items = {}
+    local labels = {}
     local lookup = {}
-
-    for _, f in ipairs(M.files) do
-      local icon = f.watched and "●" or "○"
-      local label = string.format("%s %s", icon, f.path)
-      table.insert(items, label)
-      lookup[label] = f.path
+    for _, item in ipairs(picker_items) do
+      table.insert(labels, item.label)
+      lookup[item.label] = item
     end
 
-    -- Add bulk actions
-    local watch_all_label = "▶ Watch All"
-    local unwatch_all_label = "■ Unwatch All"
-    table.insert(items, 1, watch_all_label)
-    table.insert(items, 2, unwatch_all_label)
-
-    vim.ui.select(items, {
-      prompt = string.format("Hot Reload Files (%d/%d watched):", M.watched_count, #M.files),
+    vim.ui.select(labels, {
+      prompt = hr_model.format_prompt(M.state),
     }, function(choice)
       if not choice then return end
+      local item = lookup[choice]
+      if not item then return end
 
-      if choice == watch_all_label then
+      local sel = hr_model.parse_selection(item)
+      if not sel then return end
+
+      if sel.action == "watch_all" then
         M.watch_all(session_id, function()
-          vim.notify(string.format("[SageFs] Watching all %d files", #M.files))
+          vim.notify(string.format("[SageFs] Watching all %d files", #M.state.files))
         end)
-      elseif choice == unwatch_all_label then
+      elseif sel.action == "unwatch_all" then
         M.unwatch_all(session_id, function()
           vim.notify("[SageFs] Unwatched all files")
         end)
-      else
-        local path = lookup[choice]
-        if path then
-          M.toggle(session_id, path, function()
-            -- Re-open picker to show updated state
-            M.picker(session_id)
-          end)
-        end
+      elseif sel.action == "toggle" and sel.path then
+        M.toggle(session_id, sel.path, function()
+          M.picker(session_id)
+        end)
       end
     end)
   end)
 end
 
+-- ─── Compat ──────────────────────────────────────────────────────────────────
+
+-- Backward compatibility: expose files/watched_count from state
+M.files = M.state.files
+M.watched_count = M.state.watched_count
+
 -- ─── Setup ───────────────────────────────────────────────────────────────────
 
 function M.setup(port)
   dashboard_port = port or 37750
-  ns = vim.api.nvim_create_namespace("sagefs_hotreload")
 end
 
 return M

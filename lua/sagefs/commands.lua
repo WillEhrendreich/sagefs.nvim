@@ -64,7 +64,7 @@ function M.register_commands(plugin, helpers)
       return
     end
     hotreload.watch_all(sid, function()
-      helpers.notify(string.format("Watching all %d files", #hotreload.files))
+      helpers.notify(string.format("Watching all %d files", #hotreload.state.files))
     end)
   end, { desc = "Watch all files for hot reload" })
 
