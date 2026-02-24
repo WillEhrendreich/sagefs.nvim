@@ -9,6 +9,8 @@ local sse_parser = require("sagefs.sse")
 local hotreload = require("sagefs.hotreload")
 local diagnostics = require("sagefs.diagnostics")
 local testing = require("sagefs.testing")
+local coverage = require("sagefs.coverage")
+local events = require("sagefs.events")
 local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
@@ -34,6 +36,7 @@ M.config = {
 
 M.state = model.new()
 M.testing_state = testing.new()
+M.coverage_state = coverage.new()
 M.active_session = nil
 M.session_list = {}
 
@@ -58,32 +61,66 @@ end
 
 -- ─── SSE Dispatch ─────────────────────────────────────────────────────────────
 
-local function on_sse_events(events)
-  for _, event in ipairs(events) do
-    local action = sse_parser.classify_event(event)
-    if action == "state_changed" then
+local function decode_event_data(event)
+  if not event.data then return nil end
+  local ok, data = pcall(vim.json.decode, event.data)
+  return ok and data or nil
+end
+
+local function fire_user_event(event_type, payload)
+  local evt = events.build_autocmd_data(event_type, payload)
+  if evt then
+    vim.schedule(function()
+      pcall(vim.api.nvim_exec_autocmds, "User", { pattern = evt.pattern, data = evt.data })
+    end)
+  end
+end
+
+local function on_sse_events(raw_events)
+  for _, event in ipairs(raw_events) do
+    local classified = sse_parser.classify_event(event)
+    if not classified then goto continue end
+    local action = classified.action
+    local data = decode_event_data(event)
+
+    if action == "state_update" then
       M.state = model.set_status(M.state, "connected")
+
+    -- Testing pipeline
     elseif action == "tests_discovered" then
-      local ok, data = pcall(vim.json.decode, event.data)
-      if ok and data then
-        M.testing_state = testing.handle_tests_discovered(M.testing_state, data)
-      end
-    elseif action == "test_result" then
-      local ok, data = pcall(vim.json.decode, event.data)
-      if ok and data then
-        M.testing_state = testing.handle_test_result(M.testing_state, data)
-      end
+      if data then M.testing_state = testing.handle_tests_discovered(M.testing_state, data) end
+    elseif action == "test_results_batch" then
+      if data then M.testing_state = testing.handle_results_batch(M.testing_state, data) end
     elseif action == "test_run_started" then
-      local ok, data = pcall(vim.json.decode, event.data)
-      if ok and data then
-        M.testing_state = testing.handle_run_started(M.testing_state, data)
+      if data then
+        M.testing_state = testing.handle_test_run_started(M.testing_state, data)
+        fire_user_event("test_run_started", data)
       end
-    elseif action == "test_run_completed" then
-      local ok, data = pcall(vim.json.decode, event.data)
-      if ok and data then
-        M.testing_state = testing.handle_run_completed(M.testing_state, data)
+    elseif action == "live_testing_toggled" then
+      if data then M.testing_state = testing.handle_live_testing_toggled(M.testing_state, data) end
+    elseif action == "run_policy_changed" then
+      if data then M.testing_state = testing.handle_run_policy_changed(M.testing_state, data) end
+
+    -- Coverage
+    elseif action == "coverage_updated" then
+      if data then
+        local parsed = coverage.parse_coverage_response(vim.fn.json_encode(data))
+        if parsed then
+          M.coverage_state = coverage.apply_coverage_response(M.coverage_state, parsed)
+          fire_user_event("coverage_updated", data)
+        end
       end
+    elseif action == "coverage_cleared" then
+      M.coverage_state = coverage.clear(M.coverage_state)
+
+    -- Session lifecycle
+    elseif action == "eval_completed" then
+      fire_user_event("eval_completed", data)
+    elseif action == "hot_reload_triggered" then
+      fire_user_event("hot_reload_triggered", data)
     end
+
+    ::continue::
   end
 end
 
@@ -621,6 +658,8 @@ function M.setup(opts)
     notify = notify,
     start_sse = start_sse,
     stop_sse = stop_sse,
+    base_url = function() return "http://localhost:" .. M.config.port end,
+    dashboard_url = function() return "http://localhost:" .. M.config.dashboard_port end,
     clear_and_render = function()
       M.state = model.clear_cells(M.state)
       render.clear_extmarks(vim.api.nvim_get_current_buf())
