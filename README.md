@@ -20,9 +20,9 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **12 pure Lua modules, 469 tests, zero failures.**
+This plugin provides the Neovim integration layer. **18 Lua modules, 521 tests, zero failures.**
 
-### Implemented & Tested
+### Fully Implemented & Tested
 
 | Feature | Description |
 |---------|-------------|
@@ -38,46 +38,29 @@ This plugin provides the Neovim integration layer. **12 pure Lua modules, 469 te
 | **Session management** | Create, switch, stop sessions via picker (`:SageFsSessions`). |
 | **Project discovery** | Auto-discovers `.fsproj` files and offers to create sessions. |
 | **Smart eval** | If no session exists, prompts to create one before evaluating. |
-| **Session context** | Floating window showing assemblies, namespaces, warmup details (`:SageFsContext`). |
-| **Hot reload controls** | Per-file toggle, watch-all, unwatch-all via picker (`:SageFsHotReload`). |
-| **SSE dispatch pipeline** | All 22 SageFs event types classified and routed through a dispatch table. |
-| **SSE live updates** | Subscribes to SageFs event stream with auto-reconnect on disconnect. |
-| **Live diagnostics** | F# errors/warnings streamed via SSE into `vim.diagnostic`. Consolidated pure pipeline. |
-| **Live test state model** | Full testing state machine: test tracking, discovery, result batching, policy management. |
-| **Test formatting** | Format test lists by file, filter by category/status, picker items, policy options. |
-| **Test statusline** | `testing.format_statusline()` and `testing.format_pipeline_statusline()` for statusline. |
-| **State recovery** | `build_recovery_request()` and `needs_recovery()` for SSE reconnect — no stale state. |
-| **Coverage state model** | Line-level coverage tracking, file/total summaries, gutter signs, statusline formatting. |
-| **Type explorer formatting** | Assembly → namespace → type → member drill-down formatting for pickers and floats. |
-| **History formatting** | FSI event history formatted for picker display and floating window preview. |
-| **Export to .fsx** | Format session history as executable F# script (user events only). |
-| **User autocmd events** | 9 event types for scripting: `SageFsEvalCompleted`, `SageFsTestPassed`, etc. |
-| **Treesitter cell detection** | Structural `;;` detection filtering out boundaries inside strings/comments. |
-| **Hot reload model** | Pure URL builder, state management, picker formatting for hot reload controls. |
+| **Session context** | Floating window showing assemblies, namespaces, warmup details. |
+| **Hot reload controls** | Per-file toggle, watch-all, unwatch-all via picker. |
+| **SSE dispatch pipeline** | All 22 SageFs event types classified and routed through dispatch. |
+| **SSE live updates** | Subscribes to SageFs event stream with auto-reconnect. |
+| **State recovery** | Full test state synced on SSE reconnect — no stale data after drops. |
+| **Live diagnostics** | F# errors/warnings streamed via SSE into `vim.diagnostic`. |
+| **Live test gutter signs** | Pass/fail/running/stale signs per test in the sign column. |
+| **Live test panel** | `:SageFsTests` → floating window with test results grouped by file. |
+| **Run tests** | `:SageFsRunTests [pattern]` → trigger test execution with optional filter. |
+| **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
+| **Toggle live testing** | `:SageFsToggleTesting` → enable/disable live test pipeline. |
+| **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from IL coverage. |
+| **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
+| **Coverage statusline** | Coverage percentage in combined statusline component. |
+| **Type explorer** | `:SageFsTypeExplorer` → assembly→namespace→type→members drill-down. |
+| **History browser** | `:SageFsHistory` → picker with preview of past evaluations. |
+| **Export to .fsx** | `:SageFsExport` → export session history as executable F# script. |
+| **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
+| **User autocmd events** | 9 event types fired via `User` autocmds for scripting integration. |
+| **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
-| **Session reset** | Soft reset (`:SageFsReset`) and hard reset with rebuild (`:SageFsHardReset`). |
-| **Health check** | Connection status check (`:SageFsStatus`). |
-| **Statusline component** | `SageFs.statusline()` shows session, project, eval count. |
-| **Auto-connect** | Connects to the running daemon on startup. |
-
-### Integration Wiring (Coming Next)
-
-The pure modules above are fully tested and ready. The remaining work is wiring them into `init.lua` — creating the Neovim commands, keymaps, and extmark rendering that connect the pure logic to the editor:
-
-| Feature | Pure Module | What Needs Wiring |
-|---------|-------------|-------------------|
-| **Live test gutter markers** | `testing.lua` — `gutter_sign()` | Extmarks from test state on `BufEnter`/SSE push |
-| **Live test panel** | `testing.lua` — `format_test_list()` | `:SageFsTests` → floating window or quickfix |
-| **Run tests** | `testing.lua` — `build_run_request()` | `:SageFsRunTests` → `vim.ui.select` → MCP call |
-| **Run policy controls** | `testing.lua` — `format_policy_options()` | `:SageFsTestPolicy` → `vim.ui.select` → MCP call |
-| **Toggle live testing** | `testing.lua` — SSE handler | `:SageFsToggleTesting` → MCP call |
-| **Coverage gutter** | `coverage.lua` — `gutter_sign()` | `:SageFsCoverage` toggle → extmarks |
-| **Coverage statusline** | `coverage.lua` — `format_statusline()` | Wire into statusline component |
-| **Type explorer** | `type_explorer.lua` — formatters | `:SageFsExploreType` → drill-down `vim.ui.select` |
-| **History search** | `history.lua` — `format_events()` | `:SageFsHistory` → picker → preview float |
-| **Export .fsx** | `export.lua` — `format_fsx()` | `:SageFsExport` → new buffer |
-| **User autocmds** | `events.lua` — `build_autocmd_data()` | Fire `vim.api.nvim_exec_autocmds` at event points |
-| **Pipeline statusline** | `testing.lua` — `format_pipeline_statusline()` | Wire into statusline component |
+| **Session reset** | Soft reset and hard reset with rebuild. |
+| **Treesitter cell detection** | Structural `;;` detection filtering boundaries in strings/comments. |
 
 ## Requirements
 
@@ -146,10 +129,20 @@ The pure modules above are fully tested and ready. The remaining work is wiring 
 | `:SageFsReset` | Soft reset active FSI session |
 | `:SageFsHardReset` | Hard reset (rebuild) active FSI session |
 | `:SageFsContext` | Show session context (assemblies, namespaces, warmup) |
+| `:SageFsTests` | Show live test results panel |
+| `:SageFsRunTests [pattern]` | Run tests (optional name filter) |
+| `:SageFsTestPolicy` | Configure test run policies per category |
+| `:SageFsToggleTesting` | Toggle live testing on/off |
+| `:SageFsCoverage` | Show coverage summary with per-file breakdown |
+| `:SageFsTypeExplorer` | Browse assemblies → namespaces → types → members |
+| `:SageFsHistory` | Browse FSI eval history with preview |
+| `:SageFsExport` | Export session history as `.fsx` file |
+| `:SageFsCallers <symbol>` | Show callers of a symbol |
+| `:SageFsCallees <symbol>` | Show callees of a symbol |
 
 ## Architecture
 
-Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) outside Neovim) + one integration layer:
+Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) outside Neovim) + a thin integration layer:
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
@@ -159,17 +152,21 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `sse.lua` | ~130 | SSE parser, event classification (22 types), dispatch table |
 | `sessions.lua` | ~80 | Session response parsing, context-sensitive action filtering |
 | `diagnostics.lua` | ~95 | Pure diagnostic grouping and vim.diagnostic conversion |
-| `testing.lua` | ~580 | Live testing state model — test tracking, discovery, result batching, policy, formatting |
+| `testing.lua` | ~650 | Live testing state model — SSE handlers, gutter signs, formatting, policies |
 | `coverage.lua` | ~135 | Line-level coverage state, file/total summaries, gutter signs, statusline |
 | `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
 | `history.lua` | ~70 | FSI event history formatting for picker and preview |
 | `export.lua` | ~25 | Session export to .fsx format |
 | `events.lua` | ~45 | User autocmd event definitions (9 event types) |
-| `hotreload.lua` | ~150 | Hot reload file state and toggle API (vim-dependent) |
 | `hotreload_model.lua` | ~65 | Pure hot reload URL builder, state, picker formatting |
-| `init.lua` | ~1060 | Neovim integration (keymaps, extmarks, curl, autocmds) |
+| **Integration layer** | | |
+| `init.lua` | ~600 | Thin coordinator: SSE dispatch, eval, session API |
+| `transport.lua` | ~100 | HTTP via curl, SSE connections with auto-reconnect |
+| `render.lua` | ~215 | Extmarks, test/coverage gutter signs, floating windows |
+| `commands.lua` | ~440 | All 24 commands, keymaps, autocmds |
+| `hotreload.lua` | ~150 | Hot reload file toggle API |
 
-All modules except `init.lua` and `hotreload.lua` have zero vim API dependencies — they are pure functions testable under busted without a running Neovim instance.
+All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
 
 ### How it communicates with SageFs
 
@@ -195,9 +192,9 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 420 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 49 | Real vim APIs — plugin setup, command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation. |
-| **Total** | | **469** | All passing, zero failures |
+| **Busted (pure)** | `busted` via LuaRocks | 469 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 24 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **Total** | | **521** | All passing, zero failures |
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
 
