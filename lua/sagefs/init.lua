@@ -142,6 +142,28 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
+      -- Recover full test state on (re)connect
+      if testing.needs_recovery(M.testing_state) or M.testing_state.enabled then
+        transport.http_json({
+          method = "GET",
+          url = base_url() .. "/api/live-test-status",
+          timeout = 10,
+          callback = function(ok, raw)
+            if not ok or not raw then return end
+            vim.schedule(function()
+              local parse_ok, data = pcall(vim.json.decode, raw)
+              if parse_ok and data then
+                local parsed = testing.parse_status_response(vim.fn.json_encode(data))
+                if parsed then
+                  M.testing_state = testing.apply_status_response(M.testing_state, parsed)
+                  local buf = vim.api.nvim_get_current_buf()
+                  render.render_test_signs(buf, M.testing_state)
+                end
+              end
+            end)
+          end,
+        })
+      end
     end,
     on_disconnect = function()
       M.state = model.set_status(M.state, "disconnected")
