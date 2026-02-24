@@ -21,6 +21,10 @@ function M.register_commands(plugin, helpers)
     plugin.eval_cell()
   end, { desc = "Evaluate current cell" })
 
+  vim.api.nvim_create_user_command("SageFsEvalAdvance", function()
+    plugin.eval_cell_and_advance()
+  end, { desc = "Evaluate current cell and move to next" })
+
   vim.api.nvim_create_user_command("SageFsEvalFile", function()
     plugin.eval_file()
   end, { desc = "Evaluate entire file" })
@@ -30,9 +34,9 @@ function M.register_commands(plugin, helpers)
   end, { desc = "Clear all cell results" })
 
   vim.api.nvim_create_user_command("SageFsConnect", function()
-    if plugin.health_check() then
-      helpers.start_sse()
-    end
+    plugin.health_check(function(healthy)
+      if healthy then helpers.start_sse() end
+    end)
   end, { desc = "Connect to SageFs" })
 
   vim.api.nvim_create_user_command("SageFsDisconnect", function()
@@ -168,6 +172,78 @@ function M.register_commands(plugin, helpers)
       end,
     })
   end, { desc = "Cancel running evaluation" })
+
+  -- ─── Daemon Lifecycle ──────────────────────────────────────────────────
+
+  vim.api.nvim_create_user_command("SageFsStart", function(opts)
+    local daemon = require("sagefs.daemon")
+    if daemon.is_running(plugin.daemon_state) then
+      helpers.notify("SageFs daemon already running", vim.log.levels.WARN)
+      return
+    end
+    -- Pick project: from args, or prompt with vim.ui.select
+    local function start_with_project(project)
+      plugin.daemon_state = daemon.mark_starting(plugin.daemon_state, project, plugin.config.port)
+      local cmd = daemon.start_command({ project = project, port = plugin.config.port })
+      local job_id = vim.fn.jobstart(cmd, {
+        on_exit = function(_, code)
+          vim.schedule(function()
+            if code ~= 0 then
+              plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "exit code " .. code)
+              helpers.notify("SageFs daemon exited with code " .. code, vim.log.levels.ERROR)
+            else
+              plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
+              helpers.notify("SageFs daemon stopped")
+            end
+          end)
+        end,
+      })
+      if job_id > 0 then
+        plugin.daemon_state = daemon.mark_running(plugin.daemon_state, job_id)
+        helpers.notify("SageFs daemon started for " .. project)
+        -- Auto-connect after a short delay
+        vim.defer_fn(function()
+          plugin.health_check(function(healthy)
+            if healthy then helpers.start_sse() end
+          end)
+        end, 2000)
+      else
+        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "jobstart failed")
+        helpers.notify("Failed to start SageFs daemon", vim.log.levels.ERROR)
+      end
+    end
+
+    if opts.args and opts.args ~= "" then
+      start_with_project(opts.args)
+    else
+      local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
+      if #fsproj_files == 1 then
+        start_with_project(fsproj_files[1])
+      elseif #fsproj_files > 1 then
+        local names = {}
+        for _, f in ipairs(fsproj_files) do
+          table.insert(names, vim.fn.fnamemodify(f, ":~:."))
+        end
+        vim.ui.select(names, { prompt = "Start SageFs with project:" }, function(choice)
+          if choice then start_with_project(choice) end
+        end)
+      else
+        helpers.notify("No .fsproj files found", vim.log.levels.ERROR)
+      end
+    end
+  end, { nargs = "?", complete = "file", desc = "Start SageFs daemon" })
+
+  vim.api.nvim_create_user_command("SageFsStop", function()
+    local daemon = require("sagefs.daemon")
+    if not daemon.is_running(plugin.daemon_state) then
+      helpers.notify("SageFs daemon is not running", vim.log.levels.WARN)
+      return
+    end
+    helpers.stop_sse()
+    vim.fn.jobstop(plugin.daemon_state.job_id)
+    plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
+    helpers.notify("SageFs daemon stopped")
+  end, { desc = "Stop SageFs daemon" })
 
   -- ─── Coverage Commands ───────────────────────────────────────────────────
 
@@ -395,6 +471,8 @@ function M.register_keymaps(plugin, helpers)
     { desc = "SageFs: Evaluate cell", silent = true })
   vim.keymap.set("v", "<A-CR>", smart_eval_sel,
     { desc = "SageFs: Evaluate selection", silent = true })
+  vim.keymap.set("n", "<S-A-CR>", function() plugin.eval_cell_and_advance() end,
+    { desc = "SageFs: Evaluate cell and advance", silent = true })
 
   vim.keymap.set("n", "<leader>se", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })

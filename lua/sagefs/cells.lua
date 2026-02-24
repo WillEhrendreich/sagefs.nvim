@@ -154,6 +154,20 @@ function M.find_all_cells(lines)
   return cells
 end
 
+--- Find the start line of the next cell after the cursor's current cell.
+--- Returns nil if cursor is in the last cell.
+---@param lines string[]
+---@param cursor_line number 1-indexed
+---@return number|nil 1-indexed start line of next cell
+function M.find_next_cell_start(lines, cursor_line)
+  if #lines == 0 then return nil end
+  local cell = M.find_cell(lines, cursor_line)
+  if not cell then return nil end
+  local next_start = cell.end_line + 1
+  if next_start > #lines then return nil end
+  return next_start
+end
+
 --- Prepare code for submission to /exec
 ---@param code string
 ---@return string|nil

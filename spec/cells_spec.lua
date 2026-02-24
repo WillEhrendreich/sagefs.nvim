@@ -511,3 +511,85 @@ describe("cells.find_boundaries [perf]", function()
       string.format("100 iterations took %.1fms (%.1fms each), too slow", elapsed, elapsed / 100))
   end)
 end)
+
+-- ─── find_next_cell_start: cursor navigation after eval ──────────────────────
+
+describe("cells.find_next_cell_start", function()
+  it("returns the line after the current cell boundary", function()
+    local lines = {
+      "let x = 1;;",      -- line 1 (boundary)
+      "let y = 2;;",      -- line 2 (boundary)
+    }
+    -- Cursor in cell 1 (line 1) → next cell starts at line 2
+    local next_start = cells.find_next_cell_start(lines, 1)
+    assert.are.equal(2, next_start)
+  end)
+
+  it("returns nil when cursor is in last cell", function()
+    local lines = {
+      "let x = 1;;",
+      "let y = 2;;",
+    }
+    -- Cursor in cell 2 (line 2) → no next cell
+    local next_start = cells.find_next_cell_start(lines, 2)
+    assert.is_nil(next_start)
+  end)
+
+  it("handles multi-line cells", function()
+    local lines = {
+      "let x =",          -- line 1
+      "  1;;",            -- line 2 (boundary)
+      "let y =",          -- line 3
+      "  2;;",            -- line 4 (boundary)
+    }
+    -- Cursor on line 1 → next cell starts at line 3
+    local next_start = cells.find_next_cell_start(lines, 1)
+    assert.are.equal(3, next_start)
+  end)
+
+  it("returns nil for single-cell buffer", function()
+    local lines = {
+      "let x = 1;;",
+    }
+    local next_start = cells.find_next_cell_start(lines, 1)
+    assert.is_nil(next_start)
+  end)
+
+  it("returns nil for empty buffer", function()
+    local next_start = cells.find_next_cell_start({}, 1)
+    assert.is_nil(next_start)
+  end)
+
+  it("works from middle of multi-line cell", function()
+    local lines = {
+      "let x =",          -- line 1
+      "  1 +",            -- line 2
+      "  2;;",            -- line 3 (boundary)
+      "let y = 3;;",      -- line 4
+    }
+    -- Cursor on line 2 (middle of first cell) → next cell starts at line 4
+    local next_start = cells.find_next_cell_start(lines, 2)
+    assert.are.equal(4, next_start)
+  end)
+
+  it("handles trailing unterminated cell as last cell", function()
+    local lines = {
+      "let x = 1;;",      -- line 1 (boundary)
+      "let y = 2",        -- line 2 (no boundary)
+      "// still editing",  -- line 3
+    }
+    -- Cursor on line 1 → next cell starts at line 2
+    local next_start = cells.find_next_cell_start(lines, 1)
+    assert.are.equal(2, next_start)
+  end)
+
+  it("returns nil when cursor is in trailing unterminated cell", function()
+    local lines = {
+      "let x = 1;;",      -- line 1 (boundary)
+      "let y = 2",        -- line 2
+    }
+    -- Cursor on line 2 (unterminated last cell) → nil
+    local next_start = cells.find_next_cell_start(lines, 2)
+    assert.is_nil(next_start)
+  end)
+end)

@@ -12,6 +12,7 @@ local testing = require("sagefs.testing")
 local coverage = require("sagefs.coverage")
 local events = require("sagefs.events")
 local completions = require("sagefs.completions")
+local daemon = require("sagefs.daemon")
 local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
@@ -38,12 +39,12 @@ M.config = {
 M.state = model.new()
 M.testing_state = testing.new()
 M.coverage_state = coverage.new()
+M.daemon_state = daemon.new()
 M.active_session = nil
 M.session_list = {}
 
--- SSE connection handles (managed by transport.lua)
+-- SSE connection handle (managed by transport.lua)
 local events_sse = nil
-local diag_sse = nil
 local diag_ns = nil
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -238,51 +239,19 @@ local function start_sse()
     reconnect_delay = 3000,
   })
   events_sse.start()
-
-  -- Diagnostics SSE (separate endpoint)
-  start_diagnostics()
 end
 
 local function stop_sse()
   if events_sse then events_sse.stop(); events_sse = nil end
-  stop_diagnostics()
+  if diag_ns then vim.diagnostic.reset(diag_ns) end
   M.state = model.set_status(M.state, "disconnected")
   fire_user_event("disconnected")
 end
 
--- ─── Diagnostics SSE ──────────────────────────────────────────────────────────
-
-function start_diagnostics()
-  if diag_sse then return end
-  diag_ns = diag_ns or vim.api.nvim_create_namespace("sagefs_diagnostics")
-
-  diag_sse = transport.connect_sse(
-    string.format("http://localhost:%d/diagnostics", M.config.port), {
-    on_events = function(events)
-      for _, event in ipairs(events) do
-        if event.data then
-          vim.schedule(function()
-            local ok, data = pcall(vim.json.decode, event.data)
-            if ok and data and data.diagnostics then
-              M.apply_diagnostics(data.diagnostics)
-            end
-          end)
-        end
-      end
-    end,
-    auto_reconnect = true,
-    reconnect_delay = 3000,
-  })
-  diag_sse.start()
-end
-
-function stop_diagnostics()
-  if diag_sse then diag_sse.stop(); diag_sse = nil end
-  if diag_ns then vim.diagnostic.reset(diag_ns) end
-end
+-- ─── Diagnostics ─────────────────────────────────────────────────────────────
 
 function M.apply_diagnostics(diags)
-  if not diag_ns then return end
+  diag_ns = diag_ns or vim.api.nvim_create_namespace("sagefs_diagnostics")
   local grouped = diagnostics.group_by_file(diags)
   for file, file_diags in pairs(grouped) do
     local vim_diags = diagnostics.to_vim_diagnostics(file_diags)
@@ -367,6 +336,45 @@ function M.eval_cell()
   render.render_all(buf, M.state)
   render.flash_cell(buf, cell.start_line, cell.end_line)
   post_exec(code, buf, cell_id)
+end
+
+function M.eval_cell_and_advance()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local cursor_line = cursor[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  local cell = cells.find_cell(lines, cursor_line)
+  if not cell then
+    notify("No cell found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local code = cells.prepare_code(cell.text)
+  if not code then
+    notify("Cell is empty", vim.log.levels.WARN)
+    return
+  end
+
+  local all = cells.find_all_cells(lines)
+  local cell_id = 1
+  for _, c in ipairs(all) do
+    if c.start_line == cell.start_line then
+      cell_id = c.id
+      break
+    end
+  end
+
+  M.state = model.set_cell_state(M.state, cell_id, "running")
+  render.render_all(buf, M.state)
+  render.flash_cell(buf, cell.start_line, cell.end_line)
+  post_exec(code, buf, cell_id)
+
+  -- Move cursor to next cell start
+  local next_start = cells.find_next_cell_start(lines, cursor_line)
+  if next_start then
+    vim.api.nvim_win_set_cursor(0, { next_start, 0 })
+  end
 end
 
 function M.eval_selection()
@@ -706,19 +714,26 @@ end
 
 -- ─── Health Check & Statusline ────────────────────────────────────────────────
 
-function M.health_check()
-  local cmd = { "curl", "-s", "--max-time", "2", base_url() .. "/health" }
-  local result = vim.fn.system(cmd)
-  if result:match('"healthy"') then
-    notify("Connected to SageFs on port " .. M.config.port)
-    return true
-  elseif result:match('"error"') or result:match('"success"') then
-    notify("SageFs reachable (no session for this directory)")
-    return true
-  else
-    notify("SageFs not available on port " .. M.config.port, vim.log.levels.ERROR)
-    return false
-  end
+function M.health_check(callback)
+  transport.http_json({
+    method = "GET",
+    url = base_url() .. "/health",
+    timeout = 2,
+    callback = function(ok, raw)
+      vim.schedule(function()
+        if ok and raw and raw:match('"healthy"') then
+          notify("Connected to SageFs on port " .. M.config.port)
+          if callback then callback(true) end
+        elseif ok and raw and (raw:match('"error"') or raw:match('"success"')) then
+          notify("SageFs reachable (no session for this directory)")
+          if callback then callback(true) end
+        else
+          notify("SageFs not available on port " .. M.config.port, vim.log.levels.ERROR)
+          if callback then callback(false) end
+        end
+      end)
+    end,
+  })
 end
 
 function M.statusline()
@@ -788,23 +803,25 @@ function M.setup(opts)
 
   if M.config.auto_connect then
     vim.defer_fn(function()
-      if M.health_check() then
-        start_sse()
-        M.list_sessions(function(result)
-          if result.ok and not M.active_session and #result.sessions == 0 then
-            local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
-            if #fsproj_files > 0 then
-              local names = {}
-              for _, f in ipairs(fsproj_files) do
-                table.insert(names, vim.fn.fnamemodify(f, ":~:."))
+      M.health_check(function(healthy)
+        if healthy then
+          start_sse()
+          M.list_sessions(function(result)
+            if result.ok and not M.active_session and #result.sessions == 0 then
+              local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
+              if #fsproj_files > 0 then
+                local names = {}
+                for _, f in ipairs(fsproj_files) do
+                  table.insert(names, vim.fn.fnamemodify(f, ":~:."))
+                end
+                vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
+                  if choice then M.create_session(choice) end
+                end)
               end
-              vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                if choice then M.create_session(choice) end
-              end)
             end
-          end
-        end)
-      end
+          end)
+        end
+      end)
     end, 500)
   end
 

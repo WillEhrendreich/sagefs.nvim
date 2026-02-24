@@ -112,7 +112,8 @@ describe("plugin setup", function()
   it("registers all expected user commands", function()
     local cmds = vim.api.nvim_get_commands({})
     local expected = {
-      "SageFsEval", "SageFsEvalFile", "SageFsClear", "SageFsConnect",
+      "SageFsEval", "SageFsEvalAdvance", "SageFsEvalFile",
+      "SageFsClear", "SageFsConnect",
       "SageFsDisconnect", "SageFsStatus", "SageFsSessions",
       "SageFsCreateSession", "SageFsHotReload", "SageFsWatchAll",
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
@@ -120,6 +121,7 @@ describe("plugin setup", function()
       "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
       "SageFsCancel",
+      "SageFsStart", "SageFsStop",
     }
     for _, name in ipairs(expected) do
       assert_truthy(cmds[name], "missing command: " .. name)
