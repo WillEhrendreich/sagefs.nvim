@@ -159,12 +159,22 @@ All modules except `init.lua` and `hotreload.lua` have zero vim API dependencies
 ## Running Tests
 
 ```cmd
-test.cmd              # Run full suite
-busted spec/cells_spec.lua  # Run a single spec
-busted --filter "find_cell" # Filter by test name
+test.cmd                        # Run full suite (busted + integration)
+busted spec/cells_spec.lua      # Run a single busted spec
+busted --filter "find_cell"     # Filter by test name
+nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 ```
 
-Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks.
+### Test architecture
+
+| Suite | Runner | Count | What it covers |
+|-------|--------|-------|----------------|
+| **Busted (pure)** | `busted` via LuaRocks | 250 | Pure module logic — cells, format, model, SSE, sessions, testing. Property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 49 | Real vim APIs — plugin setup, command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation. |
+| **RED (planned)** | `busted` | 63 | API contracts for features not yet implemented — coverage module, hotreload pure extraction, testing UI functions. These tests define what GREEN looks like. |
+| **Total** | | **362** | |
+
+Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
 
 ## SageFs MCP Tools Reference
 
