@@ -1,5 +1,6 @@
--- sagefs/init.lua — Neovim integration for SageFs notebook experience
--- Connects pure modules (cells, format, model, sse) to Neovim APIs
+-- sagefs/init.lua — Thin coordinator for SageFs Neovim plugin
+-- Wires pure modules to transport, render, and commands layers.
+
 local cells = require("sagefs.cells")
 local format = require("sagefs.format")
 local model = require("sagefs.model")
@@ -8,6 +9,9 @@ local sse_parser = require("sagefs.sse")
 local hotreload = require("sagefs.hotreload")
 local diagnostics = require("sagefs.diagnostics")
 local testing = require("sagefs.testing")
+local transport = require("sagefs.transport")
+local render = require("sagefs.render")
+local commands = require("sagefs.commands")
 
 local M = {}
 
@@ -30,11 +34,13 @@ M.config = {
 
 M.state = model.new()
 M.testing_state = testing.new()
-M.active_session = nil -- {id, status, projects, working_directory, ...}
-M.session_list = {}    -- cached from last list_sessions call
-local ns = nil -- extmark namespace, created on setup()
-local sse_job = nil
-local sse_buffer = ""
+M.active_session = nil
+M.session_list = {}
+
+-- SSE connection handles (managed by transport.lua)
+local events_sse = nil
+local diag_sse = nil
+local diag_ns = nil
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -50,105 +56,112 @@ local function notify(msg, level)
   vim.notify("[SageFs] " .. msg, level or vim.log.levels.INFO)
 end
 
--- ─── Highlight Setup ─────────────────────────────────────────────────────────
+-- ─── SSE Dispatch ─────────────────────────────────────────────────────────────
 
-local function setup_highlights()
-  local hl = M.config.highlight
-  vim.api.nvim_set_hl(0, "SageFsSuccess", hl.success)
-  vim.api.nvim_set_hl(0, "SageFsError", hl.error)
-  vim.api.nvim_set_hl(0, "SageFsOutput", hl.output)
-  vim.api.nvim_set_hl(0, "SageFsRunning", hl.running)
-  vim.api.nvim_set_hl(0, "SageFsStale", hl.stale)
-  vim.api.nvim_set_hl(0, "SageFsCellBorder", { fg = "#585b70" })
-end
-
--- ─── Extmark Rendering ──────────────────────────────────────────────────────
-
-local function clear_extmarks(buf)
-  if ns then
-    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  end
-end
-
-local function render_cell_result(buf, boundary_line, cell_id)
-  if not ns then return end
-  local cell = model.get_cell_state(M.state, cell_id)
-  local render = format.build_render_options(cell, cell_id)
-  if not render then return end
-
-  -- Inline result on the ;; line
-  local virt_text = {}
-  if render.inline then
-    table.insert(virt_text, { render.inline.text, render.inline.hl })
-  end
-
-  local opts = {
-    id = cell_id * 1000,
-    virt_text = #virt_text > 0 and virt_text or nil,
-    virt_text_pos = "eol",
-    sign_text = render.sign.text,
-    sign_hl_group = render.sign.hl,
-    priority = 100,
-  }
-
-  -- boundary_line is 1-indexed, nvim_buf_set_extmark is 0-indexed
-  pcall(vim.api.nvim_buf_set_extmark, buf, ns, boundary_line - 1, 0, opts)
-
-  -- Virtual lines for expanded output
-  if render.virtual_lines and #render.virtual_lines > 0 then
-    local virt_lines = {}
-    for _, vl in ipairs(render.virtual_lines) do
-      table.insert(virt_lines, { { vl.text, vl.hl } })
-    end
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, boundary_line - 1, 0, {
-      id = cell_id * 1000 + 1,
-      virt_lines = virt_lines,
-      virt_lines_above = false,
-    })
-  end
-end
-
-local function render_all_extmarks(buf)
-  if not ns then return end
-  clear_extmarks(buf)
-
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local all_cells = cells.find_all_cells(lines)
-
-  for _, cell in ipairs(all_cells) do
-    render_cell_result(buf, cell.end_line, cell.id)
-
-    -- CodeLens-style "▶ Eval" virtual text above the ;; line
-    local cell_state = model.get_cell_state(M.state, cell.id)
-    if cell_state.status == "idle" or cell_state.status == "stale" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, cell.end_line - 1, 0, {
-        id = cell.id * 1000 + 2,
-        virt_lines = { { { "▶ Eval", "SageFsRunning" } } },
-        virt_lines_above = true,
-      })
+local function on_sse_events(events)
+  for _, event in ipairs(events) do
+    local action = sse_parser.classify_event(event)
+    if action == "state_changed" then
+      M.state = model.set_status(M.state, "connected")
+    elseif action == "tests_discovered" then
+      local ok, data = pcall(vim.json.decode, event.data)
+      if ok and data then
+        M.testing_state = testing.handle_tests_discovered(M.testing_state, data)
+      end
+    elseif action == "test_result" then
+      local ok, data = pcall(vim.json.decode, event.data)
+      if ok and data then
+        M.testing_state = testing.handle_test_result(M.testing_state, data)
+      end
+    elseif action == "test_run_started" then
+      local ok, data = pcall(vim.json.decode, event.data)
+      if ok and data then
+        M.testing_state = testing.handle_run_started(M.testing_state, data)
+      end
+    elseif action == "test_run_completed" then
+      local ok, data = pcall(vim.json.decode, event.data)
+      if ok and data then
+        M.testing_state = testing.handle_run_completed(M.testing_state, data)
+      end
     end
   end
 end
 
--- ─── Flash Animation ─────────────────────────────────────────────────────────
+-- ─── SSE Lifecycle ────────────────────────────────────────────────────────────
 
-local function flash_cell(buf, start_line, end_line)
-  if not ns then return end
-  local flash_ns = vim.api.nvim_create_namespace("sagefs_flash")
+local function start_sse()
+  -- Primary events SSE
+  if events_sse then events_sse.stop() end
+  events_sse = transport.connect_sse(base_url() .. "/events", {
+    on_events = function(events)
+      on_sse_events(events)
+    end,
+    on_connect = function()
+      M.state = model.set_status(M.state, "connected")
+    end,
+    on_disconnect = function()
+      M.state = model.set_status(M.state, "disconnected")
+    end,
+    auto_reconnect = true,
+    reconnect_delay = 3000,
+  })
+  events_sse.start()
 
-  for i = start_line, end_line do
-    pcall(vim.api.nvim_buf_add_highlight, buf, flash_ns, "SageFsRunning", i - 1, 0, -1)
-  end
-
-  vim.defer_fn(function()
-    pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
-  end, 150)
+  -- Diagnostics SSE (separate endpoint)
+  start_diagnostics()
 end
 
--- ─── HTTP: POST /exec ────────────────────────────────────────────────────────
+local function stop_sse()
+  if events_sse then events_sse.stop(); events_sse = nil end
+  stop_diagnostics()
+  M.state = model.set_status(M.state, "disconnected")
+end
 
---- handle_result is the named seam the panel recommended.
---- Today it's called after sync POST; tomorrow from SSE handler.
+-- ─── Diagnostics SSE ──────────────────────────────────────────────────────────
+
+function start_diagnostics()
+  if diag_sse then return end
+  diag_ns = diag_ns or vim.api.nvim_create_namespace("sagefs_diagnostics")
+
+  diag_sse = transport.connect_sse(
+    string.format("http://localhost:%d/diagnostics", M.config.port), {
+    on_events = function(events)
+      for _, event in ipairs(events) do
+        if event.data then
+          vim.schedule(function()
+            local ok, data = pcall(vim.json.decode, event.data)
+            if ok and data and data.diagnostics then
+              M.apply_diagnostics(data.diagnostics)
+            end
+          end)
+        end
+      end
+    end,
+    auto_reconnect = true,
+    reconnect_delay = 3000,
+  })
+  diag_sse.start()
+end
+
+function stop_diagnostics()
+  if diag_sse then diag_sse.stop(); diag_sse = nil end
+  if diag_ns then vim.diagnostic.reset(diag_ns) end
+end
+
+function M.apply_diagnostics(diags)
+  if not diag_ns then return end
+  local grouped = diagnostics.group_by_file(diags)
+  for file, file_diags in pairs(grouped) do
+    local vim_diags = diagnostics.to_vim_diagnostics(file_diags)
+    local bufnr = vim.fn.bufnr(file)
+    if bufnr ~= -1 then
+      vim.diagnostic.set(diag_ns, bufnr, vim_diags)
+    end
+  end
+end
+
+-- ─── HTTP: eval + session API ─────────────────────────────────────────────────
+
 local function handle_result(buf, cell_id, result)
   if result.ok then
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output)
@@ -156,70 +169,38 @@ local function handle_result(buf, cell_id, result)
     M.state = model.set_cell_state(M.state, cell_id, "error", result.error)
   end
   vim.schedule(function()
-    render_all_extmarks(buf)
+    render.render_all(buf, M.state)
   end)
 end
 
 local function post_exec(code, buf, cell_id)
-  local json_body = vim.fn.json_encode({
-    code = code,
-    working_directory = vim.fn.getcwd(),
-  })
-
-  -- Use temp file for large payloads
-  local use_temp = #json_body > 7000
-  local temp_file = nil
-
-  if use_temp then
-    temp_file = vim.fn.tempname() .. ".json"
-    local f = io.open(temp_file, "w")
-    if f then
-      f:write(json_body)
-      f:close()
-    end
-  end
-
-  local cmd
-  if use_temp then
-    cmd = {
-      "curl", "-X", "POST", base_url() .. "/exec",
-      "-H", "Content-Type: application/json",
-      "-d", "@" .. temp_file,
-      "--max-time", "60", "--silent", "--show-error",
-    }
-  else
-    cmd = {
-      "curl", "-X", "POST", base_url() .. "/exec",
-      "-H", "Content-Type: application/json",
-      "-d", json_body,
-      "--max-time", "30", "--silent", "--show-error",
-    }
-  end
-
-  local stdout_data = {}
-
-  vim.fn.jobstart(cmd, {
-    stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then stdout_data = data end
-    end,
-    on_exit = function(_, exit_code)
-      vim.schedule(function()
-        if temp_file then os.remove(temp_file) end
-
-        if exit_code == 0 then
-          local raw = table.concat(stdout_data, "\n")
-          local result = format.parse_exec_response(raw)
-          handle_result(buf, cell_id, result)
-        else
-          handle_result(buf, cell_id, { ok = false, error = "HTTP request failed" })
-        end
-      end)
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/exec",
+    body = { code = code, working_directory = vim.fn.getcwd() },
+    timeout = 60,
+    callback = function(ok, raw)
+      if ok then
+        local result = format.parse_exec_response(raw)
+        handle_result(buf, cell_id, result)
+      else
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed" })
+      end
     end,
   })
 end
 
--- ─── Eval: <Alt-Enter> Handler ───────────────────────────────────────────────
+local function session_http(method, path, body, callback)
+  transport.http_json({
+    method = method,
+    url = base_url() .. path,
+    body = body,
+    timeout = 5,
+    callback = callback,
+  })
+end
+
+-- ─── Eval Functions ───────────────────────────────────────────────────────────
 
 function M.eval_cell()
   local buf = vim.api.nvim_get_current_buf()
@@ -240,7 +221,6 @@ function M.eval_cell()
     return
   end
 
-  -- Find cell ID
   local all = cells.find_all_cells(lines)
   local cell_id = 1
   for _, c in ipairs(all) do
@@ -250,16 +230,11 @@ function M.eval_cell()
     end
   end
 
-  -- Mark as running + flash
   M.state = model.set_cell_state(M.state, cell_id, "running")
-  render_all_extmarks(buf)
-  flash_cell(buf, cell.start_line, cell.end_line)
-
-  -- POST to SageFs
+  render.render_all(buf, M.state)
+  render.flash_cell(buf, cell.start_line, cell.end_line)
   post_exec(code, buf, cell_id)
 end
-
--- ─── Eval visual selection ───────────────────────────────────────────────────
 
 function M.eval_selection()
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", false)
@@ -277,13 +252,10 @@ function M.eval_selection()
     return
   end
 
-  -- Use cell_id 0 for ad-hoc selections
   M.state = model.set_cell_state(M.state, 0, "running")
-  flash_cell(buf, start_pos[2], end_pos[2])
+  render.flash_cell(buf, start_pos[2], end_pos[2])
   post_exec(code, buf, 0)
 end
-
--- ─── Eval file ───────────────────────────────────────────────────────────────
 
 function M.eval_file()
   local buf = vim.api.nvim_get_current_buf()
@@ -298,7 +270,7 @@ function M.eval_file()
 
   notify("Evaluating file: " .. vim.fn.expand("%:t"))
   M.state = model.set_cell_state(M.state, 0, "running")
-  flash_cell(buf, 1, #lines)
+  render.flash_cell(buf, 1, #lines)
   post_exec(code, buf, 0)
 end
 
@@ -355,95 +327,13 @@ function M.omnifunc(findstart, base)
   return items
 end
 
--- ─── SSE Subscription ────────────────────────────────────────────────────────
-
-local function start_sse()
-  if sse_job then
-    pcall(vim.fn.jobstop, sse_job)
-  end
-  sse_buffer = ""
-
-  sse_job = vim.fn.jobstart(
-    { "curl", "--no-buffer", "-N", base_url() .. "/events", "--silent" },
-    {
-      on_stdout = function(_, data, _)
-        for _, chunk in ipairs(data) do
-          sse_buffer = sse_buffer .. chunk .. "\n"
-          local events, remainder = sse_parser.parse_chunk(sse_buffer)
-          sse_buffer = remainder
-
-          for _, event in ipairs(events) do
-            if event.type == "state" and event.data then
-              -- Server pushed state — update connection status
-              M.state = model.set_status(M.state, "connected")
-            end
-          end
-        end
-      end,
-      on_exit = function(_, code, _)
-        sse_job = nil
-        if code ~= 0 then
-          M.state = model.set_status(M.state, "disconnected")
-          -- Reconnect after delay
-          vim.defer_fn(function()
-            if M.config.auto_connect then
-              start_sse()
-            end
-          end, 3000)
-        end
-      end,
-    }
-  )
-
-  if sse_job and sse_job > 0 then
-    M.state = model.set_status(M.state, "connected")
-    M.start_diagnostics()
-  end
-end
-
-local function stop_sse()
-  if sse_job then
-    pcall(vim.fn.jobstop, sse_job)
-    sse_job = nil
-  end
-  M.stop_diagnostics()
-  M.state = model.set_status(M.state, "disconnected")
-end
-
--- ─── Session API: generic HTTP helper ────────────────────────────────────────
-
-local function session_http(method, path, body, callback)
-  local cmd = { "curl", "-X", method, base_url() .. path,
-    "-H", "Content-Type: application/json",
-    "--max-time", "5", "--silent", "--show-error" }
-  if body then
-    table.insert(cmd, "-d")
-    table.insert(cmd, vim.fn.json_encode(body))
-  end
-
-  local stdout_data = {}
-  vim.fn.jobstart(cmd, {
-    stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then stdout_data = data end
-    end,
-    on_exit = function(_, exit_code)
-      vim.schedule(function()
-        local raw = table.concat(stdout_data, "\n")
-        callback(exit_code == 0, raw)
-      end)
-    end,
-  })
-end
-
--- ─── Session API: public functions ───────────────────────────────────────────
+-- ─── Session API ──────────────────────────────────────────────────────────────
 
 function M.list_sessions(callback)
   session_http("GET", "/api/sessions", nil, function(ok, raw)
     local result = sessions.parse_sessions_response(ok and raw or nil)
     if result.ok then
       M.session_list = result.sessions
-      -- Auto-detect active session for current working directory
       local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
       if cwd_session then
         M.active_session = cwd_session
@@ -462,7 +352,6 @@ function M.create_session(projects, working_dir, callback)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
       notify(result.message or "Session created")
-      -- Refresh session list to pick up the new session
       M.list_sessions()
     else
       notify(result.error or "Failed to create session", vim.log.levels.ERROR)
@@ -478,7 +367,7 @@ function M.switch_session(session_id, callback)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
       notify("Switched to session " .. (result.session_id or session_id))
-      M.list_sessions() -- refresh
+      M.list_sessions()
     else
       notify(result.error or "Failed to switch", vim.log.levels.ERROR)
     end
@@ -496,7 +385,7 @@ function M.stop_session(session_id, callback)
       if M.active_session and M.active_session.id == session_id then
         M.active_session = nil
       end
-      M.list_sessions() -- refresh
+      M.list_sessions()
     else
       notify(result.error or "Failed to stop session", vim.log.levels.ERROR)
     end
@@ -504,26 +393,18 @@ function M.stop_session(session_id, callback)
   end)
 end
 
--- ─── Reset / Hard-Reset ──────────────────────────────────────────────────────
-
 function M.reset_session(callback)
   session_http("POST", "/reset", {}, function(ok, raw)
-    if ok then
-      notify("Session reset")
-    else
-      notify("Failed to reset session", vim.log.levels.ERROR)
-    end
+    if ok then notify("Session reset")
+    else notify("Failed to reset session", vim.log.levels.ERROR) end
     if callback then callback(ok) end
   end)
 end
 
 function M.hard_reset(callback)
   session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
-    if ok then
-      notify("Hard reset complete (rebuild)")
-    else
-      notify("Failed to hard reset", vim.log.levels.ERROR)
-    end
+    if ok then notify("Hard reset complete (rebuild)")
+    else notify("Failed to hard reset", vim.log.levels.ERROR) end
     if callback then callback(ok) end
   end)
 end
@@ -536,163 +417,60 @@ function M.show_session_context()
     notify("No active session", vim.log.levels.WARN)
     return
   end
-  local url = string.format(
-    "http://localhost:%d/api/sessions/%s/warmup-context",
-    M.config.dashboard_port, sid)
-  local cmd = { "curl", "-X", "GET", url,
-    "--max-time", "5", "--silent", "--show-error" }
-  local stdout_data = {}
-  vim.fn.jobstart(cmd, {
-    stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then stdout_data = data end
-    end,
-    on_exit = function(_, exit_code)
-      vim.schedule(function()
-        local raw = table.concat(stdout_data, "\n")
-        if exit_code ~= 0 or raw == "" then
-          notify("Failed to fetch session context", vim.log.levels.ERROR)
-          return
+  transport.http_json({
+    method = "GET",
+    url = string.format("http://localhost:%d/api/sessions/%s/warmup-context",
+      M.config.dashboard_port, sid),
+    timeout = 5,
+    callback = function(ok, raw)
+      if not ok or raw == "" then
+        notify("Failed to fetch session context", vim.log.levels.ERROR)
+        return
+      end
+      local parse_ok, ctx = pcall(vim.json.decode, raw)
+      if not parse_ok or type(ctx) ~= "table" then
+        notify("Invalid session context response", vim.log.levels.ERROR)
+        return
+      end
+      local lines = { "SageFs Session Context", string.rep("─", 40) }
+      table.insert(lines, string.format("Session: %s", sid))
+      if ctx.WarmupDurationMs then
+        table.insert(lines, string.format("Warmup: %dms", ctx.WarmupDurationMs))
+      end
+      if ctx.AssembliesLoaded then
+        table.insert(lines, "")
+        table.insert(lines, string.format("Assemblies (%d):", #ctx.AssembliesLoaded))
+        for _, a in ipairs(ctx.AssembliesLoaded) do
+          table.insert(lines, string.format("  %s (%d ns, %d mod)",
+            a.Name or "?", a.NamespaceCount or 0, a.ModuleCount or 0))
         end
-        local ok, ctx = pcall(vim.json.decode, raw)
-        if not ok or type(ctx) ~= "table" then
-          notify("Invalid session context response", vim.log.levels.ERROR)
-          return
+      end
+      if ctx.NamespacesOpened then
+        table.insert(lines, "")
+        table.insert(lines, string.format("Namespaces Opened (%d):", #ctx.NamespacesOpened))
+        for _, n in ipairs(ctx.NamespacesOpened) do
+          local kind = n.IsModule and "module" or "namespace"
+          table.insert(lines, string.format("  %s (%s, %s)",
+            n.Name or "?", kind, n.Source or "?"))
         end
-        -- Build display lines
-        local lines = { "SageFs Session Context", string.rep("─", 40) }
-        table.insert(lines, string.format("Session: %s", sid))
-        if ctx.WarmupDurationMs then
-          table.insert(lines, string.format("Warmup: %dms", ctx.WarmupDurationMs))
-        end
-        if ctx.AssembliesLoaded then
-          table.insert(lines, "")
-          table.insert(lines, string.format("Assemblies (%d):", #ctx.AssembliesLoaded))
-          for _, a in ipairs(ctx.AssembliesLoaded) do
-            table.insert(lines, string.format("  %s (%d ns, %d mod)",
-              a.Name or "?", a.NamespaceCount or 0, a.ModuleCount or 0))
+      end
+      if ctx.FailedOpens and #ctx.FailedOpens > 0 then
+        table.insert(lines, "")
+        table.insert(lines, string.format("Failed Opens (%d):", #ctx.FailedOpens))
+        for _, f in ipairs(ctx.FailedOpens) do
+          if type(f) == "table" then
+            table.insert(lines, "  " .. table.concat(f, " → "))
+          else
+            table.insert(lines, "  " .. tostring(f))
           end
         end
-        if ctx.NamespacesOpened then
-          table.insert(lines, "")
-          table.insert(lines, string.format("Namespaces Opened (%d):", #ctx.NamespacesOpened))
-          for _, n in ipairs(ctx.NamespacesOpened) do
-            local kind = n.IsModule and "module" or "namespace"
-            table.insert(lines, string.format("  %s (%s, %s)",
-              n.Name or "?", kind, n.Source or "?"))
-          end
-        end
-        if ctx.FailedOpens and #ctx.FailedOpens > 0 then
-          table.insert(lines, "")
-          table.insert(lines, string.format("Failed Opens (%d):", #ctx.FailedOpens))
-          for _, f in ipairs(ctx.FailedOpens) do
-            if type(f) == "table" then
-              table.insert(lines, "  " .. table.concat(f, " → "))
-            else
-              table.insert(lines, "  " .. tostring(f))
-            end
-          end
-        end
-        -- Show in floating window
-        local buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-        vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
-        vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
-        local width = 60
-        for _, l in ipairs(lines) do
-          if #l + 2 > width then width = #l + 2 end
-        end
-        local height = math.min(#lines, 30)
-        local win = vim.api.nvim_open_win(buf, true, {
-          relative = "editor",
-          width = width,
-          height = height,
-          row = math.floor((vim.o.lines - height) / 2),
-          col = math.floor((vim.o.columns - width) / 2),
-          style = "minimal",
-          border = "rounded",
-          title = " Session Context ",
-          title_pos = "center",
-        })
-        vim.keymap.set("n", "q", function()
-          vim.api.nvim_win_close(win, true)
-        end, { buffer = buf, nowait = true })
-      end)
+      end
+      render.show_float(lines, { title = "Session Context" })
     end,
   })
 end
 
--- ─── Diagnostics Integration ─────────────────────────────────────────────────
-
-local diag_ns = nil
-local diag_sse_job = nil
-local diag_buffer = ""
-
-function M.start_diagnostics()
-  if diag_sse_job then return end
-  diag_ns = diag_ns or vim.api.nvim_create_namespace("sagefs_diagnostics")
-  local url = string.format("http://localhost:%d/diagnostics", M.config.port)
-  diag_buffer = ""
-
-  diag_sse_job = vim.fn.jobstart({ "curl", "-N", "--silent", "--show-error", url }, {
-    on_stdout = function(_, data)
-      if not data then return end
-      for _, chunk in ipairs(data) do
-        diag_buffer = diag_buffer .. chunk .. "\n"
-      end
-      -- Parse SSE events
-      while true do
-        local idx = diag_buffer:find("\n\n")
-        if not idx then break end
-        local event = diag_buffer:sub(1, idx - 1)
-        diag_buffer = diag_buffer:sub(idx + 2)
-        for line in event:gmatch("[^\n]+") do
-          if line:sub(1, 6) == "data: " then
-            vim.schedule(function()
-              local ok, data_obj = pcall(vim.json.decode, line:sub(7))
-              if ok and data_obj and data_obj.diagnostics then
-                M.apply_diagnostics(data_obj.diagnostics)
-              end
-            end)
-          end
-        end
-      end
-    end,
-    on_exit = function()
-      diag_sse_job = nil
-      -- Auto-reconnect after delay
-      vim.defer_fn(function()
-        if M.state.status == "connected" then
-          M.start_diagnostics()
-        end
-      end, 3000)
-    end,
-  })
-end
-
-function M.stop_diagnostics()
-  if diag_sse_job then
-    vim.fn.jobstop(diag_sse_job)
-    diag_sse_job = nil
-  end
-  if diag_ns then
-    vim.diagnostic.reset(diag_ns)
-  end
-end
-
-function M.apply_diagnostics(diags)
-  if not diag_ns then return end
-  local grouped = diagnostics.group_by_file(diags)
-  for file, file_diags in pairs(grouped) do
-    local vim_diags = diagnostics.to_vim_diagnostics(file_diags)
-    local bufnr = vim.fn.bufnr(file)
-    if bufnr ~= -1 then
-      vim.diagnostic.set(diag_ns, bufnr, vim_diags)
-    end
-  end
-end
-
--- ─── Session Picker (vim.ui.select) ──────────────────────────────────────────
+-- ─── Session Picker ──────────────────────────────────────────────────────────
 
 function M.session_picker()
   M.list_sessions(function(result)
@@ -703,20 +481,17 @@ function M.session_picker()
 
     local items = {}
     local lookup = {}
-
     for _, s in ipairs(result.sessions) do
       local line = sessions.format_session_line(s)
       table.insert(items, line)
       lookup[line] = s
     end
 
-    -- Always add "Create new session..." option
     local create_label = "+ Create new session..."
     table.insert(items, create_label)
 
     vim.ui.select(items, { prompt = "SageFs Sessions:" }, function(choice)
       if not choice then return end
-
       if choice == create_label then
         M.discover_and_create()
         return
@@ -725,7 +500,6 @@ function M.session_picker()
       local session = lookup[choice]
       if not session then return end
 
-      -- Sub-menu: what to do with this session?
       local actions = sessions.session_actions(session)
       local action_labels = {}
       for _, a in ipairs(actions) do
@@ -738,16 +512,11 @@ function M.session_picker()
         if not action_choice then return end
         for _, a in ipairs(actions) do
           if a.label == action_choice then
-            if a.name == "switch" then
-              M.switch_session(session.id)
-            elseif a.name == "stop" then
-              M.stop_session(session.id)
-            elseif a.name == "reset" then
-              M.reset_session()
-            elseif a.name == "hard_reset" then
-              M.hard_reset()
-            elseif a.name == "create" then
-              M.discover_and_create()
+            if a.name == "switch" then M.switch_session(session.id)
+            elseif a.name == "stop" then M.stop_session(session.id)
+            elseif a.name == "reset" then M.reset_session()
+            elseif a.name == "hard_reset" then M.hard_reset()
+            elseif a.name == "create" then M.discover_and_create()
             end
             return
           end
@@ -757,12 +526,8 @@ function M.session_picker()
   end)
 end
 
--- ─── Auto-discover projects and offer creation ───────────────────────────────
-
 function M.discover_and_create(working_dir)
   working_dir = working_dir or vim.fn.getcwd()
-
-  -- Find .fsproj files in the working directory
   local fsproj_files = vim.fn.glob(working_dir .. "/**/*.fsproj", false, true)
 
   if #fsproj_files == 0 then
@@ -770,32 +535,26 @@ function M.discover_and_create(working_dir)
     return
   end
 
-  -- Make paths relative for display
   local items = {}
   for _, path in ipairs(fsproj_files) do
-    local rel = path:sub(#working_dir + 2) -- strip working_dir + separator
-    table.insert(items, rel)
+    table.insert(items, path:sub(#working_dir + 2))
   end
 
-  vim.ui.select(items, {
-    prompt = "Select project to load:",
-  }, function(choice)
+  vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)
     if not choice then return end
     M.create_session({ choice }, working_dir)
   end)
 end
 
--- ─── Smart eval: intercept "no session" and offer creation ───────────────────
+-- ─── Smart Eval ───────────────────────────────────────────────────────────────
 
 local function smart_eval_with_session_check(eval_fn)
   return function()
-    -- If we have a known active session, just eval
     if M.active_session then
       eval_fn()
       return
     end
 
-    -- Check if SageFs has any sessions for our cwd
     M.list_sessions(function(result)
       if result.ok and #result.sessions > 0 then
         local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
@@ -806,7 +565,6 @@ local function smart_eval_with_session_check(eval_fn)
         end
       end
 
-      -- No session — offer to create one
       notify("No active session for this directory", vim.log.levels.WARN)
       vim.ui.select({ "Create session now", "Cancel" }, {
         prompt = "No SageFs session found. Create one?",
@@ -819,12 +577,11 @@ local function smart_eval_with_session_check(eval_fn)
   end
 end
 
--- ─── Health Check ────────────────────────────────────────────────────────────
+-- ─── Health Check & Statusline ────────────────────────────────────────────────
 
 function M.health_check()
   local cmd = { "curl", "-s", "--max-time", "2", base_url() .. "/health" }
   local result = vim.fn.system(cmd)
-  -- SageFs is "up" if we get any JSON back (even error = no session)
   if result:match('"healthy"') then
     notify("Connected to SageFs on port " .. M.config.port)
     return true
@@ -837,10 +594,7 @@ function M.health_check()
   end
 end
 
--- ─── Statusline Component ────────────────────────────────────────────────────
-
 function M.statusline()
-  -- Session-aware statusline
   if M.active_session then
     return sessions.format_statusline(M.active_session)
   end
@@ -852,145 +606,6 @@ function M.statusline()
   return icon .. " SageFs"
 end
 
--- ─── Commands & Keymaps ──────────────────────────────────────────────────────
-
-local function register_commands()
-  vim.api.nvim_create_user_command("SageFsEval", function()
-    M.eval_cell()
-  end, { desc = "Evaluate current cell" })
-
-  vim.api.nvim_create_user_command("SageFsEvalFile", function()
-    M.eval_file()
-  end, { desc = "Evaluate entire file" })
-
-  vim.api.nvim_create_user_command("SageFsClear", function()
-    M.state = model.clear_cells(M.state)
-    local buf = vim.api.nvim_get_current_buf()
-    clear_extmarks(buf)
-    notify("Cleared all results")
-  end, { desc = "Clear all cell results" })
-
-  vim.api.nvim_create_user_command("SageFsConnect", function()
-    if M.health_check() then
-      start_sse()
-    end
-  end, { desc = "Connect to SageFs" })
-
-  vim.api.nvim_create_user_command("SageFsDisconnect", function()
-    stop_sse()
-    notify("Disconnected")
-  end, { desc = "Disconnect from SageFs" })
-
-  vim.api.nvim_create_user_command("SageFsStatus", function()
-    M.health_check()
-  end, { desc = "Check SageFs status" })
-
-  vim.api.nvim_create_user_command("SageFsSessions", function()
-    M.session_picker()
-  end, { desc = "Manage SageFs sessions" })
-
-  vim.api.nvim_create_user_command("SageFsCreateSession", function()
-    M.discover_and_create()
-  end, { desc = "Create new SageFs session" })
-
-  vim.api.nvim_create_user_command("SageFsHotReload", function()
-    local sid = M.active_session and M.active_session.id or nil
-    hotreload.picker(sid)
-  end, { desc = "Manage hot-reload file selection" })
-
-  vim.api.nvim_create_user_command("SageFsWatchAll", function()
-    local sid = M.active_session and M.active_session.id or nil
-    if not sid then
-      notify("No active session", vim.log.levels.WARN)
-      return
-    end
-    hotreload.watch_all(sid, function()
-      notify(string.format("Watching all %d files", #hotreload.files))
-    end)
-  end, { desc = "Watch all files for hot reload" })
-
-  vim.api.nvim_create_user_command("SageFsUnwatchAll", function()
-    local sid = M.active_session and M.active_session.id or nil
-    if not sid then
-      notify("No active session", vim.log.levels.WARN)
-      return
-    end
-    hotreload.unwatch_all(sid, function()
-      notify("Unwatched all files")
-    end)
-  end, { desc = "Unwatch all files for hot reload" })
-
-  vim.api.nvim_create_user_command("SageFsReset", function()
-    M.reset_session()
-  end, { desc = "Reset active FSI session" })
-
-  vim.api.nvim_create_user_command("SageFsHardReset", function()
-    M.hard_reset()
-  end, { desc = "Hard reset (rebuild) active FSI session" })
-
-  vim.api.nvim_create_user_command("SageFsContext", function()
-    M.show_session_context()
-  end, { desc = "Show session context (assemblies, namespaces, warmup)" })
-end
-
-local function register_keymaps()
-  -- Alt-Enter: evaluate current cell (with smart session check)
-  local smart_eval = smart_eval_with_session_check(function() M.eval_cell() end)
-  local smart_eval_sel = smart_eval_with_session_check(function() M.eval_selection() end)
-
-  vim.keymap.set("n", "<A-CR>", smart_eval,
-    { desc = "SageFs: Evaluate cell", silent = true })
-
-  vim.keymap.set("v", "<A-CR>", smart_eval_sel,
-    { desc = "SageFs: Evaluate selection", silent = true })
-
-  -- Leader mappings
-  vim.keymap.set("n", "<leader>se", smart_eval,
-    { desc = "SageFs: Evaluate cell", silent = true })
-  vim.keymap.set("n", "<leader>sc", function()
-    M.state = model.clear_cells(M.state)
-    clear_extmarks(vim.api.nvim_get_current_buf())
-  end, { desc = "SageFs: Clear results", silent = true })
-  vim.keymap.set("n", "<leader>ss", function() M.session_picker() end,
-    { desc = "SageFs: Sessions", silent = true })
-  vim.keymap.set("n", "<leader>sh", function()
-    local sid = M.active_session and M.active_session.id or nil
-    hotreload.picker(sid)
-  end, { desc = "SageFs: Hot Reload Files", silent = true })
-end
-
-local function register_autocmds()
-  local group = vim.api.nvim_create_augroup("SageFs", { clear = true })
-
-  -- Mark cells as stale when buffer changes
-  vim.api.nvim_create_autocmd("TextChanged", {
-    group = group,
-    pattern = "*.fsx",
-    callback = function(ev)
-      M.state = model.mark_all_stale(M.state)
-      render_all_extmarks(ev.buf)
-    end,
-  })
-
-  -- Re-render extmarks when entering an .fsx buffer
-  vim.api.nvim_create_autocmd("BufEnter", {
-    group = group,
-    pattern = "*.fsx",
-    callback = function(ev)
-      render_all_extmarks(ev.buf)
-    end,
-  })
-
-  -- Set omnifunc for F# files
-  vim.api.nvim_create_autocmd("FileType", {
-    group = group,
-    pattern = { "fsharp", "fsx" },
-    callback = function()
-      vim.bo.omnifunc = "v:lua.require'sagefs'.omnifunc"
-    end,
-  })
-end
-
 -- ─── Setup ───────────────────────────────────────────────────────────────────
 
 function M.setup(opts)
@@ -998,22 +613,40 @@ function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts)
   M.config.port = tonumber(vim.env.SAGEFS_MCP_PORT) or M.config.port
 
-  ns = vim.api.nvim_create_namespace("sagefs")
+  render.get_namespace()
+  render.setup_highlights(M.config.highlight)
 
-  setup_highlights()
-  register_commands()
-  register_keymaps()
-  register_autocmds()
+  -- Helper closures that commands/keymaps/autocmds need
+  local helpers = {
+    notify = notify,
+    start_sse = start_sse,
+    stop_sse = stop_sse,
+    clear_and_render = function()
+      M.state = model.clear_cells(M.state)
+      render.clear_extmarks(vim.api.nvim_get_current_buf())
+      notify("Cleared all results")
+    end,
+    smart_eval = smart_eval_with_session_check,
+    mark_stale_and_render = function(buf)
+      M.state = model.mark_all_stale(M.state)
+      render.render_all(buf, M.state)
+    end,
+    render_all = function(buf)
+      render.render_all(buf, M.state)
+    end,
+  }
+
+  commands.register_commands(M, helpers)
+  commands.register_keymaps(M, helpers)
+  commands.register_autocmds(M, helpers)
   hotreload.setup(M.config.dashboard_port)
 
-  -- Auto-connect
   if M.config.auto_connect then
     vim.defer_fn(function()
       if M.health_check() then
         start_sse()
         M.list_sessions(function(result)
           if result.ok and not M.active_session and #result.sessions == 0 then
-            -- No sessions — look for .fsproj files and offer to create one
             local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
             if #fsproj_files > 0 then
               local names = {}
@@ -1021,9 +654,7 @@ function M.setup(opts)
                 table.insert(names, vim.fn.fnamemodify(f, ":~:."))
               end
               vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                if choice then
-                  M.create_session(choice)
-                end
+                if choice then M.create_session(choice) end
               end)
             end
           end
@@ -1032,7 +663,6 @@ function M.setup(opts)
     end, 500)
   end
 
-  -- Export for statusline
   _G.SageFs = M
 end
 
