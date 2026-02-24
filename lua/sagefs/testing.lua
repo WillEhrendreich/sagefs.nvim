@@ -717,4 +717,40 @@ function M.format_pipeline_statusline(trace)
   return table.concat(parts, " ")
 end
 
+--- Format full panel content for persistent test split buffer
+---@param state table
+---@return string[] lines suitable for a scratch buffer
+function M.format_panel_content(state)
+  local lines = {}
+  local summary = M.compute_summary(state)
+  table.insert(lines, M.format_summary(summary))
+  table.insert(lines, string.rep("─", 40))
+  table.insert(lines, "")
+
+  local test_lines = M.format_test_list(state)
+  for _, l in ipairs(test_lines) do
+    table.insert(lines, l)
+  end
+
+  -- Append output for failed tests
+  local failed = M.filter_by_status(state, "Failed")
+  if #failed > 0 then
+    table.insert(lines, "")
+    table.insert(lines, string.rep("─", 40))
+    table.insert(lines, "Failures:")
+    table.insert(lines, "")
+    for _, t in ipairs(failed) do
+      table.insert(lines, "✖ " .. (t.displayName or t.testId))
+      if t.output and t.output ~= "" then
+        for out_line in t.output:gmatch("[^\n]+") do
+          table.insert(lines, "  " .. out_line)
+        end
+      end
+      table.insert(lines, "")
+    end
+  end
+
+  return lines
+end
+
 return M

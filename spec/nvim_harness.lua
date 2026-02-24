@@ -117,10 +117,10 @@ describe("plugin setup", function()
       "SageFsDisconnect", "SageFsStatus", "SageFsSessions",
       "SageFsCreateSession", "SageFsHotReload", "SageFsWatchAll",
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
-      "SageFsTests", "SageFsRunTests", "SageFsTestPolicy",
-      "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer",
+      "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel",
+      "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer", "SageFsTypeExplorerFlat",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
-      "SageFsCancel",
+      "SageFsCancel", "SageFsPipelineTrace", "SageFsLoadScript",
       "SageFsStart", "SageFsStop",
     }
     for _, name in ipairs(expected) do

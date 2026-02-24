@@ -149,4 +149,32 @@ describe("type_explorer", function()
       assert.truthy(text:match("Changed"))
     end)
   end)
+
+  -- ─── format_flat_entry ───────────────────────────────────────────────────
+  describe("format_flat_entry", function()
+    it("formats a flat entry with icon and qualified name", function()
+      local entry = te.format_flat_entry("System.Runtime", "System", {
+        name = "String", fullName = "System.String", kind = "class",
+      })
+      assert.are.equal("System.String", entry.fullName)
+      assert.are.equal("System.Runtime", entry.assembly)
+      assert.truthy(entry.label:find("◆"), "should have class icon")
+      assert.truthy(entry.label:find("System.String"), "should contain full name")
+    end)
+
+    it("uses fullName from type entry", function()
+      local entry = te.format_flat_entry("FSharp.Core", "Microsoft.FSharp.Core", {
+        name = "Option", fullName = "Microsoft.FSharp.Core.Option", kind = "union",
+      })
+      assert.are.equal("Microsoft.FSharp.Core.Option", entry.fullName)
+      assert.truthy(entry.label:find("▤"), "should have union icon")
+    end)
+
+    it("falls back to name when fullName is missing", function()
+      local entry = te.format_flat_entry("MyLib", "MyNs", {
+        name = "MyType", kind = "struct",
+      })
+      assert.are.equal("MyType", entry.fullName)
+    end)
+  end)
 end)

@@ -1051,3 +1051,79 @@ describe("testing.to_diagnostics", function()
     assert.are.equal(1, #grouped["/src/b.fs"])
   end)
 end)
+
+-- ─── format_panel_content: test panel buffer content ─────────────────────────
+
+describe("testing.format_panel_content", function()
+  it("returns header line with summary", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "test one", status = "Passed", category = "Unit" }
+    s.tests["t2"] = { displayName = "test two", status = "Failed", category = "Unit" }
+    local lines = testing.format_panel_content(s)
+    assert.is_table(lines)
+    assert.truthy(#lines > 0)
+    -- First line should contain summary info
+    assert.truthy(lines[1]:find("1 ✓") or lines[1]:find("tests"))
+  end)
+
+  it("includes separator after header", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "test one", status = "Passed", category = "Unit" }
+    local lines = testing.format_panel_content(s)
+    -- Should have a separator line (dashes or empty)
+    local found_sep = false
+    for i = 1, math.min(3, #lines) do
+      if lines[i]:match("^%-%-") or lines[i] == "" then
+        found_sep = true
+      end
+    end
+    assert.is_true(found_sep, "expected separator line near top")
+  end)
+
+  it("lists all tests with status icons", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "alpha", status = "Passed", category = "Unit" }
+    s.tests["t2"] = { displayName = "beta", status = "Failed", category = "Unit" }
+    s.tests["t3"] = { displayName = "gamma", status = "Running", category = "Unit" }
+    local lines = testing.format_panel_content(s)
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("alpha"))
+    assert.truthy(text:find("beta"))
+    assert.truthy(text:find("gamma"))
+    -- Status icons should appear
+    assert.truthy(text:find("✓") or text:find("✖") or text:find("⏳"))
+  end)
+
+  it("returns meaningful content for empty state", function()
+    local s = testing.new()
+    local lines = testing.format_panel_content(s)
+    assert.is_table(lines)
+    assert.truthy(#lines > 0)
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("No tests") or text:find("no tests") or text:find("0"))
+  end)
+
+  it("sorts failed tests first", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "aaa passing", status = "Passed", category = "Unit" }
+    s.tests["t2"] = { displayName = "zzz failing", status = "Failed", category = "Unit" }
+    local lines = testing.format_panel_content(s)
+    -- Find positions of the test names
+    local fail_pos, pass_pos
+    for i, l in ipairs(lines) do
+      if not fail_pos and l:find("zzz failing") then fail_pos = i end
+      if not pass_pos and l:find("aaa passing") then pass_pos = i end
+    end
+    assert.is_not_nil(fail_pos, "failed test should appear")
+    assert.is_not_nil(pass_pos, "passed test should appear")
+    assert.is_true(fail_pos < pass_pos, "failed tests should sort before passed")
+  end)
+
+  it("includes output for failed tests", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "broken test", status = "Failed", category = "Unit", output = "Expected 42 but got 0" }
+    local lines = testing.format_panel_content(s)
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("Expected 42 but got 0"), "should include failure output")
+  end)
+end)

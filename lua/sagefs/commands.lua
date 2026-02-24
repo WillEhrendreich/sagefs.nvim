@@ -148,6 +148,110 @@ function M.register_commands(plugin, helpers)
     end)
   end, { desc = "Configure test run policies" })
 
+  -- ─── Persistent Test Panel ─────────────────────────────────────────────────
+
+  local test_panel_buf = nil
+  local test_panel_win = nil
+
+  local function update_test_panel()
+    if not test_panel_buf or not vim.api.nvim_buf_is_valid(test_panel_buf) then return end
+    if not test_panel_win or not vim.api.nvim_win_is_valid(test_panel_win) then return end
+    local lines = testing.format_panel_content(plugin.testing_state)
+    vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", true)
+    vim.api.nvim_buf_set_lines(test_panel_buf, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", false)
+  end
+
+  vim.api.nvim_create_user_command("SageFsTestPanel", function()
+    -- Toggle: close if open
+    if test_panel_win and vim.api.nvim_win_is_valid(test_panel_win) then
+      vim.api.nvim_win_close(test_panel_win, true)
+      test_panel_win = nil
+      return
+    end
+    -- Create scratch buffer
+    test_panel_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_option(test_panel_buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(test_panel_buf, "bufhidden", "wipe")
+    vim.api.nvim_buf_set_name(test_panel_buf, "sagefs://tests")
+    -- Open in vertical split
+    vim.cmd("botright vsplit")
+    test_panel_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(test_panel_win, test_panel_buf)
+    vim.api.nvim_win_set_width(test_panel_win, 45)
+    vim.api.nvim_win_set_option(test_panel_win, "number", false)
+    vim.api.nvim_win_set_option(test_panel_win, "relativenumber", false)
+    vim.api.nvim_win_set_option(test_panel_win, "signcolumn", "no")
+    vim.api.nvim_win_set_option(test_panel_win, "winfixwidth", true)
+    -- Fill initial content
+    update_test_panel()
+    -- Return focus to previous window
+    vim.cmd("wincmd p")
+  end, { desc = "Toggle persistent test results panel" })
+
+  -- Auto-update panel on test events
+  local panel_group = vim.api.nvim_create_augroup("SageFsTestPanel", { clear = true })
+  for _, pattern in ipairs({ "SageFsTestPassed", "SageFsTestFailed", "SageFsTestRunCompleted", "SageFsTestsDiscovered" }) do
+    vim.api.nvim_create_autocmd("User", {
+      group = panel_group,
+      pattern = pattern,
+      callback = function()
+        vim.schedule(update_test_panel)
+      end,
+    })
+  end
+
+  -- ─── Pipeline Trace ────────────────────────────────────────────────────────
+
+  vim.api.nvim_create_user_command("SageFsPipelineTrace", function()
+    local pipeline = require("sagefs.pipeline")
+    transport.http_json({
+      method = "GET",
+      url = helpers.base_url() .. "/api/status",
+      timeout = 5,
+      callback = function(ok, raw)
+        if not ok then
+          helpers.notify("Failed to fetch pipeline trace", vim.log.levels.ERROR)
+          return
+        end
+        local trace = pipeline.parse_trace(raw)
+        if not trace then
+          helpers.notify("Invalid pipeline trace response", vim.log.levels.WARN)
+          return
+        end
+        local lines = pipeline.format_panel_content(trace)
+        render.show_float(lines, { title = "Pipeline Trace" })
+      end,
+    })
+  end, { desc = "Show pipeline trace in floating window" })
+
+  -- ─── Load Script ───────────────────────────────────────────────────────────
+
+  vim.api.nvim_create_user_command("SageFsLoadScript", function(opts)
+    local path = opts.args
+    if path == "" then
+      path = vim.fn.expand("%:p")
+      if not path:match("%.fsx$") then
+        helpers.notify("Current file is not an .fsx script", vim.log.levels.WARN)
+        return
+      end
+    end
+    helpers.notify("Loading script: " .. vim.fn.fnamemodify(path, ":t"))
+    transport.http_json({
+      method = "POST",
+      url = helpers.base_url() .. "/exec",
+      body = { code = string.format('#load @"%s";;', path) },
+      timeout = 30,
+      callback = function(ok, raw)
+        if ok then
+          helpers.notify("Script loaded: " .. vim.fn.fnamemodify(path, ":t"))
+        else
+          helpers.notify("Failed to load script: " .. tostring(raw), vim.log.levels.ERROR)
+        end
+      end,
+    })
+  end, { desc = "Load an F# script file (.fsx)", nargs = "?", complete = "file" })
+
   vim.api.nvim_create_user_command("SageFsToggleTesting", function()
     transport.http_json({
       method = "POST",
@@ -332,6 +436,112 @@ function M.register_commands(plugin, helpers)
       end,
     })
   end, { desc = "Browse assemblies → namespaces → types" })
+
+  vim.api.nvim_create_user_command("SageFsTypeExplorerFlat", function()
+    helpers.notify("Loading types...")
+    transport.http_json({
+      method = "GET",
+      url = helpers.dashboard_url() .. "/api/assemblies",
+      timeout = 5,
+      callback = function(ok, raw)
+        if not ok then
+          helpers.notify("Failed to fetch assemblies", vim.log.levels.ERROR)
+          return
+        end
+        local parse_ok, data = pcall(vim.json.decode, raw)
+        if not parse_ok or not data then return end
+        local assemblies = type_explorer.format_assemblies(data)
+        local all_types = {}
+        local pending = #assemblies
+        if pending == 0 then
+          helpers.notify("No assemblies found", vim.log.levels.WARN)
+          return
+        end
+        for _, asm in ipairs(assemblies) do
+          transport.http_json({
+            method = "GET",
+            url = helpers.dashboard_url() .. "/api/namespaces?assembly=" .. vim.uri_encode(asm.name),
+            timeout = 5,
+            callback = function(ns_ok, ns_raw)
+              if ns_ok then
+                local ns_ok2, ns_data = pcall(vim.json.decode, ns_raw)
+                if ns_ok2 and ns_data then
+                  local ns_pending = #ns_data
+                  if ns_pending == 0 then
+                    pending = pending - 1
+                  else
+                    for _, ns in ipairs(ns_data) do
+                      transport.http_json({
+                        method = "GET",
+                        url = helpers.dashboard_url() .. "/api/types?namespace=" .. vim.uri_encode(ns),
+                        timeout = 5,
+                        callback = function(t_ok, t_raw)
+                          if t_ok then
+                            local t_ok2, t_data = pcall(vim.json.decode, t_raw)
+                            if t_ok2 and t_data then
+                              for _, t in ipairs(t_data) do
+                                table.insert(all_types, type_explorer.format_flat_entry(asm.name, ns, t))
+                              end
+                            end
+                          end
+                          ns_pending = ns_pending - 1
+                          if ns_pending == 0 then
+                            pending = pending - 1
+                            if pending == 0 then
+                              vim.schedule(function()
+                                if #all_types == 0 then
+                                  helpers.notify("No types found", vim.log.levels.WARN)
+                                  return
+                                end
+                                local labels = {}
+                                for _, item in ipairs(all_types) do table.insert(labels, item.label) end
+                                vim.ui.select(labels, { prompt = "Types (" .. #all_types .. "):" }, function(choice)
+                                  if not choice then return end
+                                  local idx
+                                  for i, l in ipairs(labels) do
+                                    if l == choice then idx = i; break end
+                                  end
+                                  if not idx then return end
+                                  local picked = all_types[idx]
+                                  transport.http_json({
+                                    method = "GET",
+                                    url = helpers.dashboard_url() .. "/api/members?type=" .. vim.uri_encode(picked.fullName),
+                                    timeout = 5,
+                                    callback = function(m_ok, m_raw)
+                                      if not m_ok then return end
+                                      local m_ok2, m_data = pcall(vim.json.decode, m_raw)
+                                      if not m_ok2 or not m_data then return end
+                                      local lines = type_explorer.format_members(picked.fullName, m_data)
+                                      render.show_float(lines, { title = picked.fullName })
+                                    end,
+                                  })
+                                end)
+                              end)
+                            end
+                          end
+                        end,
+                      })
+                    end
+                  end
+                else
+                  pending = pending - 1
+                end
+              else
+                pending = pending - 1
+              end
+              if pending == 0 then
+                vim.schedule(function()
+                  if #all_types == 0 then
+                    helpers.notify("No types found", vim.log.levels.WARN)
+                  end
+                end)
+              end
+            end,
+          })
+        end
+      end,
+    })
+  end, { desc = "Flat type picker — single fuzzy search over all types" })
 
   -- ─── History Command ─────────────────────────────────────────────────────
 

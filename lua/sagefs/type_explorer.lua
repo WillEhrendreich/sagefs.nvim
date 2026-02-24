@@ -96,4 +96,22 @@ function M.format_members(type_name, members)
   return lines
 end
 
+--- Format a flat list entry for the unified type picker
+---@param assembly string
+---@param namespace string
+---@param type_entry table { name, fullName, kind }
+---@return table { label: string, fullName: string, assembly: string, namespace: string }
+function M.format_flat_entry(assembly, namespace, type_entry)
+  local kind_icon = ({
+    class = "◆", struct = "◇", interface = "◈",
+    enum = "▣", union = "▤", module = "▥",
+  })[type_entry.kind] or "●"
+  return {
+    label = string.format("%s %s  (%s)", kind_icon, type_entry.fullName or type_entry.name, assembly),
+    fullName = type_entry.fullName or type_entry.name,
+    assembly = assembly,
+    namespace = namespace,
+  }
+end
+
 return M
