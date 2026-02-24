@@ -46,4 +46,54 @@ function M.to_vim_diagnostic(raw)
   }
 end
 
+-- ─── JSON decode helper ──────────────────────────────────────────────────────
+
+local function json_decode(s)
+  if vim and vim.json and vim.json.decode then
+    return pcall(vim.json.decode, s)
+  elseif vim and vim.fn and vim.fn.json_decode then
+    return pcall(vim.fn.json_decode, s)
+  end
+  return false, "no JSON decoder available"
+end
+
+--- Parse a DiagnosticsUpdated SSE data payload
+---@param json_str string|nil
+---@return table[]|nil diagnostics, string|nil error
+function M.parse_sse_payload(json_str)
+  if not json_str or json_str == "" then
+    return nil, "empty payload"
+  end
+  local ok, data = json_decode(json_str)
+  if not ok or type(data) ~= "table" then
+    return nil, "invalid JSON"
+  end
+  return data.diagnostics or {}, nil
+end
+
+--- Convert a list of raw diagnostics to vim.diagnostic format
+---@param raw_list table[]
+---@return table[]
+function M.to_vim_diagnostics(raw_list)
+  local result = {}
+  for _, raw in ipairs(raw_list) do
+    table.insert(result, M.to_vim_diagnostic(raw))
+  end
+  return result
+end
+
+--- Full pipeline: parse SSE data → group by file → convert to vim diagnostics
+---@param json_str string
+---@return table<string, table[]>|nil groups, string|nil error
+function M.process_sse_event(json_str)
+  local diags, err = M.parse_sse_payload(json_str)
+  if err then return nil, err end
+  local grouped = M.group_by_file(diags)
+  local result = {}
+  for file, file_diags in pairs(grouped) do
+    result[file] = M.to_vim_diagnostics(file_diags)
+  end
+  return result, nil
+end
+
 return M

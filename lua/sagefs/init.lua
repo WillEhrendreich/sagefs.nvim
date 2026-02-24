@@ -6,6 +6,8 @@ local model = require("sagefs.model")
 local sessions = require("sagefs.sessions")
 local sse_parser = require("sagefs.sse")
 local hotreload = require("sagefs.hotreload")
+local diagnostics = require("sagefs.diagnostics")
+local testing = require("sagefs.testing")
 
 local M = {}
 
@@ -27,6 +29,7 @@ M.config = {
 -- ─── State ───────────────────────────────────────────────────────────────────
 
 M.state = model.new()
+M.testing_state = testing.new()
 M.active_session = nil -- {id, status, projects, working_directory, ...}
 M.session_list = {}    -- cached from last list_sessions call
 local ns = nil -- extmark namespace, created on setup()
@@ -70,33 +73,21 @@ end
 local function render_cell_result(buf, boundary_line, cell_id)
   if not ns then return end
   local cell = model.get_cell_state(M.state, cell_id)
-  if cell.status == "idle" then return end
+  local render = format.build_render_options(cell, cell_id)
+  if not render then return end
 
-  -- Gutter sign
-  local sign = format.gutter_sign(cell.status)
-
-  -- Inline result (on the ;; line)
-  local inline = nil
-  if cell.status == "success" or cell.status == "error" then
-    inline = format.format_inline({
-      ok = cell.status == "success" or cell.status == "stale",
-      output = cell.output,
-      error = cell.output,
-    })
-  end
-
-  -- Virtual text on the boundary line
+  -- Inline result on the ;; line
   local virt_text = {}
-  if inline then
-    table.insert(virt_text, { inline.text, inline.hl })
+  if render.inline then
+    table.insert(virt_text, { render.inline.text, render.inline.hl })
   end
 
   local opts = {
-    id = cell_id * 1000, -- unique ID per cell
+    id = cell_id * 1000,
     virt_text = #virt_text > 0 and virt_text or nil,
     virt_text_pos = "eol",
-    sign_text = sign.text,
-    sign_hl_group = sign.hl,
+    sign_text = render.sign.text,
+    sign_hl_group = render.sign.hl,
     priority = 100,
   }
 
@@ -104,23 +95,16 @@ local function render_cell_result(buf, boundary_line, cell_id)
   pcall(vim.api.nvim_buf_set_extmark, buf, ns, boundary_line - 1, 0, opts)
 
   -- Virtual lines for expanded output
-  if cell.status == "success" or cell.status == "error" then
-    local vlines = format.format_virtual_lines({
-      ok = cell.status == "success",
-      output = cell.output,
-      error = cell.output,
-    })
-    if #vlines > 0 then
-      local virt_lines = {}
-      for _, vl in ipairs(vlines) do
-        table.insert(virt_lines, { { vl.text, vl.hl } })
-      end
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, boundary_line - 1, 0, {
-        id = cell_id * 1000 + 1,
-        virt_lines = virt_lines,
-        virt_lines_above = false,
-      })
+  if render.virtual_lines and #render.virtual_lines > 0 then
+    local virt_lines = {}
+    for _, vl in ipairs(render.virtual_lines) do
+      table.insert(virt_lines, { { vl.text, vl.hl } })
     end
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, boundary_line - 1, 0, {
+      id = cell_id * 1000 + 1,
+      virt_lines = virt_lines,
+      virt_lines_above = false,
+    })
   end
 end
 
@@ -698,33 +682,12 @@ end
 
 function M.apply_diagnostics(diags)
   if not diag_ns then return end
-  -- Group by file
-  local by_file = {}
-  for _, d in ipairs(diags) do
-    local file = d.file
-    if file then
-      by_file[file] = by_file[file] or {}
-      local severity = vim.diagnostic.severity.HINT
-      if d.severity == "error" then severity = vim.diagnostic.severity.ERROR
-      elseif d.severity == "warning" then severity = vim.diagnostic.severity.WARN
-      elseif d.severity == "info" then severity = vim.diagnostic.severity.INFO
-      end
-      table.insert(by_file[file], {
-        lnum = (d.startLine or 1) - 1,
-        col = (d.startColumn or 1) - 1,
-        end_lnum = (d.endLine or d.startLine or 1) - 1,
-        end_col = (d.endColumn or d.startColumn or 1) - 1,
-        message = d.message or "",
-        severity = severity,
-        source = "sagefs",
-      })
-    end
-  end
-  -- Apply to each buffer
-  for file, file_diags in pairs(by_file) do
+  local grouped = diagnostics.group_by_file(diags)
+  for file, file_diags in pairs(grouped) do
+    local vim_diags = diagnostics.to_vim_diagnostics(file_diags)
     local bufnr = vim.fn.bufnr(file)
     if bufnr ~= -1 then
-      vim.diagnostic.set(diag_ns, bufnr, file_diags)
+      vim.diagnostic.set(diag_ns, bufnr, vim_diags)
     end
   end
 end

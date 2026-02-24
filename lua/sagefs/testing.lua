@@ -382,4 +382,290 @@ function M.format_failure_detail(output)
   return first or output
 end
 
+-- ─── SSE Event Handlers ──────────────────────────────────────────────────────
+
+--- Handle a TestResultsBatch event: update multiple test results at once
+---@param state table
+---@param data table {results: {testId, status, output?}[]}
+---@return table state
+function M.handle_results_batch(state, data)
+  if not data or not data.results then return state end
+  for _, r in ipairs(data.results) do
+    M.update_result(state, r.testId, r.status, r.output)
+  end
+  return state
+end
+
+--- Handle a TestsDiscovered event: bulk-add discovered tests
+---@param state table
+---@param data table {tests: entry[]}
+---@return table state
+function M.handle_tests_discovered(state, data)
+  if not data or not data.tests then return state end
+  for _, entry in ipairs(data.tests) do
+    M.update_test(state, entry)
+  end
+  return state
+end
+
+--- Handle a LiveTestingToggled event
+---@param state table
+---@param data table {enabled: boolean}
+---@return table state
+function M.handle_live_testing_toggled(state, data)
+  if not data then return state end
+  if data.enabled ~= nil then
+    state.enabled = data.enabled
+  end
+  return state
+end
+
+--- Handle a RunPolicyChanged event
+---@param state table
+---@param data table {category: string, policy: string}
+---@return table state
+function M.handle_run_policy_changed(state, data)
+  if not data or not data.category or not data.policy then return state end
+  M.set_run_policy(state, data.category, data.policy)
+  return state
+end
+
+--- Handle a TestRunStarted event: mark affected tests as Running
+---@param state table
+---@param data table {testIds: string[]?}
+---@return table state
+function M.handle_test_run_started(state, data)
+  if not data then return state end
+  if data.testIds and #data.testIds > 0 then
+    for _, id in ipairs(data.testIds) do
+      if state.tests[id] then
+        state.tests[id].status = "Running"
+      end
+    end
+  else
+    for _, test in pairs(state.tests) do
+      test.status = "Running"
+    end
+  end
+  return state
+end
+
+-- ─── State Recovery ──────────────────────────────────────────────────────────
+
+--- Build a request to recover full test status after SSE reconnect
+---@return table
+function M.build_recovery_request()
+  return { tool = "get_live_test_status" }
+end
+
+--- Check if testing state needs recovery (after reconnect)
+---@param state table
+---@return boolean
+function M.needs_recovery(state)
+  if not state.enabled then return false end
+  local count = 0
+  for _ in pairs(state.tests) do count = count + 1 end
+  if count == 0 then return true end
+  for _, test in pairs(state.tests) do
+    if test.status == "Stale" then return true end
+  end
+  return false
+end
+
+-- ─── Formatting: Test List ───────────────────────────────────────────────────
+
+local STATUS_ORDER = {
+  Failed = 1, Running = 2, Queued = 3, Stale = 4,
+  Detected = 5, Passed = 6, Skipped = 7, PolicyDisabled = 8,
+}
+
+local STATUS_ICON = {
+  Passed = "✓", Failed = "✖", Running = "⏳", Queued = "⏳",
+  Stale = "~", Detected = "◦", Skipped = "⊘", PolicyDisabled = "⊘",
+}
+
+--- Format all tests as a flat list of display strings
+---@param state table
+---@return string[]
+function M.format_test_list(state)
+  local entries = {}
+  for id, test in pairs(state.tests) do
+    table.insert(entries, {
+      testId = id,
+      displayName = test.displayName or id,
+      status = test.status or "Detected",
+      file = test.file,
+    })
+  end
+  table.sort(entries, function(a, b)
+    local oa = STATUS_ORDER[a.status] or 99
+    local ob = STATUS_ORDER[b.status] or 99
+    if oa ~= ob then return oa < ob end
+    return a.displayName < b.displayName
+  end)
+  local lines = {}
+  for _, e in ipairs(entries) do
+    local icon = STATUS_ICON[e.status] or "?"
+    table.insert(lines, string.format("%s %s", icon, e.displayName))
+  end
+  return lines
+end
+
+--- Format tests grouped by source file
+---@param state table
+---@return table<string, table[]>
+function M.format_test_list_by_file(state)
+  local groups = {}
+  for id, test in pairs(state.tests) do
+    local file = test.file or "(unknown)"
+    if not groups[file] then groups[file] = {} end
+    table.insert(groups[file], {
+      testId = id,
+      displayName = test.displayName or id,
+      status = test.status or "Detected",
+      file = test.file,
+      line = test.line,
+    })
+  end
+  return groups
+end
+
+--- Filter tests by category
+---@param state table
+---@param category string
+---@return table[]
+function M.filter_by_category(state, category)
+  local results = {}
+  for id, test in pairs(state.tests) do
+    if test.category == category then
+      local entry = {}
+      for k, v in pairs(test) do entry[k] = v end
+      entry.testId = id
+      table.insert(results, entry)
+    end
+  end
+  return results
+end
+
+--- Format picker items for policy selection (all 6 categories)
+---@param state table
+---@return table[]
+function M.format_picker_items(state)
+  local items = {}
+  local categories = { "Unit", "Integration", "Browser", "Benchmark", "Architecture", "Property" }
+  for _, cat in ipairs(categories) do
+    local policy = M.get_run_policy(state, cat)
+    table.insert(items, {
+      label = string.format("%s [%s]", cat, policy),
+      category = cat,
+      policy = policy,
+    })
+  end
+  return items
+end
+
+--- Format policy options for a specific category
+---@param category string
+---@param current_policy string
+---@return table[]
+function M.format_policy_options(category, current_policy)
+  local options = {}
+  local policies = { "OnEveryChange", "OnSaveOnly", "OnDemand", "Disabled" }
+  for _, p in ipairs(policies) do
+    local label = p
+    if p == current_policy then
+      label = p .. " (current)"
+    end
+    table.insert(options, { label = label, policy = p })
+  end
+  return options
+end
+
+--- Build a run_tests MCP request
+---@param opts {pattern?: string, category?: string}
+---@return table|nil request, string|nil error
+function M.build_run_request(opts)
+  opts = opts or {}
+  if opts.category and opts.category ~= "" and not M.is_valid_category(opts.category) then
+    return nil, "invalid category: " .. tostring(opts.category)
+  end
+  return {
+    pattern = opts.pattern or "",
+    category = opts.category or "",
+  }, nil
+end
+
+--- Format pipeline trace data for display
+---@param data table|nil
+---@return string[]
+function M.format_pipeline_trace(data)
+  if not data then
+    return { "No pipeline trace data available" }
+  end
+  local lines = {}
+  if data.enabled then
+    table.insert(lines, "Pipeline: Enabled")
+  else
+    table.insert(lines, "Pipeline: Disabled")
+  end
+  if data.running then
+    table.insert(lines, "Status: Running")
+  elseif data.enabled then
+    table.insert(lines, "Status: Idle")
+  end
+  if data.providers and #data.providers > 0 then
+    table.insert(lines, "Providers: " .. table.concat(data.providers, ", "))
+  end
+  if data.runPolicies then
+    table.insert(lines, "")
+    table.insert(lines, "Run Policies:")
+    for _, rp in ipairs(data.runPolicies) do
+      table.insert(lines, string.format("  %s: %s", rp.category or "?", rp.policy or "?"))
+    end
+  end
+  if data.summary then
+    table.insert(lines, "")
+    table.insert(lines, M.format_summary(data.summary))
+  end
+  return lines
+end
+
+--- Format compact statusline for live testing
+---@param state table
+---@return string
+function M.format_statusline(state)
+  if not state.enabled then return "" end
+  local s = M.compute_summary(state)
+  if s.total == 0 then return "Tests: 0" end
+  local parts = {}
+  if s.passed > 0 then table.insert(parts, s.passed .. " ✓") end
+  if s.failed > 0 then table.insert(parts, s.failed .. " ✖") end
+  if s.running > 0 then table.insert(parts, s.running .. " ⏳") end
+  if s.stale > 0 then table.insert(parts, s.stale .. " ~") end
+  return table.concat(parts, " ")
+end
+
+--- Format compact pipeline trace for statusline
+---@param trace table|nil
+---@return string
+function M.format_pipeline_statusline(trace)
+  if not trace or not trace.enabled then return "" end
+  local parts = {}
+  if trace.running then
+    table.insert(parts, "⏳")
+  end
+  if trace.summary then
+    if trace.summary.passed then
+      table.insert(parts, trace.summary.passed .. "✓")
+    end
+    if trace.summary.failed and trace.summary.failed > 0 then
+      table.insert(parts, trace.summary.failed .. "✖")
+    end
+  end
+  if #parts == 0 then
+    return "Tests"
+  end
+  return table.concat(parts, " ")
+end
+
 return M

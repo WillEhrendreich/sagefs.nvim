@@ -75,16 +75,56 @@ function M.classify_event(event)
   if not event then return nil end
 
   local type_to_action = {
+    -- Eval & session
     EvalCompleted = "eval_completed",
-    TestRunCompleted = "test_run_completed",
     SessionCreated = "session_created",
     SessionStopped = "session_stopped",
     DiagnosticsUpdated = "diagnostics_updated",
     state = "state_update",
+    -- Testing pipeline
+    TestLocationsDetected = "test_locations_detected",
+    TestsDiscovered = "tests_discovered",
+    TestRunStarted = "test_run_started",
+    TestRunCompleted = "test_run_completed",
+    TestResultsBatch = "test_results_batch",
+    LiveTestingToggled = "live_testing_toggled",
+    AffectedTestsComputed = "affected_tests_computed",
+    RunPolicyChanged = "run_policy_changed",
+    ProvidersDetected = "providers_detected",
+    PipelineTimingRecorded = "pipeline_timing_recorded",
+    RunTestsRequested = "run_tests_requested",
+    -- Coverage
+    CoverageUpdated = "coverage_updated",
+    CoverageCleared = "coverage_cleared",
+    -- File watching
+    HotReloadTriggered = "hot_reload_triggered",
+    FileChanged = "file_changed",
   }
 
   local action = type_to_action[event.type] or "unknown"
   return { action = action, data = event.data }
+end
+
+--- Build a dispatch table from a handlers map
+---@param handlers table<string, function> action string → handler function
+---@return table<string, function>
+function M.build_dispatch_table(handlers)
+  local dt = {}
+  for action, fn in pairs(handlers) do
+    dt[action] = fn
+  end
+  return dt
+end
+
+--- Dispatch a classified event through the dispatch table
+---@param dt table dispatch table from build_dispatch_table
+---@param classified {action: string, data: string?}|nil
+function M.dispatch(dt, classified)
+  if not classified then return end
+  local handler = dt[classified.action]
+  if handler then
+    handler(classified.data)
+  end
 end
 
 return M
