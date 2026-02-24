@@ -20,7 +20,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **18 Lua modules, 521 tests, zero failures.**
+This plugin provides the Neovim integration layer. **18 Lua modules, 637 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -192,9 +192,9 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 469 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Busted (pure)** | `busted` via LuaRocks | 585 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model. State machine validation, property tests, snapshot tests, composition, idempotency. |
 | **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 24 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
-| **Total** | | **521** | All passing, zero failures |
+| **Total** | | **637** | All passing, zero failures |
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
 
