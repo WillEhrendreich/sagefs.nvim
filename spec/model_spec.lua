@@ -166,3 +166,71 @@ describe("model.set_status", function()
     assert.are.equal("disconnected", m.status)
   end)
 end)
+
+-- ─── Property tests: model invariants ────────────────────────────────────────
+
+describe("model [property]", function()
+  it("mark_all_stale is idempotent", function()
+    local m = model.new()
+    m = model.set_cell_state(m, 1, "success", "42")
+    m = model.set_cell_state(m, 2, "error", "oops")
+    m = model.set_cell_state(m, 3, "running")
+    m = model.mark_all_stale(m)
+    local s1 = model.get_cell_state(m, 1).status
+    local s2 = model.get_cell_state(m, 2).status
+    local s3 = model.get_cell_state(m, 3).status
+
+    m = model.mark_all_stale(m) -- second time
+    assert.are.equal(s1, model.get_cell_state(m, 1).status)
+    assert.are.equal(s2, model.get_cell_state(m, 2).status)
+    assert.are.equal(s3, model.get_cell_state(m, 3).status)
+  end)
+
+  it("clear_cells then cell_count is always 0", function()
+    local m = model.new()
+    -- Add random cells
+    for i = 1, 50 do
+      m = model.set_cell_state(m, i, "success", tostring(i))
+    end
+    assert.are.equal(50, model.cell_count(m))
+    m = model.clear_cells(m)
+    assert.are.equal(0, model.cell_count(m))
+  end)
+
+  it("set_cell_state then get_cell_state round-trips (100 cells)", function()
+    local m = model.new()
+    local statuses = { "running", "success", "error" }
+    for i = 1, 100 do
+      local status = statuses[(i % #statuses) + 1]
+      local output = "output_" .. i
+      m = model.set_cell_state(m, i, status, output)
+      local cell = model.get_cell_state(m, i)
+      assert.are.equal(status, cell.status)
+      assert.are.equal(output, cell.output)
+    end
+    assert.are.equal(100, model.cell_count(m))
+  end)
+
+  it("mark_stale preserves output for all cells", function()
+    local m = model.new()
+    for i = 1, 20 do
+      m = model.set_cell_state(m, i, "success", "val " .. i)
+    end
+    m = model.mark_all_stale(m)
+    for i = 1, 20 do
+      local cell = model.get_cell_state(m, i)
+      assert.are.equal("stale", cell.status)
+      assert.are.equal("val " .. i, cell.output)
+    end
+  end)
+
+  it("unknown cells always return idle with nil output", function()
+    local m = model.new()
+    m = model.set_cell_state(m, 1, "success", "42")
+    for i = 100, 200 do
+      local cell = model.get_cell_state(m, i)
+      assert.are.equal("idle", cell.status)
+      assert.is_nil(cell.output)
+    end
+  end)
+end)

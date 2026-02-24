@@ -186,3 +186,83 @@ describe("format.gutter_sign", function()
     assert.are.equal(" ", result.text)
   end)
 end)
+
+-- ─── Snapshot tests: exact formatting output ─────────────────────────────────
+
+describe("format.format_inline [snapshot]", function()
+  it("success with simple int: → val it: int = 42", function()
+    local result = format.format_inline({ ok = true, output = "val it: int = 42" })
+    assert.are.equal("→ val it: int = 42", result.text)
+    assert.are.equal("SageFsSuccess", result.hl)
+  end)
+
+  it("success with multiline: first line + ellipsis", function()
+    local result = format.format_inline({ ok = true, output = "val it: int = 42\nval it2: string = \"hi\"" })
+    assert.are.equal("→ val it: int = 42 …", result.text)
+  end)
+
+  it("error with simple message: ✖ prefix", function()
+    local result = format.format_inline({ ok = false, error = "type mismatch" })
+    assert.are.equal("✖ type mismatch", result.text)
+    assert.are.equal("SageFsError", result.hl)
+  end)
+
+  it("success with empty output: → (empty string)", function()
+    local result = format.format_inline({ ok = true, output = "" })
+    assert.are.equal("→ ", result.text)
+  end)
+
+  it("error with nil message: ✖ error", function()
+    local result = format.format_inline({ ok = false })
+    assert.are.equal("✖ error", result.text)
+  end)
+end)
+
+describe("format.format_virtual_lines [snapshot]", function()
+  it("single line output indented", function()
+    local result = format.format_virtual_lines({ ok = true, output = "val it: int = 42" })
+    assert.are.equal(1, #result)
+    assert.are.equal("  val it: int = 42", result[1].text)
+    assert.are.equal("SageFsOutput", result[1].hl)
+  end)
+
+  it("empty output shows (no output)", function()
+    local result = format.format_virtual_lines({ ok = true, output = "" })
+    assert.are.equal(1, #result)
+    assert.are.equal("(no output)", result[1].text)
+  end)
+
+  it("multiline output preserves each line", function()
+    local result = format.format_virtual_lines({ ok = true, output = "line1\nline2\nline3" })
+    assert.are.equal(3, #result)
+    assert.are.equal("  line1", result[1].text)
+    assert.are.equal("  line2", result[2].text)
+    assert.are.equal("  line3", result[3].text)
+  end)
+end)
+
+-- ─── gutter_sign exhaustive: every status maps correctly ─────────────────────
+
+describe("format.gutter_sign [exhaustive]", function()
+  local expected = {
+    success = { text = "✓", hl = "SageFsSuccess" },
+    error   = { text = "✖", hl = "SageFsError" },
+    running = { text = "⏳", hl = "SageFsRunning" },
+    stale   = { text = "~", hl = "SageFsStale" },
+    idle    = { text = " ", hl = "Normal" },
+  }
+
+  for status, exp in pairs(expected) do
+    it("status '" .. status .. "' → sign '" .. exp.text .. "'", function()
+      local result = format.gutter_sign(status)
+      assert.are.equal(exp.text, result.text)
+      assert.are.equal(exp.hl, result.hl)
+    end)
+  end
+
+  it("unknown status falls through to space/Normal", function()
+    local result = format.gutter_sign("banana")
+    assert.are.equal(" ", result.text)
+    assert.are.equal("Normal", result.hl)
+  end)
+end)

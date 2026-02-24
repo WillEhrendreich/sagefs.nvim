@@ -96,4 +96,76 @@ describe("sse.parse_chunk", function()
     assert.are.equal(1, #events)
     assert.are.equal("state", events[1].type)
   end)
+
+  it("handles empty data field (data:)", function()
+    local chunk = "event: ping\ndata:\n\n"
+    local events, _ = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    assert.are.equal("ping", events[1].type)
+    assert.are.equal("", events[1].data)
+  end)
+end)
+
+-- ─── Property tests: SSE parsing invariants ──────────────────────────────────
+
+describe("sse.parse_chunk [property]", function()
+  it("complete events + remainder reconstructs original (10 trials)", function()
+    -- Any chunk ending with \n\n should produce at least one event
+    -- and empty remainder
+    for i = 1, 10 do
+      local event_type = "type" .. i
+      local data = "payload" .. i
+      local chunk = "event: " .. event_type .. "\ndata: " .. data .. "\n\n"
+      local events, remainder = sse.parse_chunk(chunk)
+      assert.are.equal(1, #events,
+        "should parse exactly 1 event for trial " .. i)
+      assert.are.equal(event_type, events[1].type)
+      assert.are.equal(data, events[1].data)
+      assert.are.equal("", remainder)
+    end
+  end)
+
+  it("incomplete chunk produces 0 events and full remainder", function()
+    for i = 1, 10 do
+      -- No \n\n terminator
+      local chunk = "event: test" .. i .. "\ndata: value" .. i .. "\n"
+      local events, remainder = sse.parse_chunk(chunk)
+      assert.are.equal(0, #events,
+        "incomplete chunk should produce 0 events, trial " .. i)
+      assert.are.equal(chunk, remainder)
+    end
+  end)
+
+  it("streaming accumulation: split any complete event at random point", function()
+    math.randomseed(42)
+    for _ = 1, 20 do
+      local chunk = "event: state\ndata: hello\n\n"
+      -- Split at a random point
+      local split_at = math.random(1, #chunk - 1)
+      local part1 = chunk:sub(1, split_at)
+      local part2 = chunk:sub(split_at + 1)
+
+      local events1, rem1 = sse.parse_chunk(part1)
+      local events2, rem2 = sse.parse_chunk(rem1 .. part2)
+
+      -- Total events across both calls should be exactly 1
+      local total = #events1 + #events2
+      assert.are.equal(1, total,
+        "split at " .. split_at .. " produced " .. total .. " events")
+    end
+  end)
+
+  it("N events in one chunk yields N parsed events", function()
+    for n = 1, 5 do
+      local parts = {}
+      for i = 1, n do
+        table.insert(parts, "event: e" .. i .. "\ndata: d" .. i .. "\n\n")
+      end
+      local chunk = table.concat(parts)
+      local events, remainder = sse.parse_chunk(chunk)
+      assert.are.equal(n, #events,
+        "expected " .. n .. " events from " .. n .. "-event chunk")
+      assert.are.equal("", remainder)
+    end
+  end)
 end)

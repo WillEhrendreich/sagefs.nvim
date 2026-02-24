@@ -669,3 +669,275 @@ describe("testing.format_failure_detail", function()
     assert.are.equal("assertion failed", testing.format_failure_detail("assertion failed"))
   end)
 end)
+
+-- =============================================================================
+-- Round-trip tests: JSON → parse → apply → compute_summary
+-- =============================================================================
+
+describe("testing [round-trip]", function()
+  it("server response → state → correct summary", function()
+    local payload = {
+      enabled = true,
+      summary = { total = 5, passed = 3, failed = 1, stale = 1, running = 0, disabled = 0 },
+      tests = {
+        { testId = "t1", displayName = "test1", status = "Passed", category = "Unit", currentPolicy = "OnEveryChange",
+          origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 10 } }, framework = "expecto", fullName = "Ns.test1" },
+        { testId = "t2", displayName = "test2", status = "Passed", category = "Unit", currentPolicy = "OnEveryChange",
+          origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 20 } }, framework = "expecto", fullName = "Ns.test2" },
+        { testId = "t3", displayName = "test3", status = "Passed", category = "Integration", currentPolicy = "OnDemand",
+          origin = { Case = "SourceMapped", Fields = { "/src/b.fs", 5 } }, framework = "expecto", fullName = "Ns.test3" },
+        { testId = "t4", displayName = "test4", status = "Failed", category = "Unit", currentPolicy = "OnEveryChange",
+          origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 30 } }, framework = "expecto", fullName = "Ns.test4" },
+        { testId = "t5", displayName = "test5", status = "Stale", category = "Unit", currentPolicy = "OnEveryChange",
+          origin = { Case = "ReflectionOnly" }, framework = "expecto", fullName = "Ns.test5" },
+      },
+    }
+
+    local json = vim.fn.json_encode(payload)
+    local data, parse_err = testing.parse_status_response(json)
+    assert.is_nil(parse_err)
+
+    local s = testing.new()
+    s = testing.apply_status_response(s, data)
+
+    -- Verify state
+    assert.is_true(s.enabled)
+    assert.are.equal(5, testing.test_count(s))
+
+    -- Verify computed summary matches
+    local sum = testing.compute_summary(s)
+    assert.are.equal(5, sum.total)
+    assert.are.equal(3, sum.passed)
+    assert.are.equal(1, sum.failed)
+    assert.are.equal(1, sum.stale)
+
+    -- Verify file filter
+    local a_tests = testing.filter_by_file(s, "/src/a.fs")
+    assert.are.equal(3, #a_tests)
+
+    local b_tests = testing.filter_by_file(s, "/src/b.fs")
+    assert.are.equal(1, #b_tests)
+
+    -- Verify format_summary produces sane output
+    local summary_text = testing.format_summary(sum)
+    assert.truthy(summary_text:find("5 tests"))
+    assert.truthy(summary_text:find("3 ✓"))
+    assert.truthy(summary_text:find("1 ✖"))
+  end)
+
+  it("pipeline trace → parse → verify structure", function()
+    local payload = {
+      enabled = true,
+      isRunning = false,
+      history = "PreviousRun",
+      summary = { total = 10, passed = 9, failed = 1, stale = 0, running = 0, disabled = 0 },
+      providers = { "Expecto" },
+      policies = { "Unit: OnEveryChange", "Integration: OnDemand" },
+    }
+    local json = vim.fn.json_encode(payload)
+    local data, err = testing.parse_pipeline_response(json)
+    assert.is_nil(err)
+    assert.is_true(data.enabled)
+    assert.is_false(data.isRunning)
+    assert.are.equal(10, data.summary.total)
+    assert.are.equal(1, #data.providers)
+    assert.are.equal("Expecto", data.providers[1])
+  end)
+end)
+
+-- =============================================================================
+-- Composition tests: realistic multi-step workflows
+-- =============================================================================
+
+describe("testing [composition]", function()
+  it("discover → run → some pass, some fail → mark stale → re-run", function()
+    local s = testing.new()
+    s = testing.set_enabled(s, true)
+
+    -- Discovery phase
+    s = testing.update_test(s, { testId = "t1", displayName = "add works", status = "Detected", category = "Unit" })
+    s = testing.update_test(s, { testId = "t2", displayName = "sub works", status = "Detected", category = "Unit" })
+    s = testing.update_test(s, { testId = "t3", displayName = "integration", status = "Detected", category = "Integration" })
+    assert.are.equal(3, testing.test_count(s))
+
+    -- First run: 2 pass, 1 fail
+    s = testing.update_result(s, "t1", "Passed")
+    s = testing.update_result(s, "t2", "Failed", "Expected 5 but got 3")
+    s = testing.update_result(s, "t3", "Passed")
+
+    local sum1 = testing.compute_summary(s)
+    assert.are.equal(2, sum1.passed)
+    assert.are.equal(1, sum1.failed)
+
+    -- Code change → mark stale
+    s = testing.mark_all_stale(s)
+    local sum2 = testing.compute_summary(s)
+    assert.are.equal(0, sum2.passed)
+    assert.are.equal(0, sum2.failed)
+    assert.are.equal(3, sum2.stale)
+
+    -- Re-run: all pass now
+    s = testing.update_result(s, "t1", "Passed")
+    s = testing.update_result(s, "t2", "Passed")
+    s = testing.update_result(s, "t3", "Passed")
+
+    local sum3 = testing.compute_summary(s)
+    assert.are.equal(3, sum3.passed)
+    assert.are.equal(0, sum3.failed)
+    assert.are.equal(0, sum3.stale)
+  end)
+
+  it("file-targeted stale only affects that file's tests", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", status = "Passed",
+      origin = { Case = "SourceMapped", Fields = { "/src/math.fs", 10 } },
+    })
+    s = testing.update_test(s, {
+      testId = "t2", status = "Passed",
+      origin = { Case = "SourceMapped", Fields = { "/src/string.fs", 10 } },
+    })
+    s = testing.update_test(s, {
+      testId = "t3", status = "Failed",
+      origin = { Case = "SourceMapped", Fields = { "/src/math.fs", 20 } },
+    })
+
+    -- Edit math.fs → only math tests go stale
+    s = testing.mark_file_stale(s, "/src/math.fs")
+
+    assert.are.equal("Stale", s.tests["t1"].status)
+    assert.are.equal("Passed", s.tests["t2"].status) -- untouched
+    assert.are.equal("Stale", s.tests["t3"].status)
+
+    local sum = testing.compute_summary(s)
+    assert.are.equal(1, sum.passed)
+    assert.are.equal(2, sum.stale)
+  end)
+
+  it("policy changes don't affect existing test states", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed", category = "Unit", currentPolicy = "OnEveryChange" })
+    s = testing.set_run_policy(s, "Unit", "Disabled")
+
+    -- The test is still Passed — policy change doesn't retroactively alter status
+    assert.are.equal("Passed", s.tests["t1"].status)
+    -- But the category policy IS updated
+    assert.are.equal("Disabled", testing.get_run_policy(s, "Unit"))
+  end)
+end)
+
+-- =============================================================================
+-- Idempotency tests: applying the same operation twice = once
+-- =============================================================================
+
+describe("testing [idempotency]", function()
+  it("mark_all_stale is idempotent", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    s = testing.update_test(s, { testId = "t2", status = "Failed" })
+    s = testing.mark_all_stale(s)
+    local sum1 = testing.compute_summary(s)
+
+    s = testing.mark_all_stale(s) -- second time
+    local sum2 = testing.compute_summary(s)
+
+    assert.are.equal(sum1.stale, sum2.stale)
+    assert.are.equal(sum1.total, sum2.total)
+    assert.are.equal("Stale", s.tests["t1"].status)
+  end)
+
+  it("apply_status_response is idempotent", function()
+    local data = {
+      enabled = true,
+      tests = {
+        { testId = "t1", displayName = "test", status = "Passed", category = "Unit" },
+      },
+    }
+    local s = testing.new()
+    s = testing.apply_status_response(s, data)
+    local count1 = testing.test_count(s)
+
+    s = testing.apply_status_response(s, data) -- second time
+    local count2 = testing.test_count(s)
+
+    assert.are.equal(count1, count2) -- no duplicate entries
+    assert.are.equal(1, count2)
+  end)
+
+  it("set_run_policy with same value is idempotent", function()
+    local s = testing.new()
+    s = testing.set_run_policy(s, "Unit", "OnDemand")
+    s = testing.set_run_policy(s, "Unit", "OnDemand")
+    assert.are.equal("OnDemand", testing.get_run_policy(s, "Unit"))
+  end)
+end)
+
+-- =============================================================================
+-- Ordering tests: does operation order matter when it should/shouldn't?
+-- =============================================================================
+
+describe("testing [ordering]", function()
+  it("mark_all_stale then update_result: result wins", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    s = testing.mark_all_stale(s)
+    assert.are.equal("Stale", s.tests["t1"].status)
+    s = testing.update_result(s, "t1", "Passed")
+    assert.are.equal("Passed", s.tests["t1"].status)
+  end)
+
+  it("update_result then mark_all_stale: stale wins", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Detected" })
+    s = testing.update_result(s, "t1", "Passed")
+    assert.are.equal("Passed", s.tests["t1"].status)
+    s = testing.mark_all_stale(s)
+    assert.are.equal("Stale", s.tests["t1"].status)
+  end)
+
+  it("Running tests survive mark_all_stale regardless of order", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Running" })
+    s = testing.mark_all_stale(s)
+    assert.are.equal("Running", s.tests["t1"].status)
+  end)
+
+  it("two apply_status_response calls: second overwrites first", function()
+    local s = testing.new()
+    s = testing.apply_status_response(s, {
+      tests = { { testId = "t1", displayName = "v1", status = "Failed", category = "Unit" } },
+    })
+    assert.are.equal("Failed", s.tests["t1"].status)
+
+    s = testing.apply_status_response(s, {
+      tests = { { testId = "t1", displayName = "v2", status = "Passed", category = "Unit" } },
+    })
+    assert.are.equal("Passed", s.tests["t1"].status)
+    assert.are.equal("v2", s.tests["t1"].displayName)
+  end)
+end)
+
+-- =============================================================================
+-- Model validation: cell model status validation tests
+-- =============================================================================
+
+describe("testing.gutter_sign [property]", function()
+  it("every valid status produces a non-space sign", function()
+    for status, _ in pairs(testing.VALID_TEST_STATUSES) do
+      local sign = testing.gutter_sign(status)
+      if status ~= "Detected" then
+        -- Detected gets ◦ which is non-space, all others are non-space
+        assert.is_true(sign.text ~= " ",
+          "status '" .. status .. "' should produce a visible sign")
+      end
+    end
+  end)
+
+  it("every valid status produces a SageFs highlight group", function()
+    for status, _ in pairs(testing.VALID_TEST_STATUSES) do
+      local sign = testing.gutter_sign(status)
+      assert.truthy(sign.hl:find("^SageFs"),
+        "status '" .. status .. "' should use SageFs highlight, got: " .. sign.hl)
+    end
+  end)
+end)

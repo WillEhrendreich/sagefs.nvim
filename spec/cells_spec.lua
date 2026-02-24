@@ -349,4 +349,165 @@ describe("cells.is_boundary_line", function()
   it("rejects empty line", function()
     assert.is_false(cells.is_boundary_line(""))
   end)
+
+  it("rejects ;; inside F# block comment (* ... *)", function()
+    -- ;; not at end of line — already handled by trimmed:match(";;$")
+    assert.is_false(cells.is_boundary_line("(* comment ;;*)"))
+  end)
+
+  -- RED TEST: multi-line block comment context
+  -- A line that is just ";;" but is inside a (* ... *) block comment
+  -- should not be a boundary. is_boundary_line is line-local and
+  -- cannot know about multi-line block comment context.
+  -- This documents the known limitation.
+  pending("ignores ;; on its own line inside multi-line (* *) block comment", function()
+    -- This would require block-comment-aware parsing across lines,
+    -- which is_boundary_line does not support. Marking as pending
+    -- to document the gap without failing the suite.
+  end)
+end)
+
+-- ─── Property tests: fuzz is_boundary_line ───────────────────────────────────
+
+describe("cells.is_boundary_line [property]", function()
+  -- Seed for reproducibility
+  math.randomseed(42)
+
+  local function random_char()
+    -- printable ASCII excluding problematic chars for cleaner tests
+    local pool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-*/=<>()[]{}.,:|&!@#$%^_~`?"
+    local i = math.random(1, #pool)
+    return pool:sub(i, i)
+  end
+
+  local function random_string(len)
+    local chars = {}
+    for i = 1, len do chars[i] = random_char() end
+    return table.concat(chars)
+  end
+
+  it("any string without ;; is not a boundary (100 trials)", function()
+    for _ = 1, 100 do
+      local s = random_string(math.random(0, 200))
+      -- Ensure no ;; exists
+      s = s:gsub(";;", "xx")
+      assert.is_false(cells.is_boundary_line(s),
+        "should not be boundary: " .. s)
+    end
+  end)
+
+  it("code .. ';;' is a boundary when code has balanced quotes and no // prefix (100 trials)", function()
+    for _ = 1, 100 do
+      -- Generate code without quotes, //, or ;; to avoid false positives
+      local code = random_string(math.random(1, 80))
+      code = code:gsub('"', 'x')
+      code = code:gsub("//", "xx")
+      code = code:gsub(";;", "xx")
+      code = code:gsub("^%s+", "a") -- ensure non-whitespace start
+      local line = code .. ";;"
+      assert.is_true(cells.is_boundary_line(line),
+        "should be boundary: " .. line)
+    end
+  end)
+
+  it(";; inside double quotes is never a boundary (100 trials)", function()
+    for _ = 1, 100 do
+      local inner = random_string(math.random(0, 50))
+      inner = inner:gsub('"', 'x') -- no nested quotes
+      local line = 'let s = "' .. inner .. ';;' .. '"'
+      assert.is_false(cells.is_boundary_line(line),
+        "should not be boundary: " .. line)
+    end
+  end)
+end)
+
+-- ─── Property tests: find_cell invariants ────────────────────────────────────
+
+describe("cells.find_cell [property]", function()
+  it("every cursor line in a non-empty buffer returns a cell", function()
+    -- Construct a realistic multi-cell buffer
+    local lines = {
+      "let a = 1;;",
+      "let b = 2",
+      "let c = 3;;",
+      "",
+      "let d = 4",
+      "let e = 5;;",
+      "let f = 6",
+    }
+    for cursor = 1, #lines do
+      local cell = cells.find_cell(lines, cursor)
+      assert.is_not_nil(cell,
+        "find_cell returned nil for cursor line " .. cursor)
+      assert.is_true(cell.start_line <= cursor,
+        "cell start_line > cursor at line " .. cursor)
+      assert.is_true(cell.end_line >= cursor,
+        "cell end_line < cursor at line " .. cursor)
+    end
+  end)
+
+  it("find_cell and find_all_cells agree on cell boundaries", function()
+    local lines = {
+      "let a = 1;;",
+      "let b = 2;;",
+      "let c = 3;;",
+      "let d = 4",
+    }
+    local all = cells.find_all_cells(lines)
+    for _, c in ipairs(all) do
+      -- Cursor on start_line should return this cell
+      local found = cells.find_cell(lines, c.start_line)
+      assert.is_not_nil(found)
+      assert.are.equal(c.start_line, found.start_line,
+        "start_line mismatch for cell starting at " .. c.start_line)
+      assert.are.equal(c.end_line, found.end_line,
+        "end_line mismatch for cell ending at " .. c.end_line)
+    end
+  end)
+
+  it("all cells partition the buffer (no gaps, no overlaps)", function()
+    local lines = {
+      "let a = 1;;",
+      "let b = 2",
+      "let c = 3;;",
+      "let d = 4",
+    }
+    local all = cells.find_all_cells(lines)
+    assert.is_true(#all > 0)
+    -- First cell starts at 1
+    assert.are.equal(1, all[1].start_line)
+    -- Last cell ends at #lines
+    assert.are.equal(#lines, all[#all].end_line)
+    -- Each cell starts right after the previous one ends
+    for i = 2, #all do
+      assert.are.equal(all[i - 1].end_line + 1, all[i].start_line,
+        "gap or overlap between cell " .. (i - 1) .. " and " .. i)
+    end
+  end)
+end)
+
+-- ─── Performance: find_boundaries on large buffer ────────────────────────────
+
+describe("cells.find_boundaries [perf]", function()
+  it("handles 5000-line buffer in under 50ms", function()
+    -- Build a realistic large F# buffer
+    local lines = {}
+    for i = 1, 5000 do
+      if i % 25 == 0 then
+        lines[i] = "let x" .. i .. " = " .. i .. ";;"
+      else
+        lines[i] = "let x" .. i .. " = " .. i
+      end
+    end
+
+    local start = os.clock()
+    for _ = 1, 100 do
+      cells.find_boundaries(lines)
+    end
+    local elapsed = (os.clock() - start) * 1000 -- ms for 100 iterations
+
+    -- 100 iterations should complete well under 5 seconds (50ms each)
+    assert.is_true(elapsed < 5000,
+      string.format("100 iterations took %.1fms (%.1fms each), too slow", elapsed, elapsed / 100))
+  end)
 end)
