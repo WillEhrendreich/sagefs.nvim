@@ -156,6 +156,19 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Toggle live testing on/off" })
 
+  vim.api.nvim_create_user_command("SageFsCancel", function()
+    transport.http_json({
+      method = "POST",
+      url = helpers.base_url() .. "/api/cancel-eval",
+      body = { working_directory = vim.fn.getcwd() },
+      timeout = 5,
+      callback = function(ok)
+        if ok then helpers.notify("Eval cancelled")
+        else helpers.notify("Failed to cancel eval", vim.log.levels.ERROR) end
+      end,
+    })
+  end, { desc = "Cancel running evaluation" })
+
   -- ─── Coverage Commands ───────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsCoverage", function()

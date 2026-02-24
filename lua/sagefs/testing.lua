@@ -37,14 +37,7 @@ M.VALID_POLICIES = {
 
 -- ─── JSON decode helper ──────────────────────────────────────────────────────
 
-local function json_decode(s)
-  if vim and vim.json and vim.json.decode then
-    return pcall(vim.json.decode, s)
-  elseif vim and vim.fn and vim.fn.json_decode then
-    return pcall(vim.fn.json_decode, s)
-  end
-  return false, "no JSON decoder available"
-end
+local json_decode = require("sagefs.util").json_decode
 
 -- ─── Validation ──────────────────────────────────────────────────────────────
 
@@ -382,6 +375,50 @@ function M.format_failure_detail(output)
   return first or output
 end
 
+-- ─── Test Failures → vim.diagnostic ──────────────────────────────────────────
+
+--- Convert failed tests for a single file to vim.diagnostic-shaped tables
+---@param state table
+---@param file string|nil
+---@return table[] diagnostics (0-indexed lnum/col)
+function M.to_diagnostics(state, file)
+  if not file then return {} end
+  local diags = {}
+  for _, test in pairs(state.tests) do
+    if test.status == "Failed" and test.file == file then
+      local msg = test.displayName or "test failed"
+      if test.output and test.output ~= "" then
+        msg = msg .. ": " .. M.format_failure_detail(test.output)
+      end
+      table.insert(diags, {
+        lnum = (test.line or 1) - 1,
+        col = 0,
+        severity = 1,
+        message = msg,
+        source = "sagefs_tests",
+      })
+    end
+  end
+  return diags
+end
+
+--- Convert all failed tests to diagnostics grouped by file
+---@param state table
+---@return table<string, table[]>
+function M.to_diagnostics_grouped(state)
+  local files = {}
+  for _, test in pairs(state.tests) do
+    if test.status == "Failed" and test.file then
+      if not files[test.file] then files[test.file] = true end
+    end
+  end
+  local result = {}
+  for file in pairs(files) do
+    result[file] = M.to_diagnostics(state, file)
+  end
+  return result
+end
+
 -- ─── SSE Event Handlers ──────────────────────────────────────────────────────
 
 --- Handle a TestResultsBatch event: update multiple test results at once
@@ -446,6 +483,18 @@ function M.handle_test_run_started(state, data)
     for _, test in pairs(state.tests) do
       test.status = "Running"
     end
+  end
+  return state
+end
+
+--- Handle a TestRunCompleted event: update summary
+---@param state table
+---@param data table|nil {summary: {total, passed, failed, stale, running}}
+---@return table state
+function M.handle_test_run_completed(state, data)
+  if not data then return state end
+  if data.summary then
+    state.summary = data.summary
   end
   return state
 end

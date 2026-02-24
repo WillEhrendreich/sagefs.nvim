@@ -285,6 +285,28 @@ describe("testing.handle_test_run_started [RED]", function()
   end)
 end)
 
+describe("testing.handle_test_run_completed", function()
+  it("exists as a function", function()
+    assert.is_function(testing.handle_test_run_completed)
+  end)
+
+  it("updates summary from completed data", function()
+    local state = testing.new()
+    state = testing.handle_test_run_completed(state, {
+      summary = { total = 5, passed = 4, failed = 1, stale = 0, running = 0 },
+    })
+    assert.are.equal(5, state.summary.total)
+    assert.are.equal(4, state.summary.passed)
+    assert.are.equal(1, state.summary.failed)
+  end)
+
+  it("handles nil data gracefully", function()
+    local state = testing.new()
+    local result = testing.handle_test_run_completed(state, nil)
+    assert.is_table(result)
+  end)
+end)
+
 -- =============================================================================
 -- T1: State recovery on SSE reconnect
 -- =============================================================================

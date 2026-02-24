@@ -119,6 +119,7 @@ describe("plugin setup", function()
       "SageFsTests", "SageFsRunTests", "SageFsTestPolicy",
       "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
+      "SageFsCancel",
     }
     for _, name in ipairs(expected) do
       assert_truthy(cmds[name], "missing command: " .. name)

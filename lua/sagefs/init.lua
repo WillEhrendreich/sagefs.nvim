@@ -76,51 +76,114 @@ local function fire_user_event(event_type, payload)
   end
 end
 
-local function on_sse_events(raw_events)
-  for _, event in ipairs(raw_events) do
-    local classified = sse_parser.classify_event(event)
-    if not classified then goto continue end
-    local action = classified.action
-    local data = decode_event_data(event)
+-- Dispatch table: action string → handler(raw_event)
+-- Each handler receives the raw SSE event and decodes data as needed.
+local dispatch_table
 
-    if action == "state_update" then
+local function build_handlers()
+  return sse_parser.build_dispatch_table({
+    state_update = function(raw)
       M.state = model.set_status(M.state, "connected")
+    end,
 
     -- Testing pipeline
-    elseif action == "tests_discovered" then
+    tests_discovered = function(raw)
+      local data = decode_event_data(raw)
       if data then M.testing_state = testing.handle_tests_discovered(M.testing_state, data) end
-    elseif action == "test_results_batch" then
-      if data then M.testing_state = testing.handle_results_batch(M.testing_state, data) end
-    elseif action == "test_run_started" then
+    end,
+    test_results_batch = function(raw)
+      local data = decode_event_data(raw)
+      if not data then return end
+      M.testing_state = testing.handle_results_batch(M.testing_state, data)
+      -- Fire per-test pass/fail events
+      if data.results then
+        for _, r in ipairs(data.results) do
+          if r.status == "Passed" then
+            fire_user_event("test_passed", r)
+          elseif r.status == "Failed" then
+            fire_user_event("test_failed", r)
+          end
+        end
+      end
+      -- Update test diagnostics for current buffer
+      vim.schedule(function()
+        local buf = vim.api.nvim_get_current_buf()
+        local file = vim.api.nvim_buf_get_name(buf)
+        if file and file ~= "" then
+          local test_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
+          local diags = testing.to_diagnostics(M.testing_state, file)
+          vim.diagnostic.set(test_ns, buf, diags)
+        end
+      end)
+    end,
+    test_run_started = function(raw)
+      local data = decode_event_data(raw)
       if data then
         M.testing_state = testing.handle_test_run_started(M.testing_state, data)
         fire_user_event("test_run_started", data)
       end
-    elseif action == "live_testing_toggled" then
+    end,
+    test_run_completed = function(raw)
+      local data = decode_event_data(raw)
+      if data then
+        M.testing_state = testing.handle_test_run_completed(M.testing_state, data)
+        fire_user_event("test_run_completed", data)
+      end
+    end,
+    live_testing_toggled = function(raw)
+      local data = decode_event_data(raw)
       if data then M.testing_state = testing.handle_live_testing_toggled(M.testing_state, data) end
-    elseif action == "run_policy_changed" then
+    end,
+    run_policy_changed = function(raw)
+      local data = decode_event_data(raw)
       if data then M.testing_state = testing.handle_run_policy_changed(M.testing_state, data) end
+    end,
 
     -- Coverage
-    elseif action == "coverage_updated" then
-      if data then
-        local parsed = coverage.parse_coverage_response(vim.fn.json_encode(data))
-        if parsed then
-          M.coverage_state = coverage.apply_coverage_response(M.coverage_state, parsed)
-          fire_user_event("coverage_updated", data)
-        end
+    coverage_updated = function(raw)
+      local data = decode_event_data(raw)
+      if not data then return end
+      local parsed = coverage.parse_coverage_response(vim.fn.json_encode(data))
+      if parsed then
+        M.coverage_state = coverage.apply_coverage_response(M.coverage_state, parsed)
+        fire_user_event("coverage_updated", data)
       end
-    elseif action == "coverage_cleared" then
+    end,
+    coverage_cleared = function(raw)
       M.coverage_state = coverage.clear(M.coverage_state)
+    end,
 
     -- Session lifecycle
-    elseif action == "eval_completed" then
+    eval_completed = function(raw)
+      local data = decode_event_data(raw)
       fire_user_event("eval_completed", data)
-    elseif action == "hot_reload_triggered" then
+    end,
+    hot_reload_triggered = function(raw)
+      local data = decode_event_data(raw)
       fire_user_event("hot_reload_triggered", data)
-    end
+    end,
 
-    ::continue::
+    -- Diagnostics (from main SSE stream)
+    diagnostics_updated = function(raw)
+      local data = decode_event_data(raw)
+      if data and data.diagnostics then
+        M.apply_diagnostics(data.diagnostics)
+      end
+    end,
+  })
+end
+
+local function on_sse_events(raw_events)
+  if not dispatch_table then
+    dispatch_table = build_handlers()
+  end
+
+  for _, event in ipairs(raw_events) do
+    local classified = sse_parser.classify_event(event)
+    if classified then
+      local handler = dispatch_table[classified.action]
+      if handler then handler(event) end
+    end
   end
 
   -- Refresh gutter signs for current buffer after processing events
@@ -142,6 +205,7 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
+      fire_user_event("connected")
       -- Recover full test state on (re)connect
       if testing.needs_recovery(M.testing_state) or M.testing_state.enabled then
         transport.http_json({
@@ -167,6 +231,7 @@ local function start_sse()
     end,
     on_disconnect = function()
       M.state = model.set_status(M.state, "disconnected")
+      fire_user_event("disconnected")
     end,
     auto_reconnect = true,
     reconnect_delay = 3000,
@@ -181,6 +246,7 @@ local function stop_sse()
   if events_sse then events_sse.stop(); events_sse = nil end
   stop_diagnostics()
   M.state = model.set_status(M.state, "disconnected")
+  fire_user_event("disconnected")
 end
 
 -- ─── Diagnostics SSE ──────────────────────────────────────────────────────────

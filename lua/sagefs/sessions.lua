@@ -4,14 +4,7 @@ local M = {}
 
 -- ─── JSON decode helper ──────────────────────────────────────────────────────
 
-local function json_decode(s)
-  if vim and vim.json and vim.json.decode then
-    return pcall(vim.json.decode, s)
-  elseif vim and vim.fn and vim.fn.json_decode then
-    return pcall(vim.fn.json_decode, s)
-  end
-  return false, "no JSON decoder available"
-end
+local json_decode = require("sagefs.util").json_decode
 
 -- ─── Path normalization ──────────────────────────────────────────────────────
 

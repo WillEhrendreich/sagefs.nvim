@@ -4,13 +4,7 @@
 
 local M = {}
 
-local json_decode = (vim and vim.json and vim.json.decode)
-  or (vim and vim.fn and vim.fn.json_decode)
-  or (function()
-    local ok, dkjson = pcall(require, "dkjson")
-    if ok then return dkjson.decode end
-    return function() return nil, "no json decoder" end
-  end)()
+local util = require("sagefs.util")
 
 -- ─── State Constructor ────────────────────────────────────────────────────────
 
@@ -111,7 +105,7 @@ function M.parse_coverage_response(json_str)
   if not json_str or json_str == "" then
     return nil, "empty input"
   end
-  local ok, data = pcall(json_decode, json_str)
+  local ok, data = util.json_decode(json_str)
   if not ok or not data then
     return nil, "invalid JSON"
   end

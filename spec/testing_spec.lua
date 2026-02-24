@@ -941,3 +941,113 @@ describe("testing.gutter_sign [property]", function()
     end
   end)
 end)
+
+-- ─── to_diagnostics: convert failed tests to vim.diagnostic shape ────────────
+
+describe("testing.to_diagnostics", function()
+  local function make_origin(file, line)
+    return { Case = "SourceMapped", Fields = { file, line } }
+  end
+
+  it("returns empty for state with no failures", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "passes",
+      status = "Passed", origin = make_origin("/src/app.fs", 10),
+    })
+    local diags = testing.to_diagnostics(s, "/src/app.fs")
+    assert.are.equal(0, #diags)
+  end)
+
+  it("returns diagnostic for a failed test with file and line", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "addition fails",
+      status = "Failed", origin = make_origin("/src/math.fs", 15),
+    })
+    s = testing.update_result(s, "t1", "Failed", "Expected 4 but got 5")
+    local diags = testing.to_diagnostics(s, "/src/math.fs")
+    assert.are.equal(1, #diags)
+    assert.are.equal(14, diags[1].lnum)  -- 0-indexed
+    assert.are.equal(0, diags[1].col)
+    assert.are.equal(1, diags[1].severity)  -- ERROR
+    assert.truthy(diags[1].message:find("addition fails"))
+    assert.are.equal("sagefs_tests", diags[1].source)
+  end)
+
+  it("includes output in message when available", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "math test",
+      status = "Failed", origin = make_origin("/src/a.fs", 5),
+    })
+    s = testing.update_result(s, "t1", "Failed", "Expected 1 got 2")
+    local diags = testing.to_diagnostics(s, "/src/a.fs")
+    assert.truthy(diags[1].message:find("Expected 1 got 2"))
+  end)
+
+  it("filters to only the requested file", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "fail a",
+      status = "Failed", origin = make_origin("/src/a.fs", 1),
+    })
+    s = testing.update_test(s, {
+      testId = "t2", displayName = "fail b",
+      status = "Failed", origin = make_origin("/src/b.fs", 2),
+    })
+    local diags_a = testing.to_diagnostics(s, "/src/a.fs")
+    assert.are.equal(1, #diags_a)
+    local diags_b = testing.to_diagnostics(s, "/src/b.fs")
+    assert.are.equal(1, #diags_b)
+  end)
+
+  it("ignores tests without a file", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "orphan",
+      status = "Failed",
+    })
+    local diags = testing.to_diagnostics(s, "/src/a.fs")
+    assert.are.equal(0, #diags)
+  end)
+
+  it("returns empty for nil file argument", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "fail",
+      status = "Failed", origin = make_origin("/src/a.fs", 1),
+    })
+    local diags = testing.to_diagnostics(s, nil)
+    assert.are.equal(0, #diags)
+  end)
+
+  it("defaults line to 0 when test has no line", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "no line",
+      status = "Failed",
+    })
+    -- Manually set file without line to test the default
+    s.tests["t1"].file = "/src/a.fs"
+    s.tests["t1"].line = nil
+    local diags = testing.to_diagnostics(s, "/src/a.fs")
+    assert.are.equal(1, #diags)
+    assert.are.equal(0, diags[1].lnum)
+  end)
+
+  it("returns all_files diagnostics when no file specified", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "fail a",
+      status = "Failed", origin = make_origin("/src/a.fs", 1),
+    })
+    s = testing.update_test(s, {
+      testId = "t2", displayName = "fail b",
+      status = "Failed", origin = make_origin("/src/b.fs", 2),
+    })
+    local grouped = testing.to_diagnostics_grouped(s)
+    assert.are.equal(1, #grouped["/src/a.fs"])
+    assert.are.equal(1, #grouped["/src/b.fs"])
+  end)
+end)
