@@ -122,6 +122,13 @@ local function on_sse_events(raw_events)
 
     ::continue::
   end
+
+  -- Refresh gutter signs for current buffer after processing events
+  vim.schedule(function()
+    local buf = vim.api.nvim_get_current_buf()
+    render.render_test_signs(buf, M.testing_state)
+    render.render_coverage_signs(buf, M.coverage_state)
+  end)
 end
 
 -- ─── SSE Lifecycle ────────────────────────────────────────────────────────────
@@ -632,15 +639,27 @@ function M.health_check()
 end
 
 function M.statusline()
+  local parts = {}
+
   if M.active_session then
-    return sessions.format_statusline(M.active_session)
+    table.insert(parts, sessions.format_statusline(M.active_session))
+  else
+    local icon = M.state.status == "connected" and "⚡" or "💤"
+    local cell_count = model.cell_count(M.state)
+    if cell_count > 0 then
+      table.insert(parts, icon .. " SageFs [" .. cell_count .. "]")
+    else
+      table.insert(parts, icon .. " SageFs")
+    end
   end
-  local icon = M.state.status == "connected" and "⚡" or "💤"
-  local cell_count = model.cell_count(M.state)
-  if cell_count > 0 then
-    return icon .. " SageFs [" .. cell_count .. "]"
-  end
-  return icon .. " SageFs"
+
+  local test_sl = testing.format_statusline(M.testing_state)
+  if test_sl ~= "" then table.insert(parts, test_sl) end
+
+  local cov_sl = coverage.format_statusline(M.coverage_state)
+  if cov_sl ~= "" then table.insert(parts, cov_sl) end
+
+  return table.concat(parts, " │ ")
 end
 
 -- ─── Setup ───────────────────────────────────────────────────────────────────
@@ -672,6 +691,10 @@ function M.setup(opts)
     end,
     render_all = function(buf)
       render.render_all(buf, M.state)
+    end,
+    render_signs = function(buf)
+      render.render_test_signs(buf, M.testing_state)
+      render.render_coverage_signs(buf, M.coverage_state)
     end,
   }
 

@@ -418,6 +418,14 @@ function M.register_autocmds(plugin, helpers)
     end,
   })
 
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function(ev)
+      helpers.render_signs(ev.buf)
+    end,
+  })
+
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     pattern = { "fsharp", "fsx" },

@@ -109,6 +109,68 @@ function M.flash_cell(buf, start_line, end_line)
   end, 150)
 end
 
+-- ─── Test Gutter Signs ────────────────────────────────────────────────────────
+
+local testing = require("sagefs.testing")
+local coverage = require("sagefs.coverage")
+
+local test_ns = nil
+local cov_ns = nil
+
+local function get_test_ns()
+  if not test_ns then test_ns = vim.api.nvim_create_namespace("sagefs_tests") end
+  return test_ns
+end
+
+local function get_cov_ns()
+  if not cov_ns then cov_ns = vim.api.nvim_create_namespace("sagefs_coverage") end
+  return cov_ns
+end
+
+function M.render_test_signs(buf, testing_state)
+  local tns = get_test_ns()
+  vim.api.nvim_buf_clear_namespace(buf, tns, 0, -1)
+
+  local file = vim.api.nvim_buf_get_name(buf)
+  if file == "" then return end
+
+  local by_file = testing.filter_by_file(testing_state, file)
+  for _, t in ipairs(by_file) do
+    if t.line and t.line > 0 then
+      local sign = testing.gutter_sign(t.status)
+      pcall(vim.api.nvim_buf_set_extmark, buf, tns, t.line - 1, 0, {
+        sign_text = sign.text,
+        sign_hl_group = sign.hl,
+        priority = 200,
+      })
+    end
+  end
+end
+
+-- ─── Coverage Gutter Signs ──────────────────────────────────────────────────
+
+function M.render_coverage_signs(buf, coverage_state)
+  local cns = get_cov_ns()
+  vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
+
+  local file = vim.api.nvim_buf_get_name(buf)
+  if file == "" then return end
+
+  local lines = coverage.get_file_lines(coverage_state, file)
+  if not lines then return end
+
+  for _, entry in ipairs(lines) do
+    if entry.line and entry.line > 0 then
+      local sign = coverage.gutter_sign(entry.hits)
+      pcall(vim.api.nvim_buf_set_extmark, buf, cns, entry.line - 1, 0, {
+        sign_text = sign.text,
+        sign_hl_group = sign.hl,
+        priority = 150,
+      })
+    end
+  end
+end
+
 -- ─── Floating Window ──────────────────────────────────────────────────────────
 
 --- Show content in a centered floating window with q-to-close
