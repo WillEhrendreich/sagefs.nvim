@@ -11,6 +11,7 @@ local diagnostics = require("sagefs.diagnostics")
 local testing = require("sagefs.testing")
 local coverage = require("sagefs.coverage")
 local events = require("sagefs.events")
+local completions = require("sagefs.completions")
 local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
@@ -415,9 +416,11 @@ function M.omnifunc(findstart, base)
     while col > 0 and line:sub(col, col):match("[%w_]") do
       col = col - 1
     end
+    M._completion_col = col
     return col
   end
 
+  -- Async: fire HTTP request, call vim.fn.complete() when results arrive
   local buf = vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local text = table.concat(lines, "\n")
@@ -428,35 +431,27 @@ function M.omnifunc(findstart, base)
   end
   offset = offset + cursor[2]
 
-  local json_body = vim.fn.json_encode({
-    code = text,
-    cursor_position = offset,
-    working_directory = vim.fn.getcwd(),
+  local body = completions.build_request_body(text, offset, vim.fn.getcwd())
+  local col = (M._completion_col or 0) + 1
+
+  transport.http_json({
+    method = "POST",
+    url = dashboard_url() .. "/dashboard/completions",
+    body = body,
+    timeout = 5,
+    callback = function(ok, raw)
+      if not ok or not raw then return end
+      vim.schedule(function()
+        local items = completions.parse_response(raw)
+        if #items > 0 then
+          vim.fn.complete(col, items)
+        end
+      end)
+    end,
   })
 
-  -- Synchronous curl for omnifunc (must return results immediately)
-  local result = vim.fn.system({
-    "curl", "-X", "POST", dashboard_url() .. "/dashboard/completions",
-    "-H", "Content-Type: application/json",
-    "-d", json_body,
-    "--max-time", "5", "--silent", "--show-error",
-  })
-
-  local ok, parsed = pcall(vim.fn.json_decode, result)
-  if not ok or not parsed or not parsed.completions then
-    return {}
-  end
-
-  local items = {}
-  for _, c in ipairs(parsed.completions) do
-    table.insert(items, {
-      word = c.insertText or c.label,
-      abbr = c.label,
-      kind = c.kind or "",
-      menu = "[SageFs]",
-    })
-  end
-  return items
+  -- Return empty — results arrive asynchronously via vim.fn.complete()
+  return {}
 end
 
 -- ─── Session API ──────────────────────────────────────────────────────────────
