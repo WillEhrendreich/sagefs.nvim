@@ -8,3 +8,7 @@ set LUA_CPATH=C:\Users\WillEhrendreich\AppData\Roaming/luarocks/lib/lua/5.1/?.dl
 cd /d %~dp0
 set LUA_PATH=%LUA_PATH%;%~dp0lua\?.lua;%~dp0lua\?\init.lua
 busted %*
+
+echo.
+echo === Integration tests (headless Neovim) ===
+nvim --headless --clean -u NONE -l spec\nvim_harness.lua
