@@ -1,0 +1,17 @@
+services:
+  # Unit + integration tests (no daemon needed)
+  test-unit:
+    build: .
+    command: bash -c "busted && nvim --headless --clean -u NONE -l spec/nvim_harness.lua"
+
+  # E2E tests (starts SageFs daemon per suite)
+  test-e2e:
+    build: .
+    command: >
+      bash -c "
+        for spec in spec/e2e/e2e_*_spec.lua; do
+          echo '--- Running' $spec '---'
+          nvim --headless --clean -u NONE -l $spec || exit 1
+        done
+        echo '=== All E2E suites passed ==='
+      "
