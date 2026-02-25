@@ -60,9 +60,15 @@ end
 function M.new()
   return {
     enabled = false,
-    tests = {},    -- testId → {displayName, fullName, file, line, framework, category, policy, status, output}
-    policies = {}, -- category → policy string
+    tests = {},      -- testId → {displayName, fullName, file, line, framework, category, policy, status, output}
+    policies = {},   -- category → policy string
     summary = { total = 0, passed = 0, failed = 0, stale = 0, running = 0, disabled = 0 },
+    locations = {},  -- file → [{testId, file, line}]
+    providers = {},  -- [string]
+    run_phase = "Idle",  -- "Idle" | "Running" | "RunningButEdited"
+    generation = 0,      -- current RunGeneration int
+    freshness = nil,     -- "Fresh" | "StaleCodeEdited" | "StaleWrongGeneration" | nil
+    completion = nil,    -- "Complete" | "Partial" | "Superseded" | nil
   }
 end
 
@@ -151,6 +157,89 @@ function M.update_result(state, testId, status, output)
   end
 
   return state, nil
+end
+
+-- ─── PascalCase normalization (F# JsonFSharpConverter output) ────────────────
+
+--- Map of PascalCase keys to camelCase for TestStatusEntry
+local pascal_to_camel = {
+  TestId = "testId",
+  DisplayName = "displayName",
+  FullName = "fullName",
+  Origin = "origin",
+  Framework = "framework",
+  Category = "category",
+  CurrentPolicy = "currentPolicy",
+  Status = "status",
+  PreviousStatus = "previousStatus",
+}
+
+--- Normalize a TestStatusEntry from PascalCase (F#) to camelCase (Lua convention)
+---@param entry table
+---@return table normalized entry
+function M.normalize_entry(entry)
+  if not entry then return entry end
+  if entry.testId then return entry end  -- already camelCase
+  local out = {}
+  for k, v in pairs(entry) do
+    local mapped = pascal_to_camel[k]
+    if mapped then
+      out[mapped] = v
+    else
+      out[k] = v
+    end
+  end
+  return out
+end
+
+--- Parse a RunGeneration DU value to a plain int
+---@param gen any RunGeneration DU table, number, or nil
+---@return number
+function M.parse_generation(gen)
+  if gen == nil then return 0 end
+  if type(gen) == "number" then return gen end
+  if type(gen) == "table" and gen.Case == "RunGeneration" and gen.Fields then
+    return gen.Fields[1] or 0
+  end
+  return 0
+end
+
+--- Parse a BatchCompletion DU value to a string
+---@param comp any BatchCompletion DU table, string, or nil
+---@return string|nil
+function M.parse_completion(comp)
+  if comp == nil then return nil end
+  if type(comp) == "string" then return comp end
+  if type(comp) == "table" and comp.Case then
+    return comp.Case
+  end
+  return nil
+end
+
+--- Parse a ResultFreshness value (simple string DU)
+---@param fresh any
+---@return string|nil
+function M.parse_freshness(fresh)
+  if type(fresh) == "string" then return fresh end
+  if type(fresh) == "table" and fresh.Case then return fresh.Case end
+  return nil
+end
+
+--- Normalize a TestSummary from PascalCase to lowercase keys
+---@param summary table
+---@return table normalized summary
+function M.normalize_summary(summary)
+  if not summary then return nil end
+  -- If already lowercase, return as-is
+  if summary.total ~= nil then return summary end
+  return {
+    total = summary.Total or 0,
+    passed = summary.Passed or 0,
+    failed = summary.Failed or 0,
+    stale = summary.Stale or 0,
+    running = summary.Running or 0,
+    disabled = summary.Disabled or 0,
+  }
 end
 
 -- ─── Staleness ───────────────────────────────────────────────────────────────
@@ -306,15 +395,20 @@ end
 ---@return table state
 function M.apply_status_response(state, data)
   if not data then return state end
-  if data.enabled ~= nil then
-    state.enabled = data.enabled
+  -- Handle both camelCase and PascalCase (from F# JsonFSharpConverter)
+  local enabled = data.enabled
+  if enabled == nil then enabled = data.Enabled end
+  if enabled ~= nil then
+    state.enabled = enabled
   end
-  if data.summary then
-    state.summary = data.summary
+  local summary = data.summary or data.Summary
+  if summary then
+    state.summary = M.normalize_summary(summary)
   end
-  if data.tests then
-    for _, entry in ipairs(data.tests) do
-      M.update_test(state, entry)
+  local tests = data.tests or data.Tests
+  if tests then
+    for _, entry in ipairs(tests) do
+      M.update_test(state, M.normalize_entry(entry))
     end
   end
   return state
@@ -423,12 +517,32 @@ end
 
 --- Handle a TestResultsBatch event: update multiple test results at once
 ---@param state table
----@param data table {results: {testId, status, output?}[]}
+---@param data table TestResultsBatchPayload (enriched) or legacy {results: []}
 ---@return table state
 function M.handle_results_batch(state, data)
-  if not data or not data.results then return state end
-  for _, r in ipairs(data.results) do
-    M.update_result(state, r.testId, r.status, r.output)
+  if not data then return state end
+
+  -- Enriched payload: Entries/entries (PascalCase or camelCase)
+  local entries = data.Entries or data.entries
+  if entries then
+    for _, entry in ipairs(entries) do
+      M.update_test(state, M.normalize_entry(entry))
+    end
+    local summary = data.Summary or data.summary
+    if summary then
+      state.summary = M.normalize_summary(summary)
+    end
+    state.generation = M.parse_generation(data.Generation or data.generation) or state.generation
+    state.freshness = M.parse_freshness(data.Freshness or data.freshness)
+    state.completion = M.parse_completion(data.Completion or data.completion)
+    return state
+  end
+
+  -- Legacy format: results array with {testId, status, output}
+  if data.results then
+    for _, r in ipairs(data.results) do
+      M.update_result(state, r.testId, r.status, r.output)
+    end
   end
   return state
 end
@@ -497,6 +611,82 @@ function M.handle_test_run_completed(state, data)
     state.summary = data.summary
   end
   return state
+end
+
+-- ─── New handlers for enriched SageFs events ─────────────────────────────────
+
+--- Handle test locations detected: store source-mapped test locations by file
+---@param state table
+---@param data table {locations: [{testId, file, line}]}
+---@return table state
+function M.handle_test_locations(state, data)
+  if not data or not data.locations then return state end
+  local by_file = {}
+  for _, loc in ipairs(data.locations) do
+    local file = loc.file
+    if file then
+      if not by_file[file] then by_file[file] = {} end
+      table.insert(by_file[file], { testId = loc.testId, file = file, line = loc.line })
+    end
+  end
+  state.locations = by_file
+  return state
+end
+
+--- Handle providers detected: store list of framework names
+---@param state table
+---@param data table {providers: [string]}
+---@return table state
+function M.handle_providers_detected(state, data)
+  if not data or not data.providers then return state end
+  state.providers = data.providers
+  return state
+end
+
+--- Handle run phase changes (Idle/Running/RunningButEdited)
+---@param state table
+---@param data table {phase: string, generation: number?}
+---@return table state
+function M.handle_run_phase_changed(state, data)
+  if not data or not data.phase then return state end
+  state.run_phase = data.phase
+  if data.generation then
+    state.generation = data.generation
+  end
+  return state
+end
+
+-- ─── Annotations (gutter signs for test status) ──────────────────────────────
+
+--- Map test status to GutterIcon name (mirrors SageFs GutterIcon DU)
+local status_to_icon = {
+  Detected = "TestDiscovered",
+  Queued = "TestDiscovered",
+  Running = "TestRunning",
+  Passed = "TestPassed",
+  Failed = "TestFailed",
+  Skipped = "TestSkipped",
+  Stale = "TestDiscovered",
+  PolicyDisabled = "TestSkipped",
+}
+
+--- Generate line annotations for tests in a specific file
+---@param state table testing state
+---@param file string file path to filter by
+---@return table[] annotations [{line, icon, tooltip}]
+function M.annotations_for_file(state, file)
+  local anns = {}
+  for _, test in pairs(state.tests) do
+    if test.file == file then
+      table.insert(anns, {
+        line = test.line or 1,
+        icon = status_to_icon[test.status] or "TestDiscovered",
+        tooltip = string.format("%s: %s", test.status or "Unknown", test.displayName or ""),
+      })
+    end
+  end
+  table.sort(anns, function(a, b) return a.line < b.line end)
+  return anns
 end
 
 -- ─── State Recovery ──────────────────────────────────────────────────────────

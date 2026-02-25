@@ -98,13 +98,16 @@ local function build_handlers()
       local data = decode_event_data(raw)
       if not data then return end
       M.testing_state = testing.handle_results_batch(M.testing_state, data)
-      -- Fire per-test pass/fail events
-      if data.results then
-        for _, r in ipairs(data.results) do
-          if r.status == "Passed" then
-            fire_user_event("test_passed", r)
-          elseif r.status == "Failed" then
-            fire_user_event("test_failed", r)
+      -- Fire per-test pass/fail events (enriched or legacy)
+      local entries = data.Entries or data.entries or data.results
+      if entries then
+        for _, r in ipairs(entries) do
+          local entry = testing.normalize_entry(r)
+          local status = entry.status or entry.Status
+          if status == "Passed" then
+            fire_user_event("test_passed", entry)
+          elseif status == "Failed" then
+            fire_user_event("test_failed", entry)
           end
         end
       end
@@ -140,6 +143,29 @@ local function build_handlers()
     run_policy_changed = function(raw)
       local data = decode_event_data(raw)
       if data then M.testing_state = testing.handle_run_policy_changed(M.testing_state, data) end
+    end,
+    test_locations_detected = function(raw)
+      local data = decode_event_data(raw)
+      if data then M.testing_state = testing.handle_test_locations(M.testing_state, data) end
+    end,
+    providers_detected = function(raw)
+      local data = decode_event_data(raw)
+      if data then
+        M.testing_state = testing.handle_providers_detected(M.testing_state, data)
+        fire_user_event("providers_detected", data)
+      end
+    end,
+    affected_tests_computed = function(raw)
+      local data = decode_event_data(raw)
+      if data then fire_user_event("affected_tests_computed", data) end
+    end,
+    pipeline_timing_recorded = function(raw)
+      local data = decode_event_data(raw)
+      if data then fire_user_event("pipeline_timing_recorded", data) end
+    end,
+    run_tests_requested = function(raw)
+      local data = decode_event_data(raw)
+      if data then fire_user_event("run_tests_requested", data) end
     end,
 
     -- Coverage
@@ -218,27 +244,12 @@ local function start_sse()
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
       fire_user_event("connected")
-      -- Recover full test state on (re)connect
-      if testing.needs_recovery(M.testing_state) or M.testing_state.enabled then
-        transport.http_json({
-          method = "GET",
-          url = base_url() .. "/api/live-test-status",
-          timeout = 10,
-          callback = function(ok, raw)
-            if not ok or not raw then return end
-            vim.schedule(function()
-              local parse_ok, data = pcall(vim.json.decode, raw)
-              if parse_ok and data then
-                local parsed = testing.parse_status_response(vim.fn.json_encode(data))
-                if parsed then
-                  M.testing_state = testing.apply_status_response(M.testing_state, parsed)
-                  local buf = vim.api.nvim_get_current_buf()
-                  render.render_test_signs(buf, M.testing_state)
-                end
-              end
-            end)
-          end,
-        })
+      -- Test state recovery on (re)connect
+      -- Note: /api/live-test-status is not an HTTP endpoint — it's only available
+      -- as an MCP tool (get_live_test_status). Recovery will be enabled once SageFs
+      -- adds an HTTP endpoint for test status, or sends typed events over SSE.
+      if M.testing_state.enabled then
+        fire_user_event("test_recovery_needed")
       end
     end,
     on_disconnect = function()

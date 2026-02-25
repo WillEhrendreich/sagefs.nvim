@@ -1206,3 +1206,405 @@ describe("testing.format_file_panel_content", function()
     assert.truthy(text:find("[Nn]o tests") or text:find("empty"), "should show no-tests message")
   end)
 end)
+
+-- ─── Enriched batch payload (TestResultsBatchPayload from SageFs) ────────────
+
+-- Helper for building Origin DU values in tests
+local function make_origin(file, line)
+  return { Case = "SourceMapped", Fields = { file, line } }
+end
+
+describe("testing.handle_results_batch enriched payload", function()
+  it("accepts Entries (PascalCase) from JsonFSharpConverter", function()
+    local s = testing.new()
+    s = testing.handle_results_batch(s, {
+      Entries = {
+        { TestId = "t1", DisplayName = "Test One", FullName = "Ns.Test One",
+          Origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 10 } },
+          Framework = "Expecto", Category = "Unit", CurrentPolicy = "OnEveryChange",
+          Status = "Passed", PreviousStatus = "Detected" },
+      },
+      Summary = { Total = 1, Passed = 1, Failed = 0, Stale = 0, Running = 0, Disabled = 0 },
+      Generation = { Case = "RunGeneration", Fields = { 1 } },
+      Freshness = "Fresh",
+      Completion = { Case = "Complete", Fields = { 1, 1 } },
+    })
+    assert.are.equal(1, testing.test_count(s))
+    assert.are.equal("Passed", s.tests["t1"].status)
+  end)
+
+  it("accepts entries (camelCase) from camelCase serializer", function()
+    local s = testing.new()
+    s = testing.handle_results_batch(s, {
+      entries = {
+        { testId = "t2", displayName = "Test Two", fullName = "Ns.Test Two",
+          origin = { Case = "SourceMapped", Fields = { "/src/b.fs", 20 } },
+          framework = "Expecto", category = "Unit", currentPolicy = "OnEveryChange",
+          status = "Failed", previousStatus = "Detected" },
+      },
+      summary = { total = 1, passed = 0, failed = 1, stale = 0, running = 0, disabled = 0 },
+    })
+    assert.are.equal(1, testing.test_count(s))
+    assert.are.equal("Failed", s.tests["t2"].status)
+  end)
+
+  it("updates summary from enriched payload", function()
+    local s = testing.new()
+    s = testing.handle_results_batch(s, {
+      Entries = {
+        { TestId = "t1", DisplayName = "A", Status = "Passed",
+          Origin = { Case = "ReflectionOnly" },
+          Category = "Unit", CurrentPolicy = "OnEveryChange" },
+      },
+      Summary = { Total = 5, Passed = 3, Failed = 1, Stale = 1, Running = 0, Disabled = 0 },
+    })
+    assert.are.equal(5, s.summary.total)
+    assert.are.equal(3, s.summary.passed)
+    assert.are.equal(1, s.summary.failed)
+  end)
+
+  it("stores generation and freshness metadata", function()
+    local s = testing.new()
+    s = testing.handle_results_batch(s, {
+      Entries = {},
+      Summary = { Total = 0, Passed = 0, Failed = 0, Stale = 0, Running = 0, Disabled = 0 },
+      Generation = { Case = "RunGeneration", Fields = { 3 } },
+      Freshness = "StaleCodeEdited",
+      Completion = { Case = "Superseded" },
+    })
+    assert.are.equal(3, s.generation)
+    assert.are.equal("StaleCodeEdited", s.freshness)
+    assert.are.equal("Superseded", s.completion)
+  end)
+
+  it("still handles legacy results format", function()
+    local s = testing.new()
+    s = testing.handle_results_batch(s, {
+      results = {
+        { testId = "t1", status = "Passed", output = "ok" },
+      },
+    })
+    assert.are.equal(1, testing.test_count(s))
+    assert.are.equal("Passed", s.tests["t1"].status)
+  end)
+end)
+
+-- ─── apply_status_response PascalCase (MCP tool response) ────────────────────
+
+describe("testing.apply_status_response PascalCase", function()
+  it("handles Enabled (PascalCase) from MCP tool", function()
+    local s = testing.new()
+    s = testing.apply_status_response(s, {
+      Enabled = true,
+      Summary = { Total = 10, Passed = 8, Failed = 2, Stale = 0, Running = 0, Disabled = 0 },
+    })
+    assert.is_true(s.enabled)
+    assert.are.equal(10, s.summary.total)
+  end)
+
+  it("handles Tests array (PascalCase entries)", function()
+    local s = testing.new()
+    s = testing.apply_status_response(s, {
+      Enabled = true,
+      Summary = { Total = 1, Passed = 1, Failed = 0, Stale = 0, Running = 0, Disabled = 0 },
+      Tests = {
+        { TestId = "t1", DisplayName = "Test", FullName = "Ns.Test",
+          Origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 5 } },
+          Framework = "Expecto", Category = "Unit", CurrentPolicy = "OnEveryChange",
+          Status = "Passed", PreviousStatus = "Detected" },
+      },
+    })
+    assert.are.equal(1, testing.test_count(s))
+    assert.are.equal("Passed", s.tests["t1"].status)
+    assert.are.equal("/src/a.fs", s.tests["t1"].file)
+  end)
+end)
+
+-- ─── New state atoms ─────────────────────────────────────────────────────────
+
+describe("testing.new extended state", function()
+  it("includes locations table", function()
+    local s = testing.new()
+    assert.is_not_nil(s.locations)
+    assert.are.same({}, s.locations)
+  end)
+
+  it("includes providers list", function()
+    local s = testing.new()
+    assert.is_not_nil(s.providers)
+    assert.are.same({}, s.providers)
+  end)
+
+  it("includes run_phase as Idle", function()
+    local s = testing.new()
+    assert.are.equal("Idle", s.run_phase)
+  end)
+
+  it("includes generation as 0", function()
+    local s = testing.new()
+    assert.are.equal(0, s.generation)
+  end)
+
+  it("includes freshness as nil", function()
+    local s = testing.new()
+    assert.is_nil(s.freshness)
+  end)
+
+  it("includes completion as nil", function()
+    local s = testing.new()
+    assert.is_nil(s.completion)
+  end)
+end)
+
+-- ─── handle_test_locations ───────────────────────────────────────────────────
+
+describe("testing.handle_test_locations", function()
+  it("stores source-mapped test locations by file", function()
+    local s = testing.new()
+    s = testing.handle_test_locations(s, {
+      locations = {
+        { testId = "t1", file = "/src/a.fs", line = 10 },
+        { testId = "t2", file = "/src/a.fs", line = 20 },
+        { testId = "t3", file = "/src/b.fs", line = 5 },
+      },
+    })
+    assert.are.equal(2, #s.locations["/src/a.fs"])
+    assert.are.equal(1, #s.locations["/src/b.fs"])
+  end)
+
+  it("replaces previous locations on update", function()
+    local s = testing.new()
+    s = testing.handle_test_locations(s, {
+      locations = {
+        { testId = "t1", file = "/src/a.fs", line = 10 },
+      },
+    })
+    s = testing.handle_test_locations(s, {
+      locations = {
+        { testId = "t2", file = "/src/a.fs", line = 20 },
+      },
+    })
+    assert.are.equal(1, #s.locations["/src/a.fs"])
+    assert.are.equal("t2", s.locations["/src/a.fs"][1].testId)
+  end)
+
+  it("is a no-op for nil data", function()
+    local s = testing.new()
+    local s2 = testing.handle_test_locations(s, nil)
+    assert.are.same({}, s2.locations)
+  end)
+end)
+
+-- ─── handle_providers_detected ───────────────────────────────────────────────
+
+describe("testing.handle_providers_detected", function()
+  it("stores provider names", function()
+    local s = testing.new()
+    s = testing.handle_providers_detected(s, {
+      providers = { "Expecto", "xUnit", "NUnit" },
+    })
+    assert.are.equal(3, #s.providers)
+    assert.are.equal("Expecto", s.providers[1])
+  end)
+
+  it("replaces existing providers", function()
+    local s = testing.new()
+    s = testing.handle_providers_detected(s, { providers = { "Expecto" } })
+    s = testing.handle_providers_detected(s, { providers = { "xUnit" } })
+    assert.are.equal(1, #s.providers)
+    assert.are.equal("xUnit", s.providers[1])
+  end)
+
+  it("is a no-op for nil data", function()
+    local s = testing.new()
+    local s2 = testing.handle_providers_detected(s, nil)
+    assert.are.same({}, s2.providers)
+  end)
+end)
+
+-- ─── handle_run_phase_changed ────────────────────────────────────────────────
+
+describe("testing.handle_run_phase_changed", function()
+  it("transitions to Running with generation", function()
+    local s = testing.new()
+    s = testing.handle_run_phase_changed(s, { phase = "Running", generation = 2 })
+    assert.are.equal("Running", s.run_phase)
+    assert.are.equal(2, s.generation)
+  end)
+
+  it("transitions to Idle", function()
+    local s = testing.new()
+    s.run_phase = "Running"
+    s = testing.handle_run_phase_changed(s, { phase = "Idle" })
+    assert.are.equal("Idle", s.run_phase)
+  end)
+
+  it("transitions to RunningButEdited", function()
+    local s = testing.new()
+    s = testing.handle_run_phase_changed(s, { phase = "RunningButEdited", generation = 1 })
+    assert.are.equal("RunningButEdited", s.run_phase)
+  end)
+
+  it("is a no-op for nil data", function()
+    local s = testing.new()
+    local s2 = testing.handle_run_phase_changed(s, nil)
+    assert.are.equal("Idle", s2.run_phase)
+  end)
+end)
+
+-- ─── annotations_for_file ────────────────────────────────────────────────────
+
+describe("testing.annotations_for_file", function()
+  it("returns annotations for tests in a specific file", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "passing test",
+      status = "Passed", origin = make_origin("/src/a.fs", 10),
+    })
+    s = testing.update_test(s, {
+      testId = "t2", displayName = "failing test",
+      status = "Failed", origin = make_origin("/src/a.fs", 20),
+    })
+    s = testing.update_test(s, {
+      testId = "t3", displayName = "other file",
+      status = "Passed", origin = make_origin("/src/b.fs", 5),
+    })
+    local anns = testing.annotations_for_file(s, "/src/a.fs")
+    assert.are.equal(2, #anns)
+  end)
+
+  it("includes line, icon, and tooltip in each annotation", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "my test",
+      status = "Passed", origin = make_origin("/src/a.fs", 15),
+    })
+    local anns = testing.annotations_for_file(s, "/src/a.fs")
+    assert.are.equal(1, #anns)
+    assert.are.equal(15, anns[1].line)
+    assert.are.equal("TestPassed", anns[1].icon)
+    assert.truthy(anns[1].tooltip:find("my test"))
+  end)
+
+  it("maps all statuses to correct icons", function()
+    local status_to_icon = {
+      Detected = "TestDiscovered",
+      Running = "TestRunning",
+      Passed = "TestPassed",
+      Failed = "TestFailed",
+      Skipped = "TestSkipped",
+      Stale = "TestDiscovered",
+    }
+    for status, expected_icon in pairs(status_to_icon) do
+      local s = testing.new()
+      s = testing.update_test(s, {
+        testId = "t1", displayName = "test",
+        status = status, origin = make_origin("/src/a.fs", 1),
+      })
+      local anns = testing.annotations_for_file(s, "/src/a.fs")
+      assert.are.equal(expected_icon, anns[1].icon, "status " .. status .. " should map to " .. expected_icon)
+    end
+  end)
+
+  it("returns empty for file with no tests", function()
+    local s = testing.new()
+    local anns = testing.annotations_for_file(s, "/src/nonexistent.fs")
+    assert.are.equal(0, #anns)
+  end)
+
+  it("sorts annotations by line number", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "later",
+      status = "Passed", origin = make_origin("/src/a.fs", 50),
+    })
+    s = testing.update_test(s, {
+      testId = "t2", displayName = "earlier",
+      status = "Failed", origin = make_origin("/src/a.fs", 10),
+    })
+    local anns = testing.annotations_for_file(s, "/src/a.fs")
+    assert.are.equal(10, anns[1].line)
+    assert.are.equal(50, anns[2].line)
+  end)
+end)
+
+-- ─── normalize_entry (PascalCase → camelCase) ────────────────────────────────
+
+describe("testing.normalize_entry", function()
+  it("converts PascalCase keys to camelCase", function()
+    local entry = testing.normalize_entry({
+      TestId = "t1", DisplayName = "Test", FullName = "Ns.Test",
+      Origin = { Case = "SourceMapped", Fields = { "/a.fs", 1 } },
+      Framework = "Expecto", Category = "Unit",
+      CurrentPolicy = "OnEveryChange", Status = "Passed",
+    })
+    assert.are.equal("t1", entry.testId)
+    assert.are.equal("Test", entry.displayName)
+    assert.are.equal("Ns.Test", entry.fullName)
+    assert.are.equal("Expecto", entry.framework)
+    assert.are.equal("Unit", entry.category)
+    assert.are.equal("OnEveryChange", entry.currentPolicy)
+    assert.are.equal("Passed", entry.status)
+  end)
+
+  it("passes through already-camelCase entries", function()
+    local entry = testing.normalize_entry({
+      testId = "t1", displayName = "Test", status = "Passed",
+    })
+    assert.are.equal("t1", entry.testId)
+    assert.are.equal("Test", entry.displayName)
+    assert.are.equal("Passed", entry.status)
+  end)
+
+  it("preserves origin as-is", function()
+    local origin = { Case = "SourceMapped", Fields = { "/a.fs", 5 } }
+    local entry = testing.normalize_entry({
+      TestId = "t1", Origin = origin, Status = "Passed",
+    })
+    assert.are.same(origin, entry.origin)
+  end)
+end)
+
+-- ─── parse_generation (RunGeneration DU from F#) ─────────────────────────────
+
+describe("testing.parse_generation", function()
+  it("extracts int from RunGeneration DU", function()
+    assert.are.equal(3, testing.parse_generation({ Case = "RunGeneration", Fields = { 3 } }))
+  end)
+
+  it("extracts int from plain number", function()
+    assert.are.equal(5, testing.parse_generation(5))
+  end)
+
+  it("returns 0 for nil", function()
+    assert.are.equal(0, testing.parse_generation(nil))
+  end)
+
+  it("returns 0 for unrecognized shape", function()
+    assert.are.equal(0, testing.parse_generation("invalid"))
+  end)
+end)
+
+-- ─── parse_completion (BatchCompletion DU from F#) ───────────────────────────
+
+describe("testing.parse_completion", function()
+  it("parses Complete DU", function()
+    assert.are.equal("Complete", testing.parse_completion({ Case = "Complete", Fields = { 10, 10 } }))
+  end)
+
+  it("parses Partial DU", function()
+    assert.are.equal("Partial", testing.parse_completion({ Case = "Partial", Fields = { 10, 5 } }))
+  end)
+
+  it("parses Superseded DU", function()
+    assert.are.equal("Superseded", testing.parse_completion({ Case = "Superseded" }))
+  end)
+
+  it("parses plain string", function()
+    assert.are.equal("Complete", testing.parse_completion("Complete"))
+  end)
+
+  it("returns nil for nil input", function()
+    assert.is_nil(testing.parse_completion(nil))
+  end)
+end)
