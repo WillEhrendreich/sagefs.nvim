@@ -188,7 +188,7 @@ function M.show_float(lines, opts)
   for _, l in ipairs(lines) do
     if #l + 2 > width then width = #l + 2 end
   end
-  local height = math.min(#lines, opts.max_height or 30)
+  local height = math.max(1, math.min(#lines, opts.max_height or 30))
 
   local win_opts = {
     relative = "editor",
