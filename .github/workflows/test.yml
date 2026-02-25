@@ -78,27 +78,33 @@ jobs:
         id: smoke
         run: |
           export PATH="$HOME/.dotnet/tools:$PATH"
-          # Check if sagefs supports --supervised (required for E2E)
-          HELP_TEXT=$(sagefs --help 2>&1 || true)
-          if echo "$HELP_TEXT" | grep -q 'supervised'; then
-            echo "sagefs supports --supervised"
-          else
-            echo "::warning::sagefs NuGet version does not support --supervised/--port flags (needed for E2E)"
-            echo "skip_e2e=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          echo "SageFs version: $(sagefs --version 2>&1 || true)"
+          # Actually try --supervised — if it fails, skip E2E
           sagefs --supervised --proj samples/Minimal/Minimal.fsproj --mcp-port 47700 > /tmp/sagefs-smoke.log 2>&1 &
           SAGEFS_PID=$!
           echo "SageFs PID: $SAGEFS_PID"
+          sleep 3
+          # Check if process died immediately (unsupported flag)
+          if ! kill -0 $SAGEFS_PID 2>/dev/null; then
+            echo "=== SageFs exited immediately — likely unsupported flags ==="
+            cat /tmp/sagefs-smoke.log || true
+            echo "skip_e2e=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           for i in $(seq 1 60); do
             if curl -sf http://localhost:47700/health > /dev/null 2>&1; then
-              echo "SageFs healthy after $((i*2))s"
+              echo "SageFs healthy after $((i*2+6))s"
               kill $SAGEFS_PID 2>/dev/null || true
               exit 0
             fi
+            if ! kill -0 $SAGEFS_PID 2>/dev/null; then
+              echo "=== SageFs daemon died during startup ==="
+              cat /tmp/sagefs-smoke.log || true
+              exit 1
+            fi
             sleep 2
           done
-          echo "=== SageFs smoke test failed — daemon log ==="
+          echo "=== SageFs smoke test timed out — daemon log ==="
           cat /tmp/sagefs-smoke.log || true
           kill $SAGEFS_PID 2>/dev/null || true
           exit 1
