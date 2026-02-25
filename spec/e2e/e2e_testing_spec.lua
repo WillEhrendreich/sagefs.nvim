@@ -27,8 +27,9 @@ H.run_suite({
         H.http_post("/api/live-testing/toggle", nil, handle.port)
         vim.wait(2000, function() return false end)
 
-        -- Trigger test run
-        local resp = H.http_post("/api/live-testing/run", nil, handle.port)
+        -- Trigger test run (must send JSON body, even if empty)
+        local resp = H.http_post("/api/live-testing/run",
+          vim.fn.json_encode({}), handle.port)
         H.assert_eq(200, resp.status, "run tests status")
 
         -- Wait for tests to complete
@@ -69,8 +70,9 @@ H.run_suite({
 
         vim.wait(1000, function() return false end)
 
-        -- Trigger test run
-        H.http_post("/api/live-testing/run", nil, handle.port)
+        -- Trigger test run (must send JSON body)
+        H.http_post("/api/live-testing/run",
+          vim.fn.json_encode({}), handle.port)
 
         -- Wait for test-related SSE events
         local got_test_event = H.wait_for(function()

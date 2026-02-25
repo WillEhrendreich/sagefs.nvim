@@ -190,6 +190,21 @@ function H.http_post(path, body_str, port)
   return { status = status, body = resp_body }
 end
 
+-- ─── Eval Helper ─────────────────────────────────────────────────────────────
+
+-- Current project directory (set by run_suite for session resolution)
+local current_project_dir = nil
+
+-- Eval F# code via POST /exec with working_directory for session resolution
+function H.eval(code, port)
+  port = port or H.SAGEFS_PORT
+  local body = { code = code }
+  if current_project_dir then
+    body.working_directory = current_project_dir
+  end
+  return H.http_post("/exec", vim.fn.json_encode(body), port)
+end
+
 -- ─── Daemon Lifecycle ────────────────────────────────────────────────────────
 
 -- Active daemon handle (module-level for cleanup)
@@ -383,6 +398,9 @@ function H.run_suite(opts)
     temp = H.create_temp_project(sample)
     io.write("    [harness] Temp project: " .. temp.project .. "\n")
 
+    -- Set project dir for session resolution
+    current_project_dir = temp.project
+
     -- Start daemon
     handle = H.start_daemon(temp.project, port)
 
@@ -390,14 +408,18 @@ function H.run_suite(opts)
     H.wait_for_health(port)
 
     -- Warmup: send a trivial eval to ensure FSI session is fully loaded
+    -- Must check body too — SageFs returns 200 even with "No active session" error
     local warmup_ok = vim.wait(30000, function()
-      local r = H.http_post("/exec", vim.fn.json_encode({ code = "1 + 1;;" }), port)
-      return r.status == 200
+      local r = H.eval("1 + 1;;", port)
+      if r.status ~= 200 then return false end
+      -- Body must NOT contain "No active session" error
+      if r.body and r.body:find("No active session") then return false end
+      return true
     end, 1000)
     if warmup_ok then
       io.write("    [harness] FSI session warmed up.\n")
     else
-      io.write("    [harness] Warning: FSI warmup did not return 200 within 30s.\n")
+      io.write("    [harness] Warning: FSI warmup did not succeed within 30s.\n")
     end
 
     -- Setup plugin
@@ -408,6 +430,7 @@ function H.run_suite(opts)
   end)
 
   -- Always cleanup
+  current_project_dir = nil
   if handle then
     pcall(H.stop_daemon, handle)
   end

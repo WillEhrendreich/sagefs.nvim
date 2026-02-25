@@ -17,27 +17,21 @@ H.run_suite({
     H.describe("initial eval with project modules", function()
       H.it("can use Domain types", function()
         local code = 'open Domain;; let t = { Celsius = 100.0 };;'
-        local resp = H.http_post("/exec",
-          vim.fn.json_encode({ code = code }),
-          handle.port)
+        local resp = H.eval(code, handle.port)
         H.assert_eq(200, resp.status, "exec status")
         H.assert_contains(resp.body, "100", "should see 100.0")
       end)
 
       H.it("can use Logic functions", function()
         local code = 'open Domain;; open Logic;; let f = toFahrenheit { Celsius = 100.0 };;'
-        local resp = H.http_post("/exec",
-          vim.fn.json_encode({ code = code }),
-          handle.port)
+        local resp = H.eval(code, handle.port)
         H.assert_eq(200, resp.status, "exec status")
         H.assert_contains(resp.body, "212", "100C = 212F")
       end)
 
       H.it("can use Api functions", function()
         local code = 'open Domain;; open Api;; let s = formatTemperature { Celsius = 0.0 } Fahrenheit;;'
-        local resp = H.http_post("/exec",
-          vim.fn.json_encode({ code = code }),
-          handle.port)
+        local resp = H.eval(code, handle.port)
         H.assert_eq(200, resp.status, "exec status")
         H.assert_contains(resp.body, "32", "0C = 32F")
       end)
@@ -45,8 +39,8 @@ H.run_suite({
 
     H.describe("file modification detection", function()
       H.it("detects when a source file is modified", function()
-        -- Read the original Domain.fs
-        local domain_path = temp.project .. "\\Domain.fs"
+        -- Read the original Domain.fs (use forward slashes for cross-platform)
+        local domain_path = temp.project .. "/Domain.fs"
         local original = vim.fn.readfile(domain_path)
 
         -- Modify Domain.fs — add a new type
@@ -60,10 +54,7 @@ H.run_suite({
         vim.wait(5000, function() return false end)
 
         -- Try to use the new type (may or may not work depending on hot reload timing)
-        local code = 'open Domain;; let p = { Pascals = 101325.0 };;'
-        local resp = H.http_post("/exec",
-          vim.fn.json_encode({ code = code }),
-          handle.port)
+        local resp = H.eval('open Domain;; let p = { Pascals = 101325.0 };;', handle.port)
 
         -- Whether this succeeds depends on whether hot reload has processed yet
         -- The key assertion is that we didn't crash the daemon
@@ -77,9 +68,7 @@ H.run_suite({
     H.describe("eval after file change", function()
       H.it("can still eval after hot reload cycle", function()
         -- Simple eval to verify daemon is still healthy
-        local resp = H.http_post("/exec",
-          vim.fn.json_encode({ code = "1 + 1;;" }),
-          handle.port)
+        local resp = H.eval("1 + 1;;", handle.port)
         H.assert_eq(200, resp.status, "exec status after hot reload")
         H.assert_contains(resp.body, "2", "1 + 1 = 2")
       end)

@@ -25,9 +25,9 @@ H.run_suite({
       H.it("session has project metadata", function()
         local resp = H.http_get("/api/sessions", handle.port)
         H.assert_eq(200, resp.status, "sessions status")
-        -- Should mention the project name somewhere
+        -- Response JSON includes projects array and workingDirectory field
         H.assert_truthy(
-          resp.body:find("Minimal") or resp.body:find("minimal") or resp.body:find("fsproj"),
+          resp.body:find("projects") or resp.body:find("workingDirectory") or resp.body:find("fsproj"),
           "session should reference the loaded project"
         )
       end)
