@@ -24,3 +24,10 @@ Thumbs.db
 # Test artifacts
 luacov.stats.out
 luacov.report.out
+
+# Sample project build artifacts
+samples/*/bin/
+samples/*/obj/
+
+# Demo output (generated GIFs)
+demos/output/

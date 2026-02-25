@@ -3,6 +3,7 @@ return {
     verbose = true,
     output = "utfTerminal",
     pattern = "_spec",
+    ["exclude-pattern"] = "e2e",
     ROOT = {"spec/"},
     lua = "lua",
     helper = "spec/helper.lua",
