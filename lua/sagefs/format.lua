@@ -193,19 +193,32 @@ function M.format_status_report(info)
 
   -- Tests
   local ts = info.testing_state
-  if ts and ts.tests then
-    local passed, failed, running, total = 0, 0, 0, 0
-    for _ in pairs(ts.tests) do total = total + 1 end
-    for _, t in pairs(ts.tests) do
-      if t.status == "Passed" then passed = passed + 1
-      elseif t.status == "Failed" then failed = failed + 1
-      elseif t.status == "Running" then running = running + 1
-      end
-    end
-    if total > 0 then
+  if ts then
+    local s = ts.summary
+    -- Use summary if populated, otherwise count from tests table
+    if s and s.total and s.total > 0 then
       table.insert(lines, "")
+      local enabled_label = ts.enabled and "enabled" or "disabled"
+      table.insert(lines, "Testing:   " .. enabled_label)
       table.insert(lines, string.format("Tests:     %d total, %d passed, %d failed, %d running",
-        total, passed, failed, running))
+        s.total, s.passed or 0, s.failed or 0, s.running or 0))
+      if (s.stale or 0) > 0 then
+        table.insert(lines, string.format("           %d stale", s.stale))
+      end
+    elseif ts.tests then
+      local passed, failed, running, total = 0, 0, 0, 0
+      for _ in pairs(ts.tests) do total = total + 1 end
+      for _, t in pairs(ts.tests) do
+        if t.status == "Passed" then passed = passed + 1
+        elseif t.status == "Failed" then failed = failed + 1
+        elseif t.status == "Running" then running = running + 1
+        end
+      end
+      if total > 0 then
+        table.insert(lines, "")
+        table.insert(lines, string.format("Tests:     %d total, %d passed, %d failed, %d running",
+          total, passed, failed, running))
+      end
     end
   end
 

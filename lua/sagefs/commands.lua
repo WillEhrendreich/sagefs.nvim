@@ -197,8 +197,24 @@ function M.register_commands(plugin, helpers)
     if not test_panel_win or not vim.api.nvim_win_is_valid(test_panel_win) then return end
     test_panel_entries = testing.format_panel_entries(plugin.testing_state)
     local lines = {}
-    for _, e in ipairs(test_panel_entries) do
-      table.insert(lines, e.text)
+    -- Show poll-based summary when we have summary but no individual tests
+    local s = plugin.testing_state.summary
+    local has_individual_tests = false
+    for _ in pairs(plugin.testing_state.tests) do has_individual_tests = true; break end
+    if not has_individual_tests and s and s.total and s.total > 0 then
+      local status = plugin.testing_state.enabled and "enabled" or "disabled"
+      table.insert(lines, string.format("═══ Tests (%s) ═══", status))
+      table.insert(lines, string.format("Total: %d  ✓ %d  ✗ %d  ⏳ %d",
+        s.total, s.passed or 0, s.failed or 0, s.running or 0))
+      if (s.stale or 0) > 0 then
+        table.insert(lines, string.format("Stale: %d", s.stale))
+      end
+      table.insert(lines, "")
+      table.insert(lines, "(per-test details unavailable)")
+    else
+      for _, e in ipairs(test_panel_entries) do
+        table.insert(lines, e.text)
+      end
     end
     vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", true)
     vim.api.nvim_buf_set_lines(test_panel_buf, 0, -1, false, lines)
@@ -246,7 +262,7 @@ function M.register_commands(plugin, helpers)
 
   -- Auto-update panel on test events
   local panel_group = vim.api.nvim_create_augroup("SageFsTestPanel", { clear = true })
-  for _, pattern in ipairs({ "SageFsTestPassed", "SageFsTestFailed", "SageFsTestRunCompleted", "SageFsTestsDiscovered" }) do
+  for _, pattern in ipairs({ "SageFsTestPassed", "SageFsTestFailed", "SageFsTestRunCompleted", "SageFsTestsDiscovered", "SageFsTestState" }) do
     vim.api.nvim_create_autocmd("User", {
       group = panel_group,
       pattern = pattern,

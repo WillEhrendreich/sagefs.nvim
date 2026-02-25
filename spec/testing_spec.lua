@@ -1725,13 +1725,13 @@ describe("testing.handle_test_summary", function()
     assert.are.equal(5, s.summary.passed)
   end)
 
-  it("enables testing when summary shows tests", function()
+  it("does not override enabled state", function()
     local s = testing.new()
     assert.is_false(s.enabled)
     s = testing.handle_test_summary(s, {
       Total = 3, Passed = 3, Failed = 0, Stale = 0, Running = 0, Disabled = 0,
     })
-    assert.is_true(s.enabled)
+    assert.is_false(s.enabled)  -- enabled is set by set_enabled, not by summary
   end)
 
   it("is a no-op for nil data", function()

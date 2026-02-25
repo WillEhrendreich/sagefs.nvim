@@ -692,9 +692,6 @@ end
 function M.handle_test_summary(state, data)
   if not data then return state end
   state.summary = M.normalize_summary(data)
-  if state.summary.total > 0 then
-    state.enabled = true
-  end
   return state
 end
 
