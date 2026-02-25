@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **24 Lua modules, 745 tests, zero failures.**
+This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -43,7 +43,7 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 745 tests, 
 | **Smart eval** | If no session exists, prompts to create one before evaluating. |
 | **Session context** | Floating window showing assemblies, namespaces, warmup details. |
 | **Hot reload controls** | Per-file toggle, watch-all, unwatch-all via picker. |
-| **SSE dispatch pipeline** | All 22 SageFs event types classified and routed through pcall-protected dispatch. |
+| **SSE dispatch pipeline** | All SageFs event types classified and routed through pcall-protected dispatch. |
 | **SSE live updates** | Subscribes to SageFs event stream with exponential backoff reconnect (1s→32s). |
 | **State recovery** | Full state synced on SSE reconnect — no stale data after drops. |
 | **Live diagnostics** | F# errors/warnings streamed via SSE into `vim.diagnostic`. |
@@ -66,7 +66,7 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 745 tests, 
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | 9 event types fired via `User` autocmds for scripting integration. |
+| **User autocmd events** | 11 event types fired via `User` autocmds for scripting integration. |
 | **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
@@ -167,30 +167,30 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `cells.lua` | ~190 | `;;` boundary detection, cell finding, treesitter boundary support |
-| `format.lua` | ~230 | Result formatting, status report builder, `build_render_options` |
-| `model.lua` | ~120 | Elmish state machine with validated transitions (idle→running→success/error→stale) |
-| `sse.lua` | ~155 | SSE parser, event classification (22 types), dispatch table, pcall batch dispatch |
-| `sessions.lua` | ~80 | Session response parsing, context-sensitive action filtering |
+| `cells.lua` | ~205 | `;;` boundary detection, cell finding, treesitter boundary support |
+| `format.lua` | ~240 | Result formatting, status report builder, `build_render_options` |
+| `model.lua` | ~140 | Elmish state machine with validated transitions (idle→running→success/error→stale) |
+| `sse.lua` | ~160 | SSE parser, event classification, dispatch table, pcall batch dispatch |
+| `sessions.lua` | ~125 | Session response parsing, context-sensitive action filtering |
 | `diagnostics.lua` | ~100 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
-| `testing.lua` | ~930 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
-| `coverage.lua` | ~135 | Line-level coverage state, file/total summaries, gutter signs, statusline |
-| `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
+| `testing.lua` | ~1050 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
+| `coverage.lua` | ~130 | Line-level coverage state, file/total summaries, gutter signs, statusline |
+| `type_explorer.lua` | ~115 | Assembly/namespace/type/member formatting for pickers and floats |
 | `type_explorer_cache.lua` | ~85 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | ~70 | FSI event history formatting for picker and preview |
 | `export.lua` | ~25 | Session export to .fsx format |
-| `events.lua` | ~45 | User autocmd event definitions (9 event types) |
-| `completions.lua` | ~55 | Omnifunc completion parsing and formatting |
-| `util.lua` | ~20 | Shared utilities (json_decode) |
+| `events.lua` | ~50 | User autocmd event definitions (11 event types) |
+| `completions.lua` | ~30 | Omnifunc completion parsing and formatting |
+| `util.lua` | ~25 | Shared utilities (json_decode) |
 | `hotreload_model.lua` | ~65 | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | ~75 | Daemon lifecycle state machine (idle→starting→running→stopped) |
-| `pipeline.lua` | ~30 | Pipeline trace parsing and formatting |
+| `pipeline.lua` | ~75 | Pipeline trace parsing and formatting |
 | **Integration layer** | | |
-| `init.lua` | ~855 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
-| `transport.lua` | ~120 | HTTP via curl, SSE connections with exponential backoff reconnect |
-| `render.lua` | ~215 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | ~830 | All 33 commands, keymaps, autocmds |
-| `hotreload.lua` | ~128 | Hot reload file toggle API |
+| `init.lua` | ~900 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
+| `transport.lua` | ~115 | HTTP via curl, SSE connections with exponential backoff reconnect |
+| `render.lua` | ~220 | Extmarks, test/coverage gutter signs, floating windows |
+| `commands.lua` | ~935 | All 33 commands, keymaps, autocmds |
+| `hotreload.lua` | ~130 | Hot reload file toggle API |
 
 All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
 
@@ -211,8 +211,9 @@ All pure modules have zero vim API dependencies — they are testable under bust
 
 - **Test state recovery on reconnect** — When the SSE connection drops and reconnects, the plugin fires a `test_recovery_needed` user event but does not yet re-fetch full test state. Test updates resume immediately from the live SSE stream; only the backfill of tests that changed during the disconnect is missing.
 - **No HTTP endpoint for bulk test status** — `get_live_test_status` is only available as an MCP tool. The plugin relies on the SSE stream for real-time updates, which works for normal operation but means there's no single-request way to bootstrap full test state on first connect.
+- **Individual test entries require test execution** — The SSE stream delivers summary counts (total/passed/failed) on every state change, but individual test entries (per-test name, file, line, status) only arrive via `tests_discovered` and `test_results_batch` events when tests actually run. The `:SageFsTests` command shows a summary with instructions when individual entries haven't been received yet.
 
-**What works today:** SageFs broadcasts `event: test_summary` and `event: test_results_batch` over the `/events` SSE stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsToggleTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end.
+**What works today:** SageFs broadcasts `event: test_summary`, `event: test_results_batch`, and full test state fields in the SSE `/events` stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsToggleTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end.
 
 ## Running Tests
 
@@ -228,10 +229,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 693 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
-| **E2E** | Headless Neovim + real SageFs | 23 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **768** | 745 unit+integration (all passing), 23 E2E (requires running SageFs) |
+| **Busted (pure)** | `busted` via LuaRocks | 774 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **E2E** | Headless Neovim + real SageFs | 31 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
+| **Total** | | **858** | 827 unit+integration (all passing), 31 E2E (requires running SageFs) |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
