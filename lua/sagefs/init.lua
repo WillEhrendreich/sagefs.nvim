@@ -19,6 +19,8 @@ local commands = require("sagefs.commands")
 
 local M = {}
 
+M.version = require("sagefs.version")
+
 -- ─── Configuration ───────────────────────────────────────────────────────────
 
 M.config = {
