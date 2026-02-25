@@ -74,7 +74,7 @@ end
 
 -- ─── Toggle ──────────────────────────────────────────────────────────────────
 
---- Toggle live testing on or off
+--- Set live testing enabled or disabled
 ---@param state table
 ---@param enabled boolean
 ---@return table
@@ -587,15 +587,19 @@ function M.handle_tests_discovered(state, data)
   return state
 end
 
---- Handle a LiveTestingToggled event
+--- Handle a LiveTestingEnabled SSE event
 ---@param state table
----@param data table {enabled: boolean}
 ---@return table state
-function M.handle_live_testing_toggled(state, data)
-  if not data then return state end
-  if data.enabled ~= nil then
-    state.enabled = data.enabled
-  end
+function M.handle_live_testing_enabled(state)
+  state.enabled = true
+  return state
+end
+
+--- Handle a LiveTestingDisabled SSE event
+---@param state table
+---@return table state
+function M.handle_live_testing_disabled(state)
+  state.enabled = false
   return state
 end
 

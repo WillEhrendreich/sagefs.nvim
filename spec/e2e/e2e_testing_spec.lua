@@ -14,17 +14,22 @@ H.run_suite({
 
   fn = function(sagefs, temp, handle)
 
-    H.describe("live testing toggle", function()
-      H.it("toggles live testing via HTTP", function()
-        local resp = H.http_post("/api/live-testing/toggle", nil, handle.port)
-        H.assert_eq(200, resp.status, "toggle status")
+    H.describe("live testing enable/disable", function()
+      H.it("enables live testing via HTTP", function()
+        local resp = H.http_post("/api/live-testing/enable", nil, handle.port)
+        H.assert_eq(200, resp.status, "enable status")
+      end)
+
+      H.it("disables live testing via HTTP", function()
+        local resp = H.http_post("/api/live-testing/disable", nil, handle.port)
+        H.assert_eq(200, resp.status, "disable status")
       end)
     end)
 
     H.describe("test execution", function()
       H.it("runs tests and returns results", function()
         -- Ensure live testing is enabled
-        H.http_post("/api/live-testing/toggle", nil, handle.port)
+        H.http_post("/api/live-testing/enable", nil, handle.port)
         vim.wait(2000, function() return false end)
 
         -- Trigger test run (must send JSON body, even if empty)

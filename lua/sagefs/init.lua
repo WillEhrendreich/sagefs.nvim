@@ -129,9 +129,13 @@ local function build_handlers()
         fire_user_event("test_run_completed", data)
       end
     end,
-    live_testing_toggled = function(raw)
+    live_testing_enabled = function(raw)
       local data = decode_event_data(raw)
-      if data then M.testing_state = testing.handle_live_testing_toggled(M.testing_state, data) end
+      if data then M.testing_state = testing.set_enabled(M.testing_state, true) end
+    end,
+    live_testing_disabled = function(raw)
+      local data = decode_event_data(raw)
+      if data then M.testing_state = testing.set_enabled(M.testing_state, false) end
     end,
     run_policy_changed = function(raw)
       local data = decode_event_data(raw)

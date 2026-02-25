@@ -346,17 +346,29 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Load an F# script file (.fsx)", nargs = "?", complete = "file" })
 
-  vim.api.nvim_create_user_command("SageFsToggleTesting", function()
+  vim.api.nvim_create_user_command("SageFsEnableTesting", function()
     transport.http_json({
       method = "POST",
-      url = helpers.base_url() .. "/api/live-testing/toggle",
+      url = helpers.base_url() .. "/api/live-testing/enable",
       timeout = 5,
       callback = function(ok)
-        if ok then helpers.notify("Live testing toggled")
-        else helpers.notify("Failed to toggle" .. err_detail(raw), vim.log.levels.ERROR) end
+        if ok then helpers.notify("Live testing enabled")
+        else helpers.notify("Failed to enable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
     })
-  end, { desc = "Toggle live testing on/off" })
+  end, { desc = "Enable live testing" })
+
+  vim.api.nvim_create_user_command("SageFsDisableTesting", function()
+    transport.http_json({
+      method = "POST",
+      url = helpers.base_url() .. "/api/live-testing/disable",
+      timeout = 5,
+      callback = function(ok)
+        if ok then helpers.notify("Live testing disabled")
+        else helpers.notify("Failed to disable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
+      end,
+    })
+  end, { desc = "Disable live testing" })
 
   vim.api.nvim_create_user_command("SageFsCancel", function()
     transport.http_json({

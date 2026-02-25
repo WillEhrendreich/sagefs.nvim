@@ -53,7 +53,7 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, 
 | **Tests for current file** | `:SageFsTestsHere` → floating window with tests for the file you're editing. |
 | **Run tests** | `:SageFsRunTests [pattern]` → trigger test execution with optional filter. |
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
-| **Toggle live testing** | `:SageFsToggleTesting` → enable/disable live test pipeline. |
+| **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Pipeline trace** | `:SageFsPipelineTrace` → floating window showing the three-speed pipeline state. |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
@@ -151,7 +151,8 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, 
 | `:SageFsTestsHere` | Show tests for the current file |
 | `:SageFsRunTests [pattern]` | Run tests (optional name filter) |
 | `:SageFsTestPolicy` | Configure test run policies per category |
-| `:SageFsToggleTesting` | Toggle live testing on/off |
+| `:SageFsEnableTesting` | Enable live testing |
+| `:SageFsDisableTesting` | Disable live testing |
 | `:SageFsPipelineTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
 | `:SageFsTypeExplorer` | Browse assemblies → namespaces → types → members |
@@ -207,7 +208,8 @@ All pure modules have zero vim API dependencies — they are testable under bust
 - **POST `/dashboard/completions`** — Code completions at cursor position
 - **POST `/reset`**, **POST `/hard-reset`** — Session reset endpoints
 - **GET `/api/live-testing/status`** — Bulk test status (summary + per-test entries)
-- **POST `/api/live-testing/toggle`** — Toggle live testing on/off
+- **POST `/api/live-testing/enable`** — Enable live testing
+- **POST `/api/live-testing/disable`** — Disable live testing
 - **POST `/api/live-testing/policy`** — Set run policy per test category
 - **POST `/api/live-testing/run`** — Trigger test execution with optional filters
 
@@ -216,7 +218,7 @@ All pure modules have zero vim API dependencies — they are testable under bust
 - **Test state recovery on reconnect** — When the SSE connection drops and reconnects, the plugin fires a `test_recovery_needed` user event but does not yet re-fetch full test state from `/api/live-testing/status`. Test updates resume immediately from the live SSE stream; only the backfill of tests that changed during the disconnect is missing.
 - **Individual test entries require test execution** — The SSE stream delivers summary counts (total/passed/failed) on every state change, but individual test entries (per-test name, file, line, status) only arrive via `tests_discovered` and `test_results_batch` events when tests actually run. The `:SageFsTests` command shows a summary with instructions when individual entries haven't been received yet.
 
-**What works today:** SageFs broadcasts `event: test_summary`, `event: test_results_batch`, and full test state fields in the SSE `/events` stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsToggleTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end. SageFs also exposes `/api/live-testing/status` as an HTTP endpoint for bulk test status queries.
+**What works today:** SageFs broadcasts `event: test_summary`, `event: test_results_batch`, and full test state fields in the SSE `/events` stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsEnableTesting`, `:SageFsDisableTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end. SageFs also exposes `/api/live-testing/status` as an HTTP endpoint for bulk test status queries.
 
 ## Running Tests
 
@@ -266,7 +268,7 @@ These are the MCP tools exposed by SageFs. The server uses **affordance-driven t
 | `stop_session` | Stop a session by ID |
 | `switch_session` | Switch active session by ID |
 | `get_live_test_status` | Query live test state (with optional file filter) |
-| `toggle_live_testing` | Enable/disable live test pipeline |
+| `set_live_testing` | Enable or disable the live test pipeline |
 | `set_run_policy` | Control when test categories auto-run (every/save/demand/disabled) |
 | `get_pipeline_trace` | Debug the three-speed test pipeline waterfall |
 | `run_tests` | Run tests on demand with name/category filters |

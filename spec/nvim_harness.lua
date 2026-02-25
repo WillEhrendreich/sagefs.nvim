@@ -118,7 +118,7 @@ describe("plugin setup", function()
       "SageFsCreateSession", "SageFsHotReload", "SageFsWatchAll",
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
       "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel", "SageFsTestsHere",
-      "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer", "SageFsTypeExplorerFlat",
+      "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage", "SageFsTypeExplorer", "SageFsTypeExplorerFlat",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
       "SageFsCancel", "SageFsPipelineTrace", "SageFsLoadScript",
       "SageFsStart", "SageFsStop",

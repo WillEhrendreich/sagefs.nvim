@@ -249,9 +249,14 @@ describe("sse.classify_event snake_case events", function()
     assert.are.equal("test_run_completed", result.action)
   end)
 
-  it("classifies live_testing_toggled (snake_case)", function()
-    local result = sse.classify_event({ type = "live_testing_toggled", data = "{}" })
-    assert.are.equal("live_testing_toggled", result.action)
+  it("classifies live_testing_enabled (snake_case)", function()
+    local result = sse.classify_event({ type = "live_testing_enabled", data = "{}" })
+    assert.are.equal("live_testing_enabled", result.action)
+  end)
+
+  it("classifies live_testing_disabled (snake_case)", function()
+    local result = sse.classify_event({ type = "live_testing_disabled", data = "{}" })
+    assert.are.equal("live_testing_disabled", result.action)
   end)
 
   it("classifies tests_discovered (snake_case)", function()

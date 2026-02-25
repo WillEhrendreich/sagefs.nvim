@@ -85,7 +85,7 @@ describe("testing.is_valid_policy", function()
   end)
 end)
 
--- ─── set_enabled: toggle live testing ────────────────────────────────────────
+-- ─── set_enabled: enable/disable live testing ────────────────────────────────
 
 describe("testing.set_enabled", function()
   it("enables live testing", function()

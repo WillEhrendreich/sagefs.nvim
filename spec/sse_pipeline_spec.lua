@@ -176,7 +176,8 @@ describe("SSE pipeline: raw text → parsed events", function()
       { type = "test_run_started", expected = "test_run_started" },
       { type = "test_run_completed", expected = "test_run_completed" },
       { type = "tests_discovered", expected = "tests_discovered" },
-      { type = "live_testing_toggled", expected = "live_testing_toggled" },
+      { type = "live_testing_enabled", expected = "live_testing_enabled" },
+      { type = "live_testing_disabled", expected = "live_testing_disabled" },
     }
     for _, c in ipairs(cases) do
       local result = sse.classify_event({ type = c.type, data = "{}" })
