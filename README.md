@@ -47,7 +47,7 @@ This plugin provides the Neovim integration layer. **23 Lua modules, 669 tests, 
 | **SSE live updates** | Subscribes to SageFs event stream with exponential backoff reconnect (1s→32s). |
 | **State recovery** | Full test state synced on SSE reconnect — no stale data after drops. |
 | **Live diagnostics** | F# errors/warnings streamed via SSE into `vim.diagnostic`. |
-| **Check on save** | `BufWritePost` sends file content for type-checking. Diagnostics arrive via SSE. Behind `check_on_save` config flag. |
+| **Check on save** | `BufWritePost` sends `.fsx` file content for type-checking (LSP already covers `.fs`). Diagnostics arrive via SSE. Behind `check_on_save` config flag. |
 | **Live test gutter signs** | Pass/fail/running/stale signs per test in the sign column. |
 | **Live test panel** | `:SageFsTestPanel` → persistent split with test results, `<CR>` to jump to source. |
 | **Tests for current file** | `:SageFsTestsHere` → floating window with tests for the file you're editing. |
@@ -90,7 +90,7 @@ This plugin provides the Neovim integration layer. **23 Lua modules, 669 tests, 
     port = 37749,           -- MCP server port
     dashboard_port = 37750, -- Dashboard/hot-reload port
     auto_connect = true,    -- Connect SSE on startup
-    check_on_save = false,  -- Type-check F# files on save (diagnostics via SSE)
+    check_on_save = false,  -- Type-check .fsx files on save (diagnostics via SSE)
   },
 }
 ```

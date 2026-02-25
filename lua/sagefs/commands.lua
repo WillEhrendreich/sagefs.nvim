@@ -799,7 +799,7 @@ function M.register_autocmds(plugin, helpers)
 
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = group,
-    pattern = { "*.fs", "*.fsx" },
+    pattern = "*.fsx",
     callback = function(ev)
       if not helpers.check_on_save() then return end
       local lines = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false)
