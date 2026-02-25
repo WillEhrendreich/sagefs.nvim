@@ -81,7 +81,7 @@ function M.classify_event(event)
     SessionStopped = "session_stopped",
     DiagnosticsUpdated = "diagnostics_updated",
     state = "state_update",
-    -- Testing pipeline
+    -- Testing pipeline (PascalCase — internal Elm events)
     TestLocationsDetected = "test_locations_detected",
     TestsDiscovered = "tests_discovered",
     TestRunStarted = "test_run_started",
@@ -93,6 +93,15 @@ function M.classify_event(event)
     ProvidersDetected = "providers_detected",
     PipelineTimingRecorded = "pipeline_timing_recorded",
     RunTestsRequested = "run_tests_requested",
+    -- Testing pipeline (snake_case — typed SSE events from SageFs)
+    test_results_batch = "test_results_batch",
+    test_summary = "test_summary",
+    test_run_started = "test_run_started",
+    test_run_completed = "test_run_completed",
+    tests_discovered = "tests_discovered",
+    live_testing_toggled = "live_testing_toggled",
+    providers_detected = "providers_detected",
+    pipeline_timing_recorded = "pipeline_timing_recorded",
     -- Coverage
     CoverageUpdated = "coverage_updated",
     CoverageCleared = "coverage_cleared",

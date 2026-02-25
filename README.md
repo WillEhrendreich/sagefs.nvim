@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **23 Lua modules, 709 tests, zero failures.**
+This plugin provides the Neovim integration layer. **23 Lua modules, 724 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -173,7 +173,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `sse.lua` | ~155 | SSE parser, event classification (22 types), dispatch table, pcall batch dispatch |
 | `sessions.lua` | ~80 | Session response parsing, context-sensitive action filtering |
 | `diagnostics.lua` | ~100 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
-| `testing.lua` | ~920 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
+| `testing.lua` | ~930 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
 | `coverage.lua` | ~135 | Line-level coverage state, file/total summaries, gutter signs, statusline |
 | `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
 | `history.lua` | ~70 | FSI event history formatting for picker and preview |
@@ -208,13 +208,10 @@ All pure modules have zero vim API dependencies — they are testable under bust
 
 ### Known Gaps
 
-The plugin has full state management, formatting, and handlers for live testing, but the data flow from SageFs has an architectural mismatch that limits live test updates:
+- **Test state recovery on reconnect** — When the SSE connection drops and reconnects, the plugin fires a `test_recovery_needed` user event but does not yet re-fetch full test state. Test updates resume immediately from the live SSE stream; only the backfill of tests that changed during the disconnect is missing.
+- **No HTTP endpoint for bulk test status** — `get_live_test_status` is only available as an MCP tool. The plugin relies on the SSE stream for real-time updates, which works for normal operation but means there's no single-request way to bootstrap full test state on first connect.
 
-- **SSE `/events` only sends `event: state`** — a generic "model changed" signal with `{diagCount, outputCount}`. Individual typed events (TestsDiscovered, TestResultsBatch, etc.) exist in SageFs's internal Elm pipeline but are not streamed over SSE. This means the plugin's test event handlers are wired but not yet triggered by real data.
-- **No HTTP endpoint for live test status** — `get_live_test_status` is only available as an MCP tool, not as an HTTP endpoint the plugin can poll.
-- **Test recovery on reconnect** — Currently a no-op until SageFs exposes test state via HTTP or SSE.
-
-**What works today:** All test commands (`:SageFsRunTests`, `:SageFsToggleTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) send requests correctly to SageFs. The state model, normalization (PascalCase/camelCase), gutter sign computation, panel formatting, and diagnostic conversion are all tested and ready. Once SageFs streams typed events or adds an HTTP test-status endpoint, the plugin will light up immediately.
+**What works today:** SageFs broadcasts `event: test_summary` and `event: test_results_batch` over the `/events` SSE stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsToggleTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end.
 
 ## Running Tests
 
@@ -229,9 +226,9 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 657 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Busted (pure)** | `busted` via LuaRocks | 672 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
 | **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
-| **Total** | | **709** | All passing, zero failures |
+| **Total** | | **724** | All passing, zero failures |
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
 

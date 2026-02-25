@@ -1608,3 +1608,43 @@ describe("testing.parse_completion", function()
     assert.is_nil(testing.parse_completion(nil))
   end)
 end)
+
+-- ─── handle_test_summary (new SSE event from SageFs) ─────────────────────────
+
+describe("testing.handle_test_summary", function()
+  it("updates summary from PascalCase TestSummary", function()
+    local s = testing.new()
+    s = testing.handle_test_summary(s, {
+      Total = 10, Passed = 7, Failed = 2, Stale = 1, Running = 0, Disabled = 0,
+    })
+    assert.are.equal(10, s.summary.total)
+    assert.are.equal(7, s.summary.passed)
+    assert.are.equal(2, s.summary.failed)
+    assert.are.equal(1, s.summary.stale)
+  end)
+
+  it("updates summary from camelCase", function()
+    local s = testing.new()
+    s = testing.handle_test_summary(s, {
+      total = 5, passed = 5, failed = 0, stale = 0, running = 0, disabled = 0,
+    })
+    assert.are.equal(5, s.summary.total)
+    assert.are.equal(5, s.summary.passed)
+  end)
+
+  it("enables testing when summary shows tests", function()
+    local s = testing.new()
+    assert.is_false(s.enabled)
+    s = testing.handle_test_summary(s, {
+      Total = 3, Passed = 3, Failed = 0, Stale = 0, Running = 0, Disabled = 0,
+    })
+    assert.is_true(s.enabled)
+  end)
+
+  it("is a no-op for nil data", function()
+    local s = testing.new()
+    s.summary.total = 42
+    s = testing.handle_test_summary(s, nil)
+    assert.are.equal(42, s.summary.total)
+  end)
+end)

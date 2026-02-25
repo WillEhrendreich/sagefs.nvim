@@ -225,3 +225,73 @@ describe("sse.safe_dispatch_batch", function()
     assert.are.equal(0, #errors)
   end)
 end)
+
+-- ─── classify_event: snake_case SSE event types from SageFs ──────────────────
+
+describe("sse.classify_event snake_case events", function()
+  it("classifies test_results_batch (snake_case from SSE)", function()
+    local result = sse.classify_event({ type = "test_results_batch", data = "{}" })
+    assert.are.equal("test_results_batch", result.action)
+  end)
+
+  it("classifies test_summary (new SSE event type)", function()
+    local result = sse.classify_event({ type = "test_summary", data = "{}" })
+    assert.are.equal("test_summary", result.action)
+  end)
+
+  it("classifies test_run_started (snake_case)", function()
+    local result = sse.classify_event({ type = "test_run_started", data = "{}" })
+    assert.are.equal("test_run_started", result.action)
+  end)
+
+  it("classifies test_run_completed (snake_case)", function()
+    local result = sse.classify_event({ type = "test_run_completed", data = "{}" })
+    assert.are.equal("test_run_completed", result.action)
+  end)
+
+  it("classifies live_testing_toggled (snake_case)", function()
+    local result = sse.classify_event({ type = "live_testing_toggled", data = "{}" })
+    assert.are.equal("live_testing_toggled", result.action)
+  end)
+
+  it("classifies tests_discovered (snake_case)", function()
+    local result = sse.classify_event({ type = "tests_discovered", data = "{}" })
+    assert.are.equal("tests_discovered", result.action)
+  end)
+
+  it("classifies providers_detected (snake_case)", function()
+    local result = sse.classify_event({ type = "providers_detected", data = "{}" })
+    assert.are.equal("providers_detected", result.action)
+  end)
+
+  it("classifies pipeline_timing_recorded (snake_case)", function()
+    local result = sse.classify_event({ type = "pipeline_timing_recorded", data = "{}" })
+    assert.are.equal("pipeline_timing_recorded", result.action)
+  end)
+
+  it("still classifies PascalCase TestResultsBatch", function()
+    local result = sse.classify_event({ type = "TestResultsBatch", data = "{}" })
+    assert.are.equal("test_results_batch", result.action)
+  end)
+end)
+
+-- ─── Full SSE round-trip: parse → classify typed test events ─────────────────
+
+describe("sse parse + classify typed test events", function()
+  it("parses and classifies test_summary SSE event", function()
+    local chunk = 'event: test_summary\ndata: {"Total":5,"Passed":3,"Failed":1,"Stale":1,"Running":0,"Disabled":0}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("test_summary", classified.action)
+    assert.truthy(classified.data:find('"Total"'))
+  end)
+
+  it("parses and classifies test_results_batch SSE event", function()
+    local chunk = 'event: test_results_batch\ndata: {"Entries":[],"Summary":{"Total":0}}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("test_results_batch", classified.action)
+  end)
+end)

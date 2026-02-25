@@ -656,6 +656,20 @@ function M.handle_run_phase_changed(state, data)
   return state
 end
 
+--- Handle a test_summary SSE event (new typed event from SageFs)
+--- Updates the summary and auto-enables testing when tests exist
+---@param state table
+---@param data table TestSummary (PascalCase or camelCase)
+---@return table state
+function M.handle_test_summary(state, data)
+  if not data then return state end
+  state.summary = M.normalize_summary(data)
+  if state.summary.total > 0 then
+    state.enabled = true
+  end
+  return state
+end
+
 -- ─── Annotations (gutter signs for test status) ──────────────────────────────
 
 --- Map test status to GutterIcon name (mirrors SageFs GutterIcon DU)

@@ -167,6 +167,13 @@ local function build_handlers()
       local data = decode_event_data(raw)
       if data then fire_user_event("run_tests_requested", data) end
     end,
+    test_summary = function(raw)
+      local data = decode_event_data(raw)
+      if data then
+        M.testing_state = testing.handle_test_summary(M.testing_state, data)
+        fire_user_event("test_summary", data)
+      end
+    end,
 
     -- Coverage
     coverage_updated = function(raw)
