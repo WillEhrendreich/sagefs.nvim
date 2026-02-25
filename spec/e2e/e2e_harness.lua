@@ -164,7 +164,9 @@ end
 function H.http_get(path, port)
   port = port or H.SAGEFS_PORT
   local url = string.format("http://localhost:%d%s", port, path)
-  local result = vim.fn.system({ "curl", "-s", "-w", "\n%{http_code}", url })
+  local result = vim.fn.system({
+    "curl", "-s", "--connect-timeout", "5", "-m", "30", "-w", "\n%{http_code}", url
+  })
   local lines = vim.split(result, "\n")
   local status = tonumber(lines[#lines]) or 0
   table.remove(lines, #lines)
@@ -175,7 +177,7 @@ end
 function H.http_post(path, body_str, port)
   port = port or H.SAGEFS_PORT
   local url = string.format("http://localhost:%d%s", port, path)
-  local cmd = { "curl", "-s", "-w", "\n%{http_code}",
+  local cmd = { "curl", "-s", "--connect-timeout", "5", "-m", "60", "-w", "\n%{http_code}",
     "-X", "POST", "-H", "Content-Type: application/json" }
   if body_str then
     table.insert(cmd, "-d")

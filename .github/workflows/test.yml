@@ -38,6 +38,7 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: unit-tests
+    timeout-minutes: 20
     env:
       DOTNET_ROOT: /usr/share/dotnet
     steps:
@@ -117,7 +118,8 @@ jobs:
           FAIL=0
           for spec in spec/e2e/e2e_*_spec.lua; do
             echo "--- Running $spec ---"
-            if ! nvim --headless --clean -u NONE -l "$spec"; then
+            if ! timeout 180 nvim --headless --clean -u NONE -l "$spec"; then
+              echo "--- FAILED: $spec (exit $?) ---"
               FAIL=1
             fi
           done
