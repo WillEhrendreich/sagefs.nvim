@@ -203,17 +203,34 @@ function H.find_fsproj(project_dir)
   return files[1]
 end
 
+function H.find_sagefs_binary()
+  -- Try PATH first
+  local which = vim.fn.exepath("sagefs")
+  if which ~= "" then return which end
+  -- Try common dotnet tool locations
+  local home = os.getenv("HOME") or os.getenv("USERPROFILE") or ""
+  local candidates = {
+    home .. "/.dotnet/tools/sagefs",
+    home .. "\\.dotnet\\tools\\sagefs.exe",
+  }
+  for _, path in ipairs(candidates) do
+    if vim.fn.filereadable(path) == 1 then return path end
+  end
+  error("sagefs binary not found on PATH or in ~/.dotnet/tools/")
+end
+
 function H.start_daemon(project_dir, port)
   port = port or H.SAGEFS_PORT
   local fsproj = H.find_fsproj(project_dir)
+  local sagefs_bin = H.find_sagefs_binary()
 
-  io.write(string.format("    [harness] Starting SageFs on port %d: %s\n", port, fsproj))
+  io.write(string.format("    [harness] Starting SageFs (%s) on port %d: %s\n", sagefs_bin, port, fsproj))
 
   local stdout_lines = {}
   local stderr_lines = {}
 
   local job_id = vim.fn.jobstart({
-    "sagefs", "--supervised", "--proj", fsproj, "--port", tostring(port)
+    sagefs_bin, "--supervised", "--proj", fsproj, "--port", tostring(port)
   }, {
     cwd = project_dir,
     on_stdout = function(_, data)
@@ -256,6 +273,19 @@ function H.wait_for_health(port, timeout_ms)
   end, H.POLL_INTERVAL_MS)
 
   if not ok then
+    -- Dump daemon stderr for diagnostics
+    if active_daemon and #active_daemon.stderr > 0 then
+      io.write("    [harness] Daemon stderr:\n")
+      for _, line in ipairs(active_daemon.stderr) do
+        io.write("      | " .. line .. "\n")
+      end
+    end
+    if active_daemon and #active_daemon.stdout > 0 then
+      io.write("    [harness] Daemon stdout:\n")
+      for i = math.max(1, #active_daemon.stdout - 20), #active_daemon.stdout do
+        io.write("      | " .. active_daemon.stdout[i] .. "\n")
+      end
+    end
     error(string.format("SageFs daemon failed to become healthy within %ds on port %d",
       timeout_ms / 1000, port))
   end
