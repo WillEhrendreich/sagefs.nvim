@@ -137,6 +137,20 @@ function M.register_commands(plugin, helpers)
 
   vim.api.nvim_create_user_command("SageFsTests", function()
     local lines = testing.format_test_list(plugin.testing_state)
+    local s = plugin.testing_state.summary
+    if #lines == 0 and s and s.total and s.total > 0 then
+      lines = {
+        string.format("  %d tests discovered", s.total),
+        "",
+        "  Individual test entries arrive via SSE when tests run.",
+        "  Use :SageFsRunTests to trigger a test run.",
+      }
+      if (s.passed or 0) > 0 or (s.failed or 0) > 0 then
+        table.insert(lines, 2, string.format(
+          "  ✓ %d passed  ✗ %d failed  ⟳ %d running",
+          s.passed or 0, s.failed or 0, s.running or 0))
+      end
+    end
     local summary = testing.compute_summary(plugin.testing_state)
     local title = testing.format_summary(summary)
     render.show_float(lines, { title = title })
