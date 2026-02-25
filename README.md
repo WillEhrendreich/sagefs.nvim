@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **23 Lua modules, 724 tests, zero failures.**
+This plugin provides the Neovim integration layer. **24 Lua modules, 745 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -176,6 +176,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `testing.lua` | ~930 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
 | `coverage.lua` | ~135 | Line-level coverage state, file/total summaries, gutter signs, statusline |
 | `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
+| `type_explorer_cache.lua` | ~85 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | ~70 | FSI event history formatting for picker and preview |
 | `export.lua` | ~25 | Session export to .fsx format |
 | `events.lua` | ~45 | User autocmd event definitions (9 event types) |
@@ -227,10 +228,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 672 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Busted (pure)** | `busted` via LuaRocks | 693 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
 | **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
 | **E2E** | Headless Neovim + real SageFs | 23 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **747** | 724 unit+integration (all passing), 23 E2E (requires running SageFs) |
+| **Total** | | **768** | 745 unit+integration (all passing), 23 E2E (requires running SageFs) |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
