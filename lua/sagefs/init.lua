@@ -264,13 +264,26 @@ local function start_sse()
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
       fire_user_event("connected")
-      -- Test state recovery on (re)connect
-      -- Note: /api/live-test-status is not an HTTP endpoint — it's only available
-      -- as an MCP tool (get_live_test_status). Recovery will be enabled once SageFs
-      -- adds an HTTP endpoint for test status, or sends typed events over SSE.
-      if M.testing_state.enabled then
-        fire_user_event("test_recovery_needed")
-      end
+      -- Recover test state on (re)connect via HTTP
+      transport.http_json({
+        method = "GET",
+        url = base_url() .. "/api/live-testing/status",
+        timeout = 3,
+        callback = function(ok, raw)
+          if ok and raw and raw ~= "" then
+            local decode_ok, decoded = pcall(vim.json.decode, raw)
+            if decode_ok and decoded then
+              if decoded.Enabled ~= nil then
+                M.testing_state = testing.set_enabled(M.testing_state, decoded.Enabled)
+              end
+              if decoded.Summary then
+                M.testing_state = testing.handle_test_summary(M.testing_state, decoded.Summary)
+              end
+              vim.schedule(function() fire_user_event("test_state") end)
+            end
+          end
+        end,
+      })
     end,
     on_disconnect = function()
       M.state = model.set_status(M.state, "disconnected")

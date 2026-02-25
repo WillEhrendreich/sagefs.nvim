@@ -148,7 +148,7 @@ function M.register_commands(plugin, helpers)
     })
     transport.http_json({
       method = "POST",
-      url = helpers.base_url() .. "/api/run-tests",
+      url = helpers.base_url() .. "/api/live-testing/run",
       body = req,
       timeout = 10,
       callback = function(ok)
@@ -174,7 +174,7 @@ function M.register_commands(plugin, helpers)
         local policy = policy_choice:match("^(%S+)")
         transport.http_json({
           method = "POST",
-          url = helpers.base_url() .. "/api/test-policy",
+          url = helpers.base_url() .. "/api/live-testing/policy",
           body = { category = category, policy = policy },
           timeout = 5,
           callback = function(ok)
@@ -319,7 +319,7 @@ function M.register_commands(plugin, helpers)
   vim.api.nvim_create_user_command("SageFsToggleTesting", function()
     transport.http_json({
       method = "POST",
-      url = helpers.base_url() .. "/api/toggle-live-testing",
+      url = helpers.base_url() .. "/api/live-testing/toggle",
       timeout = 5,
       callback = function(ok)
         if ok then helpers.notify("Live testing toggled")
