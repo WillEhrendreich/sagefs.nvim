@@ -78,7 +78,8 @@ jobs:
         run: |
           export PATH="$HOME/.dotnet/tools:$PATH"
           # Check if sagefs supports --supervised (required for E2E)
-          if sagefs --help 2>&1 | grep -q 'supervised'; then
+          HELP_TEXT=$(sagefs --help 2>&1 || true)
+          if echo "$HELP_TEXT" | grep -q 'supervised'; then
             echo "sagefs supports --supervised"
           else
             echo "::warning::sagefs NuGet version does not support --supervised/--port flags (needed for E2E)"
