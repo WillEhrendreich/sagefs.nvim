@@ -217,6 +217,7 @@ All pure modules have zero vim API dependencies — they are testable under bust
 
 ```cmd
 test.cmd                        # Run full suite (busted + integration)
+test_e2e.cmd                    # Run E2E tests against a real SageFs daemon
 busted spec/cells_spec.lua      # Run a single busted spec
 busted --filter "find_cell"     # Filter by test name
 nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
@@ -228,9 +229,12 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 |-------|--------|-------|----------------|
 | **Busted (pure)** | `busted` via LuaRocks | 672 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
 | **Integration** | Headless Neovim (`nvim -l`) | 52 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
-| **Total** | | **724** | All passing, zero failures |
+| **E2E** | Headless Neovim + real SageFs | 23 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
+| **Total** | | **747** | 724 unit+integration (all passing), 23 E2E (requires running SageFs) |
 
-Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH.
+The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
+
+Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. E2E tests additionally require `sagefs` and `dotnet` on PATH.
 
 ## SageFs MCP Tools Reference
 
