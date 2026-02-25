@@ -16,6 +16,15 @@ function M.register_commands(plugin, helpers)
   local export = require("sagefs.export")
   local render = require("sagefs.render")
   local transport = require("sagefs.transport")
+  local format = require("sagefs.format")
+
+  -- Truncate raw server response for error messages
+  local function err_detail(raw)
+    if not raw or raw == "" then return "" end
+    local detail = raw:sub(1, 200)
+    if #raw > 200 then detail = detail .. "…" end
+    return ": " .. detail
+  end
 
   vim.api.nvim_create_user_command("SageFsEval", function()
     plugin.eval_cell()
@@ -45,8 +54,35 @@ function M.register_commands(plugin, helpers)
   end, { desc = "Disconnect from SageFs" })
 
   vim.api.nvim_create_user_command("SageFsStatus", function()
-    plugin.health_check()
-  end, { desc = "Check SageFs status" })
+    plugin.health_check(function(healthy)
+      local lines = format.format_status_report({
+        state = plugin.state,
+        testing_state = plugin.testing_state,
+        coverage_state = plugin.coverage_state,
+        daemon_state = plugin.daemon_state,
+        active_session = plugin.active_session,
+        config = plugin.config,
+      })
+      local status_label = healthy and "✓ Connected" or "✗ Disconnected"
+      table.insert(lines, 2, "Status:    " .. status_label)
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.bo[buf].modifiable = false
+      vim.bo[buf].bufhidden = "wipe"
+      local width = 50
+      for _, l in ipairs(lines) do width = math.max(width, #l + 4) end
+      vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        width = width,
+        height = #lines,
+        row = math.floor((vim.o.lines - #lines) / 2),
+        col = math.floor((vim.o.columns - width) / 2),
+        style = "minimal",
+        border = "rounded",
+      })
+      vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
+    end)
+  end, { desc = "SageFs status dashboard" })
 
   vim.api.nvim_create_user_command("SageFsSessions", function()
     plugin.session_picker()
@@ -115,7 +151,7 @@ function M.register_commands(plugin, helpers)
       timeout = 10,
       callback = function(ok)
         if ok then helpers.notify("Tests triggered")
-        else helpers.notify("Failed to trigger tests", vim.log.levels.ERROR) end
+        else helpers.notify("Failed to trigger tests" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
     })
   end, { desc = "Run tests (optional pattern filter)", nargs = "?" })
@@ -141,7 +177,7 @@ function M.register_commands(plugin, helpers)
           timeout = 5,
           callback = function(ok)
             if ok then helpers.notify(category .. " → " .. policy)
-            else helpers.notify("Failed to set policy", vim.log.levels.ERROR) end
+            else helpers.notify("Failed to set policy" .. err_detail(raw), vim.log.levels.ERROR) end
           end,
         })
       end)
@@ -152,11 +188,16 @@ function M.register_commands(plugin, helpers)
 
   local test_panel_buf = nil
   local test_panel_win = nil
+  local test_panel_entries = {}
 
   local function update_test_panel()
     if not test_panel_buf or not vim.api.nvim_buf_is_valid(test_panel_buf) then return end
     if not test_panel_win or not vim.api.nvim_win_is_valid(test_panel_win) then return end
-    local lines = testing.format_panel_content(plugin.testing_state)
+    test_panel_entries = testing.format_panel_entries(plugin.testing_state)
+    local lines = {}
+    for _, e in ipairs(test_panel_entries) do
+      table.insert(lines, e.text)
+    end
     vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", true)
     vim.api.nvim_buf_set_lines(test_panel_buf, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", false)
@@ -174,6 +215,18 @@ function M.register_commands(plugin, helpers)
     vim.api.nvim_buf_set_option(test_panel_buf, "buftype", "nofile")
     vim.api.nvim_buf_set_option(test_panel_buf, "bufhidden", "wipe")
     vim.api.nvim_buf_set_name(test_panel_buf, "sagefs://tests")
+    -- Buffer-local <CR> to jump to test source
+    vim.keymap.set("n", "<CR>", function()
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      local entry = test_panel_entries[row]
+      if not entry or not entry.file then return end
+      -- Jump to source in the previous window
+      vim.cmd("wincmd p")
+      vim.cmd.edit(entry.file)
+      if entry.line then
+        vim.api.nvim_win_set_cursor(0, { entry.line, 0 })
+      end
+    end, { buffer = test_panel_buf, desc = "Jump to test source" })
     -- Open in vertical split
     vim.cmd("botright vsplit")
     test_panel_win = vim.api.nvim_get_current_win()
@@ -201,6 +254,15 @@ function M.register_commands(plugin, helpers)
     })
   end
 
+  -- ─── Tests Here (current file) ─────────────────────────────────────────────
+
+  vim.api.nvim_create_user_command("SageFsTestsHere", function()
+    local testing = require("sagefs.testing")
+    local filepath = vim.fn.expand("%:p")
+    local lines = testing.format_file_panel_content(plugin.testing_state, filepath)
+    render.show_float(lines, { title = "Tests: " .. vim.fn.fnamemodify(filepath, ":t") })
+  end, { desc = "Show tests for the current file" })
+
   -- ─── Pipeline Trace ────────────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsPipelineTrace", function()
@@ -211,7 +273,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch pipeline trace", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch pipeline trace" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local trace = pipeline.parse_trace(raw)
@@ -259,7 +321,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok)
         if ok then helpers.notify("Live testing toggled")
-        else helpers.notify("Failed to toggle", vim.log.levels.ERROR) end
+        else helpers.notify("Failed to toggle" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
     })
   end, { desc = "Toggle live testing on/off" })
@@ -272,7 +334,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok)
         if ok then helpers.notify("Eval cancelled")
-        else helpers.notify("Failed to cancel eval", vim.log.levels.ERROR) end
+        else helpers.notify("Failed to cancel eval" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
     })
   end, { desc = "Cancel running evaluation" })
@@ -313,7 +375,7 @@ function M.register_commands(plugin, helpers)
         end, 2000)
       else
         plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "jobstart failed")
-        helpers.notify("Failed to start SageFs daemon", vim.log.levels.ERROR)
+        helpers.notify("Failed to start SageFs daemon" .. err_detail(raw), vim.log.levels.ERROR)
       end
     end
 
@@ -374,7 +436,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch assemblies", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch assemblies" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -445,7 +507,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch assemblies", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch assemblies" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -552,7 +614,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch history", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch history" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -589,7 +651,7 @@ function M.register_commands(plugin, helpers)
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch history", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch history" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -604,7 +666,7 @@ function M.register_commands(plugin, helpers)
           helpers.notify("Exported to " .. filename)
           vim.cmd("edit " .. vim.fn.fnameescape(path))
         else
-          helpers.notify("Failed to write " .. path, vim.log.levels.ERROR)
+          helpers.notify("Failed to write " .. path .. err_detail(raw), vim.log.levels.ERROR)
         end
       end,
     })
@@ -623,7 +685,7 @@ function M.register_commands(plugin, helpers)
       timeout = 10,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch callers", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch callers" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -651,7 +713,7 @@ function M.register_commands(plugin, helpers)
       timeout = 10,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch callees", vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch callees" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
@@ -732,6 +794,16 @@ function M.register_autocmds(plugin, helpers)
     pattern = { "fsharp", "fsx" },
     callback = function()
       vim.bo.omnifunc = "v:lua.require'sagefs'.omnifunc"
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function(ev)
+      if not helpers.check_on_save() then return end
+      local lines = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false)
+      helpers.check_code(table.concat(lines, "\n"))
     end,
   })
 end

@@ -56,11 +56,12 @@ end
 ---@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, auto_reconnect: boolean|nil, reconnect_delay: number|nil }
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
-  local handle = { job_id = nil, _buffer = "", _stopped = false }
+  local handle = { job_id = nil, _buffer = "", _stopped = false, _attempt = 0 }
 
   local function connect()
     if handle._stopped then return end
     handle._buffer = ""
+    handle._attempt = handle._attempt + 1
     handle.job_id = vim.fn.jobstart(
       { "curl", "--no-buffer", "-N", url, "--silent", "--show-error" },
       {
@@ -79,13 +80,15 @@ function M.connect_sse(url, opts)
           handle.job_id = nil
           if opts.on_disconnect then opts.on_disconnect(code) end
           if not handle._stopped and opts.auto_reconnect then
-            vim.defer_fn(connect, opts.reconnect_delay or 3000)
+            local delay = sse_parser.reconnect_delay(handle._attempt)
+            vim.defer_fn(connect, delay)
           end
         end,
       }
     )
-    if handle.job_id and handle.job_id > 0 and opts.on_connect then
-      opts.on_connect()
+    if handle.job_id and handle.job_id > 0 then
+      handle._attempt = 0 -- reset backoff on successful connect
+      if opts.on_connect then opts.on_connect() end
     end
   end
 

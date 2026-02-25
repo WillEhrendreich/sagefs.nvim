@@ -25,6 +25,7 @@ M.config = {
   port = 37749,
   dashboard_port = 37750,
   auto_connect = true,
+  check_on_save = false,
   highlight = {
     success = { fg = "#a6e3a1", italic = true },
     error = { fg = "#f38ba8", italic = true },
@@ -180,12 +181,21 @@ local function on_sse_events(raw_events)
     dispatch_table = build_handlers()
   end
 
+  local classified = {}
   for _, event in ipairs(raw_events) do
-    local classified = sse_parser.classify_event(event)
-    if classified then
-      local handler = dispatch_table[classified.action]
-      if handler then handler(event) end
+    local c = sse_parser.classify_event(event)
+    if c then
+      -- Pass original event as data so handlers get the raw SSE event
+      table.insert(classified, { action = c.action, data = event })
     end
+  end
+
+  local errors = sse_parser.safe_dispatch_batch(dispatch_table, classified)
+  for _, e in ipairs(errors) do
+    vim.schedule(function()
+      vim.notify(string.format("[SageFs] SSE handler error (%s): %s", e.action, tostring(e.err)),
+        vim.log.levels.WARN)
+    end)
   end
 
   -- Refresh gutter signs for current buffer after processing events
@@ -681,6 +691,18 @@ function M.discover_and_create(working_dir)
   end)
 end
 
+-- ─── Check on Save ────────────────────────────────────────────────────────────
+
+local function check_code(code)
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/diagnostics",
+    body = { code = code },
+    timeout = 10,
+    callback = function() end, -- fire-and-forget; diagnostics arrive via SSE
+  })
+end
+
 -- ─── Smart Eval ───────────────────────────────────────────────────────────────
 
 local function smart_eval_with_session_check(eval_fn)
@@ -728,7 +750,7 @@ function M.health_check(callback)
           notify("SageFs reachable (no session for this directory)")
           if callback then callback(true) end
         else
-          notify("SageFs not available on port " .. M.config.port, vim.log.levels.ERROR)
+          notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
           if callback then callback(false) end
         end
       end)
@@ -794,6 +816,8 @@ function M.setup(opts)
       render.render_test_signs(buf, M.testing_state)
       render.render_coverage_signs(buf, M.coverage_state)
     end,
+    check_code = check_code,
+    check_on_save = function() return M.config.check_on_save end,
   }
 
   commands.register_commands(M, helpers)

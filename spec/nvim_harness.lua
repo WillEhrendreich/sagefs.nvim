@@ -117,7 +117,7 @@ describe("plugin setup", function()
       "SageFsDisconnect", "SageFsStatus", "SageFsSessions",
       "SageFsCreateSession", "SageFsHotReload", "SageFsWatchAll",
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
-      "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel",
+      "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel", "SageFsTestsHere",
       "SageFsToggleTesting", "SageFsCoverage", "SageFsTypeExplorer", "SageFsTypeExplorerFlat",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
       "SageFsCancel", "SageFsPipelineTrace", "SageFsLoadScript",
@@ -517,6 +517,12 @@ describe("autocmd registration", function()
     assert_truthy(ok, "SageFs augroup should exist")
     assert_type("table", aus, "should return table")
     assert_truthy(#aus > 0, "should have at least one autocmd")
+  end)
+
+  it("has BufWritePost autocmd for check_on_save", function()
+    local ok, aus = pcall(vim.api.nvim_get_autocmds, { group = "SageFs", event = "BufWritePost" })
+    assert_truthy(ok, "SageFs augroup should exist after setup")
+    assert_truthy(#aus > 0, "should have BufWritePost autocmd in SageFs group")
   end)
 end)
 

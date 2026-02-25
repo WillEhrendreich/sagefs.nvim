@@ -166,4 +166,65 @@ function M.build_render_options(cell, cell_id)
   return opts
 end
 
+--- Build a multi-line status report from plugin state
+---@param info table { state, testing_state, coverage_state, daemon_state, active_session, config }
+---@return string[]
+function M.format_status_report(info)
+  local lines = { "═══ SageFs Status ═══", "" }
+
+  -- Daemon
+  local ds = info.daemon_state or {}
+  local daemon_label = ds.status or "unknown"
+  if ds.job_id then daemon_label = daemon_label .. " (job " .. ds.job_id .. ")" end
+  table.insert(lines, "Daemon:    " .. daemon_label)
+
+  -- Connection
+  local cfg = info.config or {}
+  table.insert(lines, "MCP port:  " .. (cfg.port or "?"))
+  table.insert(lines, "Dashboard: " .. (cfg.dashboard_port or "?"))
+
+  -- Session
+  local sess = info.active_session
+  if sess then
+    table.insert(lines, "Session:   " .. (sess.name or sess.id or "active"))
+  else
+    table.insert(lines, "Session:   (none)")
+  end
+
+  -- Tests
+  local ts = info.testing_state
+  if ts and ts.tests then
+    local passed, failed, running, total = 0, 0, 0, 0
+    for _ in pairs(ts.tests) do total = total + 1 end
+    for _, t in pairs(ts.tests) do
+      if t.status == "Passed" then passed = passed + 1
+      elseif t.status == "Failed" then failed = failed + 1
+      elseif t.status == "Running" then running = running + 1
+      end
+    end
+    if total > 0 then
+      table.insert(lines, "")
+      table.insert(lines, string.format("Tests:     %d total, %d passed, %d failed, %d running",
+        total, passed, failed, running))
+    end
+  end
+
+  -- Coverage
+  local cs = info.coverage_state
+  if cs and cs.summary and cs.summary.line_rate then
+    table.insert(lines, string.format("Coverage:  %.0f%% line rate", cs.summary.line_rate * 100))
+  end
+
+  -- Config flags
+  table.insert(lines, "")
+  local flags = {}
+  if cfg.check_on_save then table.insert(flags, "check_on_save") end
+  if cfg.auto_connect then table.insert(flags, "auto_connect") end
+  if #flags > 0 then
+    table.insert(lines, "Flags:     " .. table.concat(flags, ", "))
+  end
+
+  return lines
+end
+
 return M

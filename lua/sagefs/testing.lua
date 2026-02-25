@@ -753,4 +753,65 @@ function M.format_panel_content(state)
   return lines
 end
 
+--- Returns structured entries with text + navigation metadata for the test panel.
+--- Each entry has: { text = "icon name", file = path|nil, line = num|nil }
+---@param state table
+---@return table[]
+function M.format_panel_entries(state)
+  local raw = {}
+  for id, test in pairs(state.tests) do
+    table.insert(raw, {
+      testId = id,
+      displayName = test.displayName or id,
+      status = test.status or "Detected",
+      file = test.file,
+      line = test.line,
+    })
+  end
+  table.sort(raw, function(a, b)
+    local oa = STATUS_ORDER[a.status] or 99
+    local ob = STATUS_ORDER[b.status] or 99
+    if oa ~= ob then return oa < ob end
+    return a.displayName < b.displayName
+  end)
+  local entries = {}
+  -- Header lines (no navigation)
+  local summary = M.compute_summary(state)
+  table.insert(entries, { text = M.format_summary(summary) })
+  table.insert(entries, { text = string.rep("─", 40) })
+  table.insert(entries, { text = "" })
+  -- Test lines (with navigation metadata)
+  for _, e in ipairs(raw) do
+    local icon = STATUS_ICON[e.status] or "?"
+    table.insert(entries, {
+      text = string.format("%s %s", icon, e.displayName),
+      file = e.file,
+      line = e.line,
+    })
+  end
+  return entries
+end
+
+--- Format test panel content filtered to a specific source file.
+---@param state table
+---@param filepath string
+---@return string[]
+function M.format_file_panel_content(state, filepath)
+  local filtered = {}
+  for id, test in pairs(state.tests) do
+    if test.file == filepath then
+      filtered[id] = test
+    end
+  end
+  -- Check if any tests matched
+  local has_tests = false
+  for _ in pairs(filtered) do has_tests = true; break end
+  if not has_tests then
+    return { "No tests found for " .. filepath }
+  end
+  local proxy = M.new()
+  proxy.tests = filtered
+  return M.format_panel_content(proxy)
+end
+
 return M

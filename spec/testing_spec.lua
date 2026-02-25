@@ -1127,3 +1127,82 @@ describe("testing.format_panel_content", function()
     assert.truthy(text:find("Expected 42 but got 0"), "should include failure output")
   end)
 end)
+
+-- ─── format_panel_entries: structured metadata for navigation ─────────────────
+
+describe("testing.format_panel_entries", function()
+  it("returns entries with file and line metadata", function()
+    local s = testing.new()
+    s.tests["t1"] = {
+      displayName = "adds numbers",
+      status = "Passed",
+      category = "Unit",
+      file = "/src/math.fs",
+      line = 42,
+    }
+    local entries = testing.format_panel_entries(s)
+    local found = false
+    for _, e in ipairs(entries) do
+      if e.text:find("adds numbers") then
+        found = true
+        assert.are.equal("/src/math.fs", e.file)
+        assert.are.equal(42, e.line)
+        break
+      end
+    end
+    assert.is_true(found, "should find entry for the test")
+  end)
+
+  it("includes nil file/line for tests without location", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "no location", status = "Failed", category = "Unit" }
+    local entries = testing.format_panel_entries(s)
+    local found = false
+    for _, e in ipairs(entries) do
+      if e.text:find("no location") then
+        found = true
+        assert.is_nil(e.file)
+        assert.is_nil(e.line)
+        break
+      end
+    end
+    assert.is_true(found, "should find entry without location")
+  end)
+
+  it("sorts failed entries before passed", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "pass", status = "Passed", category = "Unit" }
+    s.tests["t2"] = { displayName = "fail", status = "Failed", category = "Unit" }
+    local entries = testing.format_panel_entries(s)
+    local fail_idx, pass_idx
+    for i, e in ipairs(entries) do
+      if not fail_idx and e.text:find("fail") then fail_idx = i end
+      if not pass_idx and e.text:find("pass") then pass_idx = i end
+    end
+    assert.is_not_nil(fail_idx)
+    assert.is_not_nil(pass_idx)
+    assert.is_true(fail_idx < pass_idx)
+  end)
+end)
+
+-- ─── format_file_panel_content: per-file test summary ────────────────────────
+
+describe("testing.format_file_panel_content", function()
+  it("filters tests to the given file", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "in file", status = "Passed", category = "Unit", file = "/src/a.fs" }
+    s.tests["t2"] = { displayName = "other file", status = "Passed", category = "Unit", file = "/src/b.fs" }
+    local lines = testing.format_file_panel_content(s, "/src/a.fs")
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("in file"), "should include tests from target file")
+    assert.falsy(text:find("other file"), "should not include tests from other files")
+  end)
+
+  it("shows meaningful message when no tests for file", function()
+    local s = testing.new()
+    s.tests["t1"] = { displayName = "other", status = "Passed", category = "Unit", file = "/src/b.fs" }
+    local lines = testing.format_file_panel_content(s, "/src/a.fs")
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("[Nn]o tests") or text:find("empty"), "should show no-tests message")
+  end)
+end)

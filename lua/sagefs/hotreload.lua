@@ -121,12 +121,6 @@ function M.picker(session_id)
   end)
 end
 
--- ─── Compat ──────────────────────────────────────────────────────────────────
-
--- Backward compatibility: expose files/watched_count from state
-M.files = M.state.files
-M.watched_count = M.state.watched_count
-
 -- ─── Setup ───────────────────────────────────────────────────────────────────
 
 function M.setup(port)

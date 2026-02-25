@@ -169,3 +169,59 @@ describe("sse.parse_chunk [property]", function()
     end
   end)
 end)
+
+-- ─── safe_dispatch_batch: error isolation ────────────────────────────────────
+
+describe("sse.safe_dispatch_batch", function()
+  it("continues processing after a handler throws", function()
+    local log = {}
+    local dt = sse.build_dispatch_table({
+      good = function() table.insert(log, "good") end,
+      bad = function() error("handler crash") end,
+      also_good = function() table.insert(log, "also_good") end,
+    })
+    local events = {
+      { action = "good" },
+      { action = "bad" },
+      { action = "also_good" },
+    }
+    local errors = sse.safe_dispatch_batch(dt, events)
+    assert.are.equal(2, #log, "both good handlers should run")
+    assert.are.equal("good", log[1])
+    assert.are.equal("also_good", log[2])
+    assert.are.equal(1, #errors, "one error should be captured")
+  end)
+
+  it("returns empty error list when all handlers succeed", function()
+    local count = 0
+    local dt = sse.build_dispatch_table({
+      a = function() count = count + 1 end,
+      b = function() count = count + 1 end,
+    })
+    local errors = sse.safe_dispatch_batch(dt, {
+      { action = "a" },
+      { action = "b" },
+    })
+    assert.are.equal(2, count)
+    assert.are.equal(0, #errors)
+  end)
+
+  it("skips events with no matching handler without error", function()
+    local called = false
+    local dt = sse.build_dispatch_table({
+      known = function() called = true end,
+    })
+    local errors = sse.safe_dispatch_batch(dt, {
+      { action = "unknown_action" },
+      { action = "known" },
+    })
+    assert.is_true(called)
+    assert.are.equal(0, #errors)
+  end)
+
+  it("handles nil events gracefully", function()
+    local dt = sse.build_dispatch_table({})
+    local errors = sse.safe_dispatch_batch(dt, { nil, { action = "x" } })
+    assert.are.equal(0, #errors)
+  end)
+end)

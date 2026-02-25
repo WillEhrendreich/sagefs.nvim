@@ -266,3 +266,75 @@ describe("format.gutter_sign [exhaustive]", function()
     assert.are.equal("Normal", result.hl)
   end)
 end)
+
+-- ─── format_status_report ─────────────────────────────────────────────────────
+
+describe("format_status_report", function()
+  local testing = require("sagefs.testing")
+  local coverage = require("sagefs.coverage")
+  local model = require("sagefs.model")
+  local daemon = require("sagefs.daemon")
+
+  it("shows disconnected when no session and idle state", function()
+    local lines = format.format_status_report({
+      state = model.new(),
+      testing_state = testing.new(),
+      coverage_state = coverage.new(),
+      daemon_state = daemon.new(),
+      active_session = nil,
+      config = { port = 37749, dashboard_port = 37750, check_on_save = false },
+    })
+    assert.is_table(lines)
+    assert.is_true(#lines > 0)
+    -- first line should be a header
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("SageFs Status"))
+  end)
+
+  it("shows active session info when session is set", function()
+    local lines = format.format_status_report({
+      state = model.new(),
+      testing_state = testing.new(),
+      coverage_state = coverage.new(),
+      daemon_state = daemon.new(),
+      active_session = { id = "abc123", name = "MyProject.fsproj" },
+      config = { port = 37749, dashboard_port = 37750, check_on_save = true },
+    })
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("MyProject"))
+    assert.is_truthy(joined:find("check_on_save"))
+  end)
+
+  it("includes test summary when tests exist", function()
+    local ts = testing.new()
+    ts = testing.update_test(ts, { testId = "t1", fullName = "A", status = "Passed" })
+    ts = testing.update_test(ts, { testId = "t2", fullName = "B", status = "Failed" })
+    local lines = format.format_status_report({
+      state = model.new(),
+      testing_state = ts,
+      coverage_state = coverage.new(),
+      daemon_state = daemon.new(),
+      active_session = nil,
+      config = { port = 37749, dashboard_port = 37750, check_on_save = false },
+    })
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("1 passed"))
+    assert.is_truthy(joined:find("1 failed"))
+  end)
+
+  it("includes daemon state", function()
+    local ds = daemon.new()
+    ds = daemon.mark_starting(ds, "MyProj.fsproj", 37749)
+    ds = daemon.mark_running(ds, 1234)
+    local lines = format.format_status_report({
+      state = model.new(),
+      testing_state = testing.new(),
+      coverage_state = coverage.new(),
+      daemon_state = ds,
+      active_session = nil,
+      config = { port = 37749, dashboard_port = 37750, check_on_save = false },
+    })
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("running") or joined:find("1234"))
+  end)
+end)

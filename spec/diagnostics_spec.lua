@@ -173,4 +173,54 @@ describe("diagnostics", function()
       assert.are.same({}, groups)
     end)
   end)
+
+  -- ─── parse_check_response ─────────────────────────────────────────────────
+  describe("parse_check_response", function()
+    it("returns nil and error for nil input", function()
+      local result, err = diagnostics.parse_check_response(nil)
+      assert.is_nil(result)
+      assert.is_not_nil(err)
+    end)
+
+    it("returns nil and error for empty string", function()
+      local result, err = diagnostics.parse_check_response("")
+      assert.is_nil(result)
+      assert.is_not_nil(err)
+    end)
+
+    it("returns nil and error for invalid JSON", function()
+      local result, err = diagnostics.parse_check_response("not json")
+      assert.is_nil(result)
+      assert.is_not_nil(err)
+    end)
+
+    it("returns grouped vim diagnostics for valid response", function()
+      local json = '{"diagnostics":[' ..
+        '{"file":"Foo.fs","startLine":3,"startColumn":5,"endLine":3,"endColumn":10,"message":"err1","severity":"error"},' ..
+        '{"file":"Foo.fs","startLine":7,"startColumn":1,"endLine":7,"endColumn":4,"message":"warn1","severity":"warning"},' ..
+        '{"file":"Bar.fs","startLine":1,"startColumn":1,"endLine":1,"endColumn":2,"message":"hint1","severity":"hint"}' ..
+      ']}'
+      local result, err = diagnostics.parse_check_response(json)
+      assert.is_nil(err)
+      assert.is_not_nil(result)
+      assert.are.equal(2, #result["Foo.fs"])
+      assert.are.equal(1, #result["Bar.fs"])
+      -- verify vim diagnostic format
+      assert.are.equal(2, result["Foo.fs"][1].lnum) -- 0-indexed
+      assert.are.equal("err1", result["Foo.fs"][1].message)
+      assert.are.equal("sagefs", result["Foo.fs"][1].source)
+    end)
+
+    it("returns empty table when diagnostics array is empty", function()
+      local result, err = diagnostics.parse_check_response('{"diagnostics":[]}')
+      assert.is_nil(err)
+      assert.are.same({}, result)
+    end)
+
+    it("handles response with no diagnostics key", function()
+      local result, err = diagnostics.parse_check_response('{"other":"data"}')
+      assert.is_nil(err)
+      assert.are.same({}, result)
+    end)
+  end)
 end)

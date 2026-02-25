@@ -127,4 +127,26 @@ function M.dispatch(dt, classified)
   end
 end
 
+--- Dispatch a batch of classified events with error isolation.
+--- Each handler is wrapped in pcall so a throwing handler doesn't
+--- prevent subsequent events from being processed.
+---@param dt table dispatch table from build_dispatch_table
+---@param classified_events table[] list of { action, data? }
+---@return table[] errors list of { action, err } for failed handlers
+function M.safe_dispatch_batch(dt, classified_events)
+  local errors = {}
+  for _, classified in ipairs(classified_events) do
+    if classified then
+      local handler = dt[classified.action]
+      if handler then
+        local ok, err = pcall(handler, classified.data)
+        if not ok then
+          table.insert(errors, { action = classified.action, err = err })
+        end
+      end
+    end
+  end
+  return errors
+end
+
 return M

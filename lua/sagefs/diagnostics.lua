@@ -89,4 +89,11 @@ function M.process_sse_event(json_str)
   return result, nil
 end
 
+--- Parse a check_fsharp_code response (same shape as SSE diagnostics)
+---@param raw string|nil
+---@return table<string, table[]>|nil groups, string|nil error
+function M.parse_check_response(raw)
+  return M.process_sse_event(raw)
+end
+
 return M
