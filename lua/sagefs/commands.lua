@@ -349,16 +349,29 @@ function M.register_commands(plugin, helpers)
       helpers.notify("SageFs daemon already running", vim.log.levels.WARN)
       return
     end
-    -- Pick project: from args, or prompt with vim.ui.select
-    local function start_with_project(project)
+    -- Check if SageFs is already running externally (health check)
+    local function try_start(project)
       plugin.daemon_state = daemon.mark_starting(plugin.daemon_state, project, plugin.config.port)
       local cmd = daemon.start_command({ project = project, port = plugin.config.port })
+      local stderr_lines = {}
       local job_id = vim.fn.jobstart(cmd, {
+        detach = true,
+        on_stdout = function() end,
+        on_stderr = function(_, data)
+          if data then
+            for _, line in ipairs(data) do
+              if line ~= "" then table.insert(stderr_lines, line) end
+            end
+          end
+        end,
         on_exit = function(_, code)
           vim.schedule(function()
             if code ~= 0 then
-              plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "exit code " .. code)
-              helpers.notify("SageFs daemon exited with code " .. code, vim.log.levels.ERROR)
+              local err_msg = #stderr_lines > 0
+                and table.concat(stderr_lines, "\n"):sub(1, 200)
+                or ("exit code " .. code)
+              plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, err_msg)
+              helpers.notify("SageFs daemon failed: " .. err_msg, vim.log.levels.ERROR)
             else
               plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
               helpers.notify("SageFs daemon stopped")
@@ -374,30 +387,50 @@ function M.register_commands(plugin, helpers)
           plugin.health_check(function(healthy)
             if healthy then helpers.start_sse() end
           end)
-        end, 2000)
+        end, 3000)
       else
         plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "jobstart failed")
-        helpers.notify("Failed to start SageFs daemon" .. err_detail(raw), vim.log.levels.ERROR)
+        helpers.notify("Failed to start SageFs daemon", vim.log.levels.ERROR)
       end
     end
 
     if opts.args and opts.args ~= "" then
-      start_with_project(opts.args)
+      try_start(opts.args)
+      return
+    end
+
+    -- Auto-discover: prefer .slnx/.sln, then .fsproj
+    local cwd = vim.fn.getcwd()
+    local solutions = vim.fn.glob(cwd .. "/*.slnx", false, true)
+    if #solutions == 0 then
+      solutions = vim.fn.glob(cwd .. "/*.sln", false, true)
+    end
+    if #solutions == 1 then
+      try_start(solutions[1])
+      return
+    elseif #solutions > 1 then
+      local names = vim.tbl_map(function(f) return vim.fn.fnamemodify(f, ":t") end, solutions)
+      vim.ui.select(names, { prompt = "Start SageFs with solution:" }, function(choice, idx)
+        if choice then try_start(solutions[idx]) end
+      end)
+      return
+    end
+
+    -- No solutions found, try .fsproj (non-recursive, cwd only first)
+    local fsproj_files = vim.fn.glob(cwd .. "/*.fsproj", false, true)
+    if #fsproj_files == 0 then
+      -- Scan one level deep
+      fsproj_files = vim.fn.glob(cwd .. "/*/*.fsproj", false, true)
+    end
+    if #fsproj_files == 1 then
+      try_start(fsproj_files[1])
+    elseif #fsproj_files > 1 then
+      local names = vim.tbl_map(function(f) return vim.fn.fnamemodify(f, ":~:.") end, fsproj_files)
+      vim.ui.select(names, { prompt = "Start SageFs with project:" }, function(choice, idx)
+        if choice then try_start(fsproj_files[idx]) end
+      end)
     else
-      local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
-      if #fsproj_files == 1 then
-        start_with_project(fsproj_files[1])
-      elseif #fsproj_files > 1 then
-        local names = {}
-        for _, f in ipairs(fsproj_files) do
-          table.insert(names, vim.fn.fnamemodify(f, ":~:."))
-        end
-        vim.ui.select(names, { prompt = "Start SageFs with project:" }, function(choice)
-          if choice then start_with_project(choice) end
-        end)
-      else
-        helpers.notify("No .fsproj files found", vim.log.levels.ERROR)
-      end
+      helpers.notify("No .slnx, .sln, or .fsproj files found", vim.log.levels.ERROR)
     end
   end, { nargs = "?", complete = "file", desc = "Start SageFs daemon" })
 

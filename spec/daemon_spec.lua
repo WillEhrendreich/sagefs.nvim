@@ -19,14 +19,13 @@ describe("daemon", function()
   end)
 
   describe("start_command", function()
-    it("builds sagefs command with project and port", function()
+    it("builds sagefs command with --proj for .fsproj files", function()
       local cmd = daemon.start_command({
         project = "MyApp.fsproj",
         port = 37749,
       })
       assert.is_table(cmd)
       assert.are.equal("sagefs", cmd[1])
-      -- Must include --proj
       local has_proj = false
       for i, v in ipairs(cmd) do
         if v == "--proj" then
@@ -35,6 +34,36 @@ describe("daemon", function()
         end
       end
       assert.is_true(has_proj, "command must include --proj")
+    end)
+
+    it("uses --sln for .slnx files", function()
+      local cmd = daemon.start_command({
+        project = "Harmony.slnx",
+        port = 37749,
+      })
+      local has_sln = false
+      for i, v in ipairs(cmd) do
+        if v == "--sln" then
+          assert.are.equal("Harmony.slnx", cmd[i + 1])
+          has_sln = true
+        end
+      end
+      assert.is_true(has_sln, "command must include --sln for .slnx")
+    end)
+
+    it("uses --sln for .sln files", function()
+      local cmd = daemon.start_command({
+        project = "MyApp.sln",
+        port = 37749,
+      })
+      local has_sln = false
+      for i, v in ipairs(cmd) do
+        if v == "--sln" then
+          assert.are.equal("MyApp.sln", cmd[i + 1])
+          has_sln = true
+        end
+      end
+      assert.is_true(has_sln, "command must include --sln for .sln")
     end)
 
     it("includes --mcp-port when specified", function()
@@ -50,18 +79,6 @@ describe("daemon", function()
         end
       end
       assert.is_true(has_port, "command must include --mcp-port")
-    end)
-
-    it("includes --supervised flag", function()
-      local cmd = daemon.start_command({
-        project = "MyApp.fsproj",
-        port = 37749,
-      })
-      local has_supervised = false
-      for _, v in ipairs(cmd) do
-        if v == "--supervised" then has_supervised = true end
-      end
-      assert.is_true(has_supervised, "command must include --supervised")
     end)
   end)
 

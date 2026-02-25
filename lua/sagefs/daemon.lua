@@ -13,9 +13,14 @@ function M.new()
 end
 
 function M.start_command(opts)
-  local cmd = { "sagefs", "--supervised" }
+  local cmd = { "sagefs" }
   if opts.project then
-    table.insert(cmd, "--proj")
+    -- Use --sln for solution files, --proj for project files
+    if opts.project:match("%.[sS][lL][nN][xX]?$") then
+      table.insert(cmd, "--sln")
+    else
+      table.insert(cmd, "--proj")
+    end
     table.insert(cmd, opts.project)
   end
   if opts.port then
