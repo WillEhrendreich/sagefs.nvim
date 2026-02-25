@@ -174,12 +174,34 @@ local pascal_to_camel = {
   PreviousStatus = "previousStatus",
 }
 
+--- Unwrap an F# Discriminated Union JSON value: {Case = "X"} → "X"
+---@param v any
+---@return any
+local function unwrap_du(v)
+  if type(v) == "table" and v.Case and type(v.Case) == "string" then
+    return v.Case
+  end
+  return v
+end
+
 --- Normalize a TestStatusEntry from PascalCase (F#) to camelCase (Lua convention)
+--- Also unwraps F# DU values (e.g. Status = {Case="Stale"} → status = "Stale")
 ---@param entry table
 ---@return table normalized entry
 function M.normalize_entry(entry)
   if not entry then return entry end
-  if entry.testId then return entry end  -- already camelCase
+  -- Fields that are F# DUs and need unwrapping
+  local du_fields = { "status", "category", "currentPolicy", "previousStatus",
+                      "Status", "Category", "CurrentPolicy", "PreviousStatus" }
+  if entry.testId then
+    -- Already camelCase but DU fields might still be tables
+    for _, f in ipairs(du_fields) do
+      if type(entry[f]) == "table" then
+        entry[f] = unwrap_du(entry[f])
+      end
+    end
+    return entry
+  end
   local out = {}
   for k, v in pairs(entry) do
     local mapped = pascal_to_camel[k]
@@ -187,6 +209,12 @@ function M.normalize_entry(entry)
       out[mapped] = v
     else
       out[k] = v
+    end
+  end
+  -- Unwrap DU values for fields that should be plain strings
+  for _, f in ipairs({"status", "category", "currentPolicy", "previousStatus"}) do
+    if type(out[f]) == "table" then
+      out[f] = unwrap_du(out[f])
     end
   end
   return out

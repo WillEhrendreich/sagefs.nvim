@@ -1563,6 +1563,99 @@ describe("testing.normalize_entry", function()
     })
     assert.are.same(origin, entry.origin)
   end)
+
+  it("unwraps DU-wrapped Status from PascalCase entry", function()
+    local entry = testing.normalize_entry({
+      TestId = "t1", DisplayName = "Test", Status = { Case = "Stale" },
+    })
+    assert.are.equal("Stale", entry.status)
+  end)
+
+  it("unwraps DU-wrapped status from camelCase entry", function()
+    local entry = testing.normalize_entry({
+      testId = "t1", displayName = "Test", status = { Case = "Passed" },
+    })
+    assert.are.equal("Passed", entry.status)
+  end)
+
+  it("unwraps DU-wrapped Category and CurrentPolicy", function()
+    local entry = testing.normalize_entry({
+      TestId = "t1", DisplayName = "Test", Status = { Case = "Detected" },
+      Category = { Case = "Unit" }, CurrentPolicy = { Case = "OnEveryChange" },
+    })
+    assert.are.equal("Unit", entry.category)
+    assert.are.equal("OnEveryChange", entry.currentPolicy)
+    assert.are.equal("Detected", entry.status)
+  end)
+
+  it("handles all DU status variants", function()
+    for _, s in ipairs({"Detected", "Queued", "Running", "Passed", "Failed", "Skipped", "Stale", "PolicyDisabled"}) do
+      local entry = testing.normalize_entry({ TestId = "t1", Status = { Case = s } })
+      assert.are.equal(s, entry.status, "failed for " .. s)
+    end
+  end)
+
+  it("unwraps PreviousStatus DU", function()
+    local entry = testing.normalize_entry({
+      TestId = "t1", Status = { Case = "Passed" }, PreviousStatus = { Case = "Stale" },
+    })
+    assert.are.equal("Stale", entry.previousStatus)
+  end)
+end)
+
+-- ─── handle_results_batch with DU-wrapped entries ────────────────────────────
+
+describe("testing.handle_results_batch with DU entries", function()
+  it("populates tests from entries with all DU-wrapped fields", function()
+    local state = testing.new()
+    state = testing.handle_results_batch(state, {
+      Entries = {
+        { TestId = "abc", DisplayName = "test one", FullName = "Suite/test one",
+          Origin = { Case = "ReflectionOnly" }, Status = { Case = "Stale" },
+          Category = { Case = "Unit" }, CurrentPolicy = { Case = "OnEveryChange" },
+          Framework = "expecto" },
+        { TestId = "def", DisplayName = "test two", FullName = "Suite/test two",
+          Origin = { Case = "SourceMapped", Fields = { "/a.fs", 10 } }, Status = { Case = "Passed" },
+          Category = { Case = "Integration" }, CurrentPolicy = { Case = "OnSaveOnly" },
+          Framework = "expecto" },
+      },
+      Generation = 0,
+      Freshness = { Case = "Fresh" },
+      Completion = { Case = "Complete", Fields = { 2, 2 } },
+    })
+    assert.are.equal(2, testing.test_count(state))
+    assert.are.equal("Stale", state.tests["abc"].status)
+    assert.are.equal("Unit", state.tests["abc"].category)
+    assert.are.equal("OnEveryChange", state.tests["abc"].policy)
+    assert.are.equal("Passed", state.tests["def"].status)
+    assert.are.equal("Integration", state.tests["def"].category)
+    assert.are.equal("/a.fs", state.tests["def"].file)
+    assert.are.equal(10, state.tests["def"].line)
+  end)
+
+  it("populates tests from 50-entry batch (real SageFs shape)", function()
+    local entries = {}
+    for i = 1, 50 do
+      table.insert(entries, {
+        TestId = string.format("T%04d", i),
+        DisplayName = "test " .. i,
+        FullName = "Suite/test " .. i,
+        Origin = { Case = "ReflectionOnly" },
+        Status = { Case = "Stale" },
+        Category = { Case = "Unit" },
+        CurrentPolicy = { Case = "OnEveryChange" },
+        Framework = "expecto",
+      })
+    end
+    local state = testing.new()
+    state = testing.handle_results_batch(state, {
+      Entries = entries,
+      Generation = 0,
+      Freshness = { Case = "Fresh" },
+      Completion = { Case = "Complete", Fields = { 50, 50 } },
+    })
+    assert.are.equal(50, testing.test_count(state))
+  end)
 end)
 
 -- ─── parse_generation (RunGeneration DU from F#) ─────────────────────────────
