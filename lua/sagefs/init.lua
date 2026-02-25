@@ -113,16 +113,7 @@ local function build_handlers()
           end
         end
       end
-      -- Update test diagnostics for current buffer
-      vim.schedule(function()
-        local buf = vim.api.nvim_get_current_buf()
-        local file = vim.api.nvim_buf_get_name(buf)
-        if file and file ~= "" then
-          local test_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
-          local diags = testing.to_diagnostics(M.testing_state, file)
-          vim.diagnostic.set(test_ns, buf, diags)
-        end
-      end)
+      -- Test diagnostics update is debounced via schedule_render
     end,
     test_run_started = function(raw)
       local data = decode_event_data(raw)
@@ -211,6 +202,31 @@ local function build_handlers()
   })
 end
 
+-- Debounce timer for gutter sign rendering (SSE can flood events)
+local render_timer = nil
+local RENDER_DEBOUNCE_MS = 100
+
+local function schedule_render()
+  if render_timer then
+    pcall(vim.fn.timer_stop, render_timer)
+  end
+  render_timer = vim.fn.timer_start(RENDER_DEBOUNCE_MS, function()
+    render_timer = nil
+    vim.schedule(function()
+      local buf = vim.api.nvim_get_current_buf()
+      render.render_test_signs(buf, M.testing_state)
+      render.render_coverage_signs(buf, M.coverage_state)
+      -- Update test failure diagnostics for current buffer
+      local file = vim.api.nvim_buf_get_name(buf)
+      if file and file ~= "" then
+        local test_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
+        local diags = testing.to_diagnostics(M.testing_state, file)
+        vim.diagnostic.set(test_ns, buf, diags)
+      end
+    end)
+  end)
+end
+
 local function on_sse_events(raw_events)
   if not dispatch_table then
     dispatch_table = build_handlers()
@@ -220,7 +236,6 @@ local function on_sse_events(raw_events)
   for _, event in ipairs(raw_events) do
     local c = sse_parser.classify_event(event)
     if c then
-      -- Pass original event as data so handlers get the raw SSE event
       table.insert(classified, { action = c.action, data = event })
     end
   end
@@ -233,12 +248,8 @@ local function on_sse_events(raw_events)
     end)
   end
 
-  -- Refresh gutter signs for current buffer after processing events
-  vim.schedule(function()
-    local buf = vim.api.nvim_get_current_buf()
-    render.render_test_signs(buf, M.testing_state)
-    render.render_coverage_signs(buf, M.coverage_state)
-  end)
+  -- Debounced gutter refresh — avoids flooding Neovim with extmark resets
+  schedule_render()
 end
 
 -- ─── SSE Lifecycle ────────────────────────────────────────────────────────────
