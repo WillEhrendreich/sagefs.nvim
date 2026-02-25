@@ -188,14 +188,17 @@ function M.show_float(lines, opts)
   for _, l in ipairs(lines) do
     if #l + 2 > width then width = #l + 2 end
   end
-  local height = math.max(1, math.min(#lines, opts.max_height or 30))
+  local max_w = math.max(1, vim.o.columns - 4)
+  local max_h = math.max(1, vim.o.lines - 4)
+  width = math.max(1, math.min(width, max_w))
+  local height = math.max(1, math.min(#lines, opts.max_height or 30, max_h))
 
   local win_opts = {
     relative = "editor",
     width = width,
     height = height,
-    row = math.floor((vim.o.lines - height) / 2),
-    col = math.floor((vim.o.columns - width) / 2),
+    row = math.max(0, math.floor((vim.o.lines - height) / 2)),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
     style = "minimal",
     border = "rounded",
   }
