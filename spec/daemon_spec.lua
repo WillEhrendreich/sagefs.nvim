@@ -37,19 +37,19 @@ describe("daemon", function()
       assert.is_true(has_proj, "command must include --proj")
     end)
 
-    it("includes --port when specified", function()
+    it("includes --mcp-port when specified", function()
       local cmd = daemon.start_command({
         project = "MyApp.fsproj",
         port = 9999,
       })
       local has_port = false
       for i, v in ipairs(cmd) do
-        if v == "--port" then
+        if v == "--mcp-port" then
           assert.are.equal("9999", cmd[i + 1])
           has_port = true
         end
       end
-      assert.is_true(has_port, "command must include --port")
+      assert.is_true(has_port, "command must include --mcp-port")
     end)
 
     it("includes --supervised flag", function()

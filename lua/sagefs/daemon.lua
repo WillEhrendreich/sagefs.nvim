@@ -19,7 +19,7 @@ function M.start_command(opts)
     table.insert(cmd, opts.project)
   end
   if opts.port then
-    table.insert(cmd, "--port")
+    table.insert(cmd, "--mcp-port")
     table.insert(cmd, tostring(opts.port))
   end
   return cmd
