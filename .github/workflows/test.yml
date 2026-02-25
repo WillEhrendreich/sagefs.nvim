@@ -114,7 +114,11 @@ jobs:
         env:
           PATH: /home/runner/.dotnet/tools:/opt/nvim-linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
+          FAIL=0
           for spec in spec/e2e/e2e_*_spec.lua; do
             echo "--- Running $spec ---"
-            nvim --headless --clean -u NONE -l "$spec"
+            if ! nvim --headless --clean -u NONE -l "$spec"; then
+              FAIL=1
+            fi
           done
+          exit $FAIL

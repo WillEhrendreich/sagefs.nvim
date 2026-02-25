@@ -389,6 +389,17 @@ function H.run_suite(opts)
     -- Wait for health
     H.wait_for_health(port)
 
+    -- Warmup: send a trivial eval to ensure FSI session is fully loaded
+    local warmup_ok = vim.wait(30000, function()
+      local r = H.http_post("/exec", vim.fn.json_encode({ code = "1 + 1;;" }), port)
+      return r.status == 200
+    end, 1000)
+    if warmup_ok then
+      io.write("    [harness] FSI session warmed up.\n")
+    else
+      io.write("    [harness] Warning: FSI warmup did not return 200 within 30s.\n")
+    end
+
     -- Setup plugin
     local sagefs = H.setup_plugin(port)
 
