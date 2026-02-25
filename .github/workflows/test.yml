@@ -5,6 +5,7 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   unit-tests:
@@ -86,7 +87,7 @@ jobs:
             echo "skip_e2e=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          sagefs --supervised --proj samples/Minimal/Minimal.fsproj --port 47700 > /tmp/sagefs-smoke.log 2>&1 &
+          sagefs --supervised --proj samples/Minimal/Minimal.fsproj --mcp-port 47700 > /tmp/sagefs-smoke.log 2>&1 &
           SAGEFS_PID=$!
           echo "SageFs PID: $SAGEFS_PID"
           for i in $(seq 1 60); do

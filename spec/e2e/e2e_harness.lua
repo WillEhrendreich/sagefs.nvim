@@ -230,7 +230,7 @@ function H.start_daemon(project_dir, port)
   local stderr_lines = {}
 
   local job_id = vim.fn.jobstart({
-    sagefs_bin, "--supervised", "--proj", fsproj, "--port", tostring(port)
+    sagefs_bin, "--supervised", "--proj", fsproj, "--mcp-port", tostring(port)
   }, {
     cwd = project_dir,
     on_stdout = function(_, data)
