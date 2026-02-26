@@ -10,6 +10,7 @@ local hotreload = require("sagefs.hotreload")
 local diagnostics = require("sagefs.diagnostics")
 local testing = require("sagefs.testing")
 local coverage = require("sagefs.coverage")
+local annotations = require("sagefs.annotations")
 local events = require("sagefs.events")
 local completions = require("sagefs.completions")
 local daemon = require("sagefs.daemon")
@@ -42,6 +43,7 @@ M.config = {
 M.state = model.new()
 M.testing_state = testing.new()
 M.coverage_state = coverage.new()
+M.annotations_state = annotations.new()
 M.daemon_state = daemon.new()
 M.active_session = nil
 M.session_list = {}
@@ -186,6 +188,15 @@ local function build_handlers()
       M.coverage_state = coverage.clear(M.coverage_state)
     end,
 
+    -- File annotations (CodeLens, inline failures, coverage detail)
+    file_annotations = function(raw)
+      local data = decode_event_data(raw)
+      if data then
+        M.annotations_state = annotations.handle_file_annotations(M.annotations_state, data)
+        fire_user_event("file_annotations", data)
+      end
+    end,
+
     -- Session lifecycle
     eval_completed = function(raw)
       local data = decode_event_data(raw)
@@ -220,6 +231,7 @@ local function schedule_render()
       local buf = vim.api.nvim_get_current_buf()
       render.render_test_signs(buf, M.testing_state)
       render.render_coverage_signs(buf, M.coverage_state)
+      render.render_annotations(buf, M.annotations_state)
       -- Update test failure diagnostics for current buffer
       local file = vim.api.nvim_buf_get_name(buf)
       if file and file ~= "" then
@@ -260,25 +272,41 @@ end
 
 local function start_sse()
   -- Primary events SSE
+  _G._sse_start_called = (_G._sse_start_called or 0) + 1
+  local url = base_url() .. "/events"
+  _G._sse_url = url
   if events_sse then events_sse.stop() end
-  events_sse = transport.connect_sse(base_url() .. "/events", {
+  events_sse = transport.connect_sse(url, {
     on_events = function(events)
       on_sse_events(events)
     end,
     on_connect = function()
+      _G._sse_on_connect_fired = true
+      _G._sse_pre_connect_status = M.state.status
       M.state = model.set_status(M.state, "connected")
+      _G._sse_post_connect_status = M.state.status
+      -- Clear stale state before daemon replays session-scoped data
+      M.testing_state = testing.new()
+      M.coverage_state = coverage.new()
+      M.annotations_state = annotations.new()
       fire_user_event("connected")
-      -- Test state recovers via the SSE stream (test_summary/test_results_batch events)
-      vim.schedule(function() fire_user_event("test_recovery_needed") end)
+      vim.schedule(function()
+        _G._sse_after_schedule_status = M.state.status
+        fire_user_event("test_recovery_needed")
+      end)
     end,
-    on_disconnect = function()
+    on_disconnect = function(code)
+      _G._sse_on_disconnect_fired = (_G._sse_on_disconnect_fired or 0) + 1
+      _G._sse_disconnect_code = code
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
     end,
     auto_reconnect = true,
     reconnect_delay = 3000,
   })
+  _G._sse_handle_before_start = events_sse ~= nil
   events_sse.start()
+  _G._sse_job_id = events_sse.job_id
 end
 
 local function stop_sse()
@@ -845,6 +873,7 @@ function M.setup(opts)
     render_signs = function(buf)
       render.render_test_signs(buf, M.testing_state)
       render.render_coverage_signs(buf, M.coverage_state)
+      render.render_annotations(buf, M.annotations_state)
     end,
     check_code = check_code,
     check_on_save = function() return M.config.check_on_save end,

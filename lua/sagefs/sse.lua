@@ -107,6 +107,9 @@ function M.classify_event(event)
     -- Coverage
     CoverageUpdated = "coverage_updated",
     CoverageCleared = "coverage_cleared",
+    -- File annotations (inline feedback: CodeLens, failures, coverage detail)
+    file_annotations = "file_annotations",
+    FileAnnotationsUpdated = "file_annotations",
     -- File watching
     HotReloadTriggered = "hot_reload_triggered",
     FileChanged = "file_changed",

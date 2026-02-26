@@ -550,6 +550,9 @@ end
 function M.handle_results_batch(state, data)
   if not data then return state end
 
+  -- Receiving test results implies live testing is active
+  state.enabled = true
+
   -- Enriched payload: Entries/entries (PascalCase or camelCase)
   local entries = data.Entries or data.entries
   if entries then
@@ -581,6 +584,7 @@ end
 ---@return table state
 function M.handle_tests_discovered(state, data)
   if not data or not data.tests then return state end
+  state.enabled = true
   for _, entry in ipairs(data.tests) do
     M.update_test(state, entry)
   end

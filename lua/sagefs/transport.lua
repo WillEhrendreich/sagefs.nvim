@@ -56,29 +56,44 @@ end
 ---@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, auto_reconnect: boolean|nil, reconnect_delay: number|nil }
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
-  local handle = { job_id = nil, _buffer = "", _stopped = false, _attempt = 0 }
+  local handle = { job_id = nil, _buffer = "", _stopped = false, _attempt = 0, _connected = false, _partial = "" }
 
   local function connect()
     if handle._stopped then return end
     handle._buffer = ""
+    handle._partial = ""
+    handle._connected = false
     handle._attempt = handle._attempt + 1
     handle.job_id = vim.fn.jobstart(
       { "curl", "--no-buffer", "-N", url, "--silent", "--show-error" },
       {
         on_stdout = function(_, data)
           if not data then return end
-          for _, chunk in ipairs(data) do
-            handle._buffer = handle._buffer .. chunk .. "\n"
-            local events, remainder = sse_parser.parse_chunk(handle._buffer)
-            handle._buffer = remainder
-            if #events > 0 and opts.on_events then
-              opts.on_events(events)
-            end
+          if not handle._connected then
+            handle._connected = true
+            handle._attempt = 0
+            if opts.on_connect then opts.on_connect() end
+          end
+          -- Neovim splits stdout on newlines: last element is a partial line
+          -- that continues into the next callback. Join it with the previous partial.
+          data[1] = handle._partial .. data[1]
+          handle._partial = data[#data]
+          for i = 1, #data - 1 do
+            handle._buffer = handle._buffer .. data[i] .. "\n"
+          end
+          local events, remainder = sse_parser.parse_chunk(handle._buffer)
+          handle._buffer = remainder
+          if #events > 0 and opts.on_events then
+            opts.on_events(events)
           end
         end,
         on_exit = function(_, code)
           handle.job_id = nil
-          if opts.on_disconnect then opts.on_disconnect(code) end
+          local was_connected = handle._connected
+          handle._connected = false
+          if not handle._stopped and was_connected and opts.on_disconnect then
+            opts.on_disconnect(code)
+          end
           if not handle._stopped and opts.auto_reconnect then
             local delay = sse_parser.reconnect_delay(handle._attempt)
             vim.defer_fn(connect, delay)
@@ -86,10 +101,6 @@ function M.connect_sse(url, opts)
         end,
       }
     )
-    if handle.job_id and handle.job_id > 0 then
-      handle._attempt = 0 -- reset backoff on successful connect
-      if opts.on_connect then opts.on_connect() end
-    end
   end
 
   function handle.start()

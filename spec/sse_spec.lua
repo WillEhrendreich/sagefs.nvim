@@ -278,6 +278,16 @@ describe("sse.classify_event snake_case events", function()
     local result = sse.classify_event({ type = "TestResultsBatch", data = "{}" })
     assert.are.equal("test_results_batch", result.action)
   end)
+
+  it("classifies file_annotations (snake_case from SSE)", function()
+    local result = sse.classify_event({ type = "file_annotations", data = "{}" })
+    assert.are.equal("file_annotations", result.action)
+  end)
+
+  it("classifies FileAnnotationsUpdated (PascalCase)", function()
+    local result = sse.classify_event({ type = "FileAnnotationsUpdated", data = "{}" })
+    assert.are.equal("file_annotations", result.action)
+  end)
 end)
 
 -- ─── Full SSE round-trip: parse → classify typed test events ─────────────────

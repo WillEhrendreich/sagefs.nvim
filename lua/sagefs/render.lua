@@ -32,6 +32,13 @@ function M.setup_highlights(hl_config)
   -- Coverage highlights
   vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#a6e3a1" })
   vim.api.nvim_set_hl(0, "SageFsUncovered", { fg = "#f38ba8" })
+  -- CodeLens highlights
+  vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensRunning", { fg = "#f9e2af", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensDetected", { fg = "#585b70", italic = true })
+  -- Inline failure highlights
+  vim.api.nvim_set_hl(0, "SageFsInlineFailure", { fg = "#f38ba8", italic = true })
 end
 
 -- ─── Extmark Rendering ────────────────────────────────────────────────────────
@@ -166,6 +173,57 @@ function M.render_coverage_signs(buf, coverage_state)
         sign_text = sign.text,
         sign_hl_group = sign.hl,
         priority = 150,
+      })
+    end
+  end
+end
+
+-- ─── File Annotations (CodeLens + Inline Failures) ─────────────────────────
+
+local ann_ns = nil
+local ann_module = require("sagefs.annotations")
+
+local function get_ann_ns()
+  if not ann_ns then ann_ns = vim.api.nvim_create_namespace("sagefs_annotations") end
+  return ann_ns
+end
+
+function M.render_annotations(buf, annotations_state)
+  local ans = get_ann_ns()
+  vim.api.nvim_buf_clear_namespace(buf, ans, 0, -1)
+
+  local file = vim.api.nvim_buf_get_name(buf)
+  if file == "" then return end
+
+  local ann = ann_module.get_file(annotations_state, file)
+  if not ann then return end
+
+  local line_count = vim.api.nvim_buf_line_count(buf)
+
+  -- Render CodeLens as virtual lines above test functions
+  local lenses = ann.CodeLenses or ann.codeLenses or {}
+  for _, lens in ipairs(lenses) do
+    local line = lens.Line or lens.line
+    if line and line > 0 and line <= line_count then
+      local text, hl = ann_module.format_codelens(lens)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+        virt_lines_above = true,
+        virt_lines = { { { "  " .. text, hl } } },
+        priority = 180,
+      })
+    end
+  end
+
+  -- Render inline failures as virtual text at end of line
+  local failures = ann.InlineFailures or ann.inlineFailures or {}
+  for _, failure in ipairs(failures) do
+    local line = failure.Line or failure.line
+    if line and line > 0 and line <= line_count then
+      local text, hl = ann_module.format_inline_failure(failure)
+      pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+        virt_text = { { text, hl } },
+        virt_text_pos = "eol",
+        priority = 190,
       })
     end
   end
