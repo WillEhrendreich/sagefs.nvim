@@ -209,6 +209,11 @@ local RENDER_DEBOUNCE_MS = 30
 
 -- Cached namespace for test failure diagnostics (avoid API call per render)
 local test_diag_ns = nil
+-- Version tracking for render skip (FDA short-circuit / Nu ViewVersion)
+local last_rendered_test_version = -1
+local last_rendered_ann_version = -1
+local last_rendered_cov_version = -1
+local last_rendered_file = ""
 
 local function schedule_render()
   if render_timer then
@@ -218,12 +223,25 @@ local function schedule_render()
     render_timer = nil
     vim.schedule(function()
       local buf = vim.api.nvim_get_current_buf()
+      local file = vim.api.nvim_buf_get_name(buf) or ""
+      -- Short-circuit: skip render if nothing changed (FDA/Nu ViewVersion pattern)
+      local test_v = M.testing_state._version or 0
+      local ann_v = M.annotations_state._version or 0
+      local cov_v = M.coverage_state._version or 0
+      if test_v == last_rendered_test_version
+        and ann_v == last_rendered_ann_version
+        and cov_v == last_rendered_cov_version
+        and file == last_rendered_file then
+        return
+      end
+      last_rendered_test_version = test_v
+      last_rendered_ann_version = ann_v
+      last_rendered_cov_version = cov_v
+      last_rendered_file = file
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state)
-      -- Update test failure diagnostics for current buffer
-      local file = vim.api.nvim_buf_get_name(buf)
-      if file and file ~= "" then
+      if file ~= "" then
         if not test_diag_ns then
           test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
         end

@@ -69,6 +69,8 @@ function M.new()
     generation = 0,      -- current RunGeneration int
     freshness = nil,     -- "Fresh" | "StaleCodeEdited" | "StaleWrongGeneration" | nil
     completion = nil,    -- "Complete" | "Partial" | "Superseded" | nil
+    _file_index = {},    -- file → { testId → true } (O(1) file lookup, maintained incrementally)
+    _version = 0,        -- mutation counter for render skip (FDA short-circuit / Nu ViewVersion)
   }
 end
 
@@ -111,6 +113,13 @@ function M.update_test(state, entry)
     line = entry.origin.Fields[2]
   end
 
+  -- Remove old file index entry if file changed
+  local old = state.tests[entry.testId]
+  if old and old.file and old.file ~= file then
+    local old_set = state._file_index[old.file]
+    if old_set then old_set[entry.testId] = nil end
+  end
+
   state.tests[entry.testId] = {
     displayName = entry.displayName or "",
     fullName = entry.fullName or "",
@@ -122,6 +131,13 @@ function M.update_test(state, entry)
     status = entry.status or "Detected",
     output = nil,
   }
+
+  -- Maintain file index (SoA-inspired O(1) file lookup)
+  if file then
+    if not state._file_index[file] then state._file_index[file] = {} end
+    state._file_index[file][entry.testId] = true
+  end
+  state._version = state._version + 1
 
   return state, nil
 end
@@ -155,6 +171,7 @@ function M.update_result(state, testId, status, output)
       policy = "OnEveryChange",
     }
   end
+  state._version = state._version + 1
 
   return state, nil
 end
@@ -281,6 +298,7 @@ function M.mark_all_stale(state)
       test.status = "Stale"
     end
   end
+  state._version = state._version + 1
   return state
 end
 
@@ -295,6 +313,7 @@ function M.mark_file_stale(state, file)
       test.status = "Stale"
     end
   end
+  state._version = state._version + 1
   return state
 end
 
@@ -352,15 +371,18 @@ function M.compute_summary(state)
   return s
 end
 
---- Filter tests by file path
+--- Filter tests by file path (uses _file_index for O(k) lookup instead of O(n))
 ---@param state table
 ---@param file string
 ---@return table[] list of test entries
 function M.filter_by_file(state, file)
   local results = {}
   if not file then return results end
-  for id, test in pairs(state.tests) do
-    if test.file == file then
+  local id_set = state._file_index and state._file_index[file]
+  if not id_set then return results end
+  for id in pairs(id_set) do
+    local test = state.tests[id]
+    if test then
       local entry = {}
       for k, v in pairs(test) do entry[k] = v end
       entry.testId = id
@@ -514,14 +536,18 @@ end
 -- ─── Test Failures → vim.diagnostic ──────────────────────────────────────────
 
 --- Convert failed tests for a single file to vim.diagnostic-shaped tables
+--- Uses _file_index for O(k) lookup instead of O(n) full scan
 ---@param state table
 ---@param file string|nil
 ---@return table[] diagnostics (0-indexed lnum/col)
 function M.to_diagnostics(state, file)
   if not file then return {} end
   local diags = {}
-  for _, test in pairs(state.tests) do
-    if test.status == "Failed" and test.file == file then
+  local id_set = state._file_index and state._file_index[file]
+  if not id_set then return diags end
+  for id in pairs(id_set) do
+    local test = state.tests[id]
+    if test and test.status == "Failed" then
       local msg = test.displayName or "test failed"
       if test.output and test.output ~= "" then
         msg = msg .. ": " .. M.format_failure_detail(test.output)
@@ -610,6 +636,7 @@ end
 ---@return table state
 function M.handle_live_testing_enabled(state)
   state.enabled = true
+  state._version = state._version + 1
   return state
 end
 
@@ -618,6 +645,7 @@ end
 ---@return table state
 function M.handle_live_testing_disabled(state)
   state.enabled = false
+  state._version = state._version + 1
   return state
 end
 
@@ -648,6 +676,7 @@ function M.handle_test_run_started(state, data)
       test.status = "Running"
     end
   end
+  state._version = state._version + 1
   return state
 end
 
@@ -660,6 +689,7 @@ function M.handle_test_run_completed(state, data)
   if data.summary then
     state.summary = data.summary
   end
+  state._version = state._version + 1
   return state
 end
 
@@ -731,14 +761,17 @@ local status_to_icon = {
   PolicyDisabled = "TestSkipped",
 }
 
---- Generate line annotations for tests in a specific file
+--- Generate line annotations for tests in a specific file (uses _file_index)
 ---@param state table testing state
 ---@param file string file path to filter by
 ---@return table[] annotations [{line, icon, tooltip}]
 function M.annotations_for_file(state, file)
   local anns = {}
-  for _, test in pairs(state.tests) do
-    if test.file == file then
+  local id_set = state._file_index and state._file_index[file]
+  if not id_set then return anns end
+  for id in pairs(id_set) do
+    local test = state.tests[id]
+    if test then
       table.insert(anns, {
         line = test.line or 1,
         icon = status_to_icon[test.status] or "TestDiscovered",

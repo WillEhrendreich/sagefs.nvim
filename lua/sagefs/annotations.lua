@@ -13,6 +13,7 @@ local M = {}
 function M.new()
   return {
     files = {},  -- filepath → FileAnnotations
+    _version = 0,
   }
 end
 
@@ -77,6 +78,7 @@ function M.handle_file_annotations(state, data)
   if not fp then return state end
   local new_state = {
     files = {},
+    _version = (state._version or 0) + 1,
   }
   -- Copy existing files
   for k, v in pairs(state.files) do

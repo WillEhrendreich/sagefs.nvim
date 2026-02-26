@@ -12,6 +12,7 @@ function M.new()
   return {
     files = {},
     enabled = false,
+    _version = 0,
   }
 end
 
@@ -29,6 +30,7 @@ end
 
 function M.update_file(state, path, lines)
   state.files[path] = lines
+  state._version = (state._version or 0) + 1
   return state
 end
 
@@ -96,6 +98,7 @@ end
 
 function M.clear(state)
   state.files = {}
+  state._version = (state._version or 0) + 1
   return state
 end
 

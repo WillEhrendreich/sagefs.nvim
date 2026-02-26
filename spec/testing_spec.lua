@@ -437,6 +437,86 @@ describe("testing.filter_by_file", function()
   end)
 end)
 
+-- ─── _file_index: O(1) file lookup (SoA-inspired) ──────────────────────────
+
+describe("testing._file_index", function()
+  it("is maintained when tests are added via update_test", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "test1",
+      origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 10 } },
+      status = "Passed",
+    })
+    assert.is_not_nil(s._file_index["/src/a.fs"])
+    assert.is_true(s._file_index["/src/a.fs"]["t1"])
+  end)
+
+  it("updates index when test file changes", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1",
+      origin = { Case = "SourceMapped", Fields = { "/src/a.fs", 10 } },
+      status = "Passed",
+    })
+    -- Re-add with different file
+    s = testing.update_test(s, {
+      testId = "t1",
+      origin = { Case = "SourceMapped", Fields = { "/src/b.fs", 20 } },
+      status = "Passed",
+    })
+    assert.is_nil(s._file_index["/src/a.fs"]["t1"])
+    assert.is_true(s._file_index["/src/b.fs"]["t1"])
+  end)
+
+  it("handles tests with no file (nil origin)", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    -- No _file_index entry for nil file
+    local count = 0
+    for _ in pairs(s._file_index) do count = count + 1 end
+    assert.are.equal(0, count)
+  end)
+end)
+
+-- ─── _version: mutation counter (FDA short-circuit / Nu ViewVersion) ─────────
+
+describe("testing._version", function()
+  it("starts at 0", function()
+    local s = testing.new()
+    assert.are.equal(0, s._version)
+  end)
+
+  it("increments on update_test", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    assert.are.equal(1, s._version)
+  end)
+
+  it("increments on update_result", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    local v = s._version
+    s = testing.update_result(s, "t1", "Failed", "some output")
+    assert.are.equal(v + 1, s._version)
+  end)
+
+  it("increments on mark_all_stale", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    local v = s._version
+    s = testing.mark_all_stale(s)
+    assert.are.equal(v + 1, s._version)
+  end)
+
+  it("increments on handle_test_run_started", function()
+    local s = testing.new()
+    s = testing.update_test(s, { testId = "t1", status = "Passed" })
+    local v = s._version
+    s = testing.handle_test_run_started(s, { testIds = { "t1" } })
+    assert.are.equal(v + 1, s._version)
+  end)
+end)
+
 -- ─── filter_by_status: query tests by state ──────────────────────────────────
 
 describe("testing.filter_by_status", function()
@@ -1026,10 +1106,9 @@ describe("testing.to_diagnostics", function()
     local s = testing.new()
     s = testing.update_test(s, {
       testId = "t1", displayName = "no line",
-      status = "Failed",
+      status = "Failed", origin = make_origin("/src/a.fs", 1),
     })
-    -- Manually set file without line to test the default
-    s.tests["t1"].file = "/src/a.fs"
+    -- Remove line to test the default
     s.tests["t1"].line = nil
     local diags = testing.to_diagnostics(s, "/src/a.fs")
     assert.are.equal(1, #diags)

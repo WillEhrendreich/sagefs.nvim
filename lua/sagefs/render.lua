@@ -135,6 +135,8 @@ local coverage = require("sagefs.coverage")
 
 local test_ns = nil
 local cov_ns = nil
+-- Cached table for freshness_by_line (Nu cached-collections pattern: wipe and reuse)
+local _freshness_cache = {}
 
 local function get_test_ns()
   if not test_ns then test_ns = vim.api.nvim_create_namespace("sagefs_tests") end
@@ -153,8 +155,8 @@ function M.render_test_signs(buf, testing_state, annotations_state)
   local file = vim.api.nvim_buf_get_name(buf)
   if file == "" then return end
 
-  -- Build line→freshness lookup from annotations
-  local freshness_by_line = {}
+  -- Reuse cached table (Nu cached-collections: wipe instead of allocate)
+  for k in pairs(_freshness_cache) do _freshness_cache[k] = nil end
   if annotations_state then
     local ann = ann_module.get_file(annotations_state, file)
     if ann then
@@ -163,7 +165,7 @@ function M.render_test_signs(buf, testing_state, annotations_state)
         local fresh = ta.Freshness or ta.freshness
         if line and fresh then
           local case = type(fresh) == "table" and (fresh.Case or fresh.case) or fresh
-          freshness_by_line[line] = case
+          _freshness_cache[line] = case
         end
       end
     end
@@ -174,7 +176,7 @@ function M.render_test_signs(buf, testing_state, annotations_state)
     if t.line and t.line > 0 then
       local sign = testing.gutter_sign(t.status)
       -- Override to stale/running when freshness says so
-      local fresh = freshness_by_line[t.line]
+      local fresh = _freshness_cache[t.line]
       if fresh == "Stale" then
         sign = { text = "~", hl = "SageFsTestStale" }
       elseif fresh == "Running" then
