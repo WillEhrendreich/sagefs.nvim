@@ -271,42 +271,30 @@ end
 -- ─── SSE Lifecycle ────────────────────────────────────────────────────────────
 
 local function start_sse()
-  -- Primary events SSE
-  _G._sse_start_called = (_G._sse_start_called or 0) + 1
-  local url = base_url() .. "/events"
-  _G._sse_url = url
   if events_sse then events_sse.stop() end
-  events_sse = transport.connect_sse(url, {
+  events_sse = transport.connect_sse(base_url() .. "/events", {
     on_events = function(events)
       on_sse_events(events)
     end,
     on_connect = function()
-      _G._sse_on_connect_fired = true
-      _G._sse_pre_connect_status = M.state.status
       M.state = model.set_status(M.state, "connected")
-      _G._sse_post_connect_status = M.state.status
       -- Clear stale state before daemon replays session-scoped data
       M.testing_state = testing.new()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
       fire_user_event("connected")
       vim.schedule(function()
-        _G._sse_after_schedule_status = M.state.status
         fire_user_event("test_recovery_needed")
       end)
     end,
     on_disconnect = function(code)
-      _G._sse_on_disconnect_fired = (_G._sse_on_disconnect_fired or 0) + 1
-      _G._sse_disconnect_code = code
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
     end,
     auto_reconnect = true,
     reconnect_delay = 3000,
   })
-  _G._sse_handle_before_start = events_sse ~= nil
   events_sse.start()
-  _G._sse_job_id = events_sse.job_id
 end
 
 local function stop_sse()
