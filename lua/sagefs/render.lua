@@ -36,6 +36,9 @@ function M.setup_highlights(hl_config)
   -- Coverage highlights
   vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#a6e3a1" })
   vim.api.nvim_set_hl(0, "SageFsUncovered", { fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsCovPending", { fg = "#45475a" })
+  vim.api.nvim_set_hl(0, "SageFsCovFailing", { fg = "#f38ba8" })
   -- CodeLens highlights
   vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
@@ -253,6 +256,40 @@ function M.render_annotations(buf, annotations_state)
         virt_text_pos = "eol",
         priority = 190,
       })
+    end
+  end
+
+  -- Render coverage annotations as gutter signs on definition lines
+  local cov_anns = ann.CoverageAnnotations or ann.coverageAnnotations or {}
+  for _, cov in ipairs(cov_anns) do
+    local line = cov.Line or cov.line
+    if line and line > 0 and line <= line_count then
+      local detail = cov.Detail or cov.detail
+      local sign_text, sign_hl
+      if detail and detail.Case == "Covered" then
+        local fields = detail.Fields or {}
+        local health = fields[2]
+        if health and health.Case == "SomeFailing" then
+          sign_text = "▸"
+          sign_hl = "SageFsCovFailing"
+        else
+          sign_text = "▸"
+          sign_hl = "SageFsCovered"
+        end
+      elseif detail and detail.Case == "NotCovered" then
+        sign_text = "○"
+        sign_hl = "SageFsCovNotCovered"
+      elseif detail and detail.Case == "Pending" then
+        sign_text = "·"
+        sign_hl = "SageFsCovPending"
+      end
+      if sign_text then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+          sign_text = sign_text,
+          sign_hl_group = sign_hl,
+          priority = 140,
+        })
+      end
     end
   end
 end
