@@ -229,7 +229,7 @@ local function schedule_render()
     render_timer = nil
     vim.schedule(function()
       local buf = vim.api.nvim_get_current_buf()
-      render.render_test_signs(buf, M.testing_state)
+      render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state)
       -- Update test failure diagnostics for current buffer
@@ -859,7 +859,7 @@ function M.setup(opts)
       render.render_all(buf, M.state)
     end,
     render_signs = function(buf)
-      render.render_test_signs(buf, M.testing_state)
+      render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state)
     end,

@@ -116,13 +116,19 @@ end
 ---@return string text, string hl_group
 function M.format_codelens(lens)
   local label = lens.Label or lens.label or ""
-  -- Determine color from label content
-  if label:match("^✓") or label:match("passed") then
+  -- Determine color from label prefix (daemon pre-formats: ✓/✗/●/◆/~/○)
+  if label:match("^✓") then
     return label, "SageFsCodeLensPassed"
-  elseif label:match("^✗") or label:match("failed") then
+  elseif label:match("^✗") then
     return label, "SageFsCodeLensFailed"
-  elseif label:match("^⏳") or label:match("running") then
+  elseif label:match("^●") then
     return label, "SageFsCodeLensRunning"
+  elseif label:match("^~") then
+    return label, "SageFsCodeLensStale"
+  elseif label:match("^○") then
+    return label, "SageFsCodeLensDetected"
+  elseif label:match("^◆") then
+    return label, "SageFsCodeLensDetected"
   else
     return label, "SageFsCodeLensDetected"
   end

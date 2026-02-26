@@ -29,6 +29,10 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsTestPassed", { fg = "#a6e3a1" })
   vim.api.nvim_set_hl(0, "SageFsTestFailed", { fg = "#f38ba8" })
   vim.api.nvim_set_hl(0, "SageFsTestRunning", { fg = "#f9e2af" })
+  vim.api.nvim_set_hl(0, "SageFsTestStale", { fg = "#fab387" })
+  vim.api.nvim_set_hl(0, "SageFsTestDetected", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsTestDisabled", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsTestSkipped", { fg = "#585b70" })
   -- Coverage highlights
   vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#a6e3a1" })
   vim.api.nvim_set_hl(0, "SageFsUncovered", { fg = "#f38ba8" })
@@ -36,6 +40,7 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensRunning", { fg = "#f9e2af", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensStale", { fg = "#fab387", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensDetected", { fg = "#585b70", italic = true })
   -- Inline failure highlights
   vim.api.nvim_set_hl(0, "SageFsInlineFailure", { fg = "#f38ba8", italic = true })
@@ -134,17 +139,40 @@ local function get_cov_ns()
   return cov_ns
 end
 
-function M.render_test_signs(buf, testing_state)
+function M.render_test_signs(buf, testing_state, annotations_state)
   local tns = get_test_ns()
   vim.api.nvim_buf_clear_namespace(buf, tns, 0, -1)
 
   local file = vim.api.nvim_buf_get_name(buf)
   if file == "" then return end
 
+  -- Build line→freshness lookup from annotations
+  local freshness_by_line = {}
+  if annotations_state then
+    local ann = ann_module.get_file(annotations_state, file)
+    if ann then
+      for _, ta in ipairs(ann.TestAnnotations or ann.testAnnotations or {}) do
+        local line = ta.Line or ta.line
+        local fresh = ta.Freshness or ta.freshness
+        if line and fresh then
+          local case = type(fresh) == "table" and (fresh.Case or fresh.case) or fresh
+          freshness_by_line[line] = case
+        end
+      end
+    end
+  end
+
   local by_file = testing.filter_by_file(testing_state, file)
   for _, t in ipairs(by_file) do
     if t.line and t.line > 0 then
       local sign = testing.gutter_sign(t.status)
+      -- Override to stale/running when freshness says so
+      local fresh = freshness_by_line[t.line]
+      if fresh == "Stale" then
+        sign = { text = "~", hl = "SageFsTestStale" }
+      elseif fresh == "Running" then
+        sign = { text = "⏳", hl = "SageFsTestRunning" }
+      end
       pcall(vim.api.nvim_buf_set_extmark, buf, tns, t.line - 1, 0, {
         sign_text = sign.text,
         sign_hl_group = sign.hl,
