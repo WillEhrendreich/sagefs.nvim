@@ -1,52 +1,117 @@
 -- sagefs/transport.lua — HTTP and SSE transport layer
--- Owns curl job management. No state awareness — fires callbacks.
+-- Owns HTTP/SSE connections. No state awareness — fires callbacks.
 
 local sse_parser = require("sagefs.sse")
 
 local M = {}
 
--- ─── HTTP JSON ────────────────────────────────────────────────────────────────
+-- ─── HTTP JSON (vim.loop TCP — no curl process spawn) ──────────────────────
 
---- Generic HTTP JSON request via curl
+--- Parse a URL into host, port, path
+---@param url string
+---@return string host, number port, string path
+local function parse_url(url)
+  local host, port, path = url:match("^https?://([^:/]+):?(%d*)(/?.*)")
+  host = host or "127.0.0.1"
+  port = tonumber(port) or 80
+  path = (path and path ~= "") and path or "/"
+  return host, port, path
+end
+
+--- Generic HTTP JSON request via vim.loop TCP (eliminates curl process spawn)
 ---@param opts { method: string, url: string, body: table|string|nil, timeout: number|nil, callback: fun(ok: boolean, raw: string) }
 function M.http_json(opts)
-  local cmd = {
-    "curl", "-X", opts.method, opts.url,
-    "-H", "Content-Type: application/json",
-    "--max-time", tostring(opts.timeout or 5),
-    "--silent", "--show-error",
-  }
-
-  local temp_file = nil
+  local host, port, path = parse_url(opts.url)
+  local body_str = nil
   if opts.body then
-    local body_str = type(opts.body) == "table"
-      and vim.json.encode(opts.body) or opts.body
-    if #body_str > 7000 then
-      temp_file = vim.fn.tempname() .. ".json"
-      local f = io.open(temp_file, "w")
-      if f then f:write(body_str); f:close() end
-      table.insert(cmd, "-d")
-      table.insert(cmd, "@" .. temp_file)
-    else
-      table.insert(cmd, "-d")
-      table.insert(cmd, body_str)
-    end
+    body_str = type(opts.body) == "table" and vim.json.encode(opts.body) or opts.body
   end
 
-  local stdout_data = {}
-  vim.fn.jobstart(cmd, {
-    stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then stdout_data = data end
-    end,
-    on_exit = function(_, exit_code)
-      vim.schedule(function()
-        if temp_file then os.remove(temp_file) end
-        local raw = table.concat(stdout_data, "\n")
-        opts.callback(exit_code == 0, raw)
+  local tcp = vim.loop.new_tcp()
+  if not tcp then
+    vim.schedule(function() opts.callback(false, "failed to create TCP handle") end)
+    return
+  end
+
+  -- Timeout watchdog
+  local timeout_ms = (opts.timeout or 5) * 1000
+  local timer = vim.loop.new_timer()
+  local completed = false
+
+  local function finish(ok, data)
+    if completed then return end
+    completed = true
+    if timer then pcall(timer.stop, timer); pcall(timer.close, timer) end
+    pcall(tcp.read_stop, tcp)
+    if not tcp:is_closing() then tcp:close() end
+    vim.schedule(function() opts.callback(ok, data) end)
+  end
+
+  if timer then
+    timer:start(timeout_ms, 0, function()
+      finish(false, "timeout")
+    end)
+  end
+
+  tcp:connect(host, port, function(err)
+    if err then finish(false, "connect: " .. tostring(err)); return end
+
+    -- Build HTTP/1.1 request
+    local req_parts = {
+      opts.method .. " " .. path .. " HTTP/1.1\r\n",
+      "Host: " .. host .. ":" .. port .. "\r\n",
+      "Content-Type: application/json\r\n",
+      "Connection: close\r\n",
+    }
+    if body_str then
+      table.insert(req_parts, "Content-Length: " .. #body_str .. "\r\n")
+      table.insert(req_parts, "\r\n")
+      table.insert(req_parts, body_str)
+    else
+      table.insert(req_parts, "\r\n")
+    end
+
+    tcp:write(table.concat(req_parts), function(write_err)
+      if write_err then finish(false, "write: " .. tostring(write_err)); return end
+
+      local response_parts = {}
+      tcp:read_start(function(read_err, chunk)
+        if read_err then
+          finish(false, "read: " .. tostring(read_err))
+        elseif chunk then
+          table.insert(response_parts, chunk)
+        else
+          -- EOF — parse response
+          local raw = table.concat(response_parts)
+          -- Strip HTTP headers (find \r\n\r\n boundary)
+          local body_start = raw:find("\r\n\r\n")
+          if body_start then
+            local status_line = raw:sub(1, raw:find("\r\n") or 0)
+            local status_code = tonumber(status_line:match("HTTP/%d+%.?%d* (%d+)")) or 0
+            local response_body = raw:sub(body_start + 4)
+            -- Handle chunked transfer encoding
+            if raw:lower():find("transfer%-encoding:%s*chunked") then
+              local decoded = {}
+              local pos = 1
+              while pos <= #response_body do
+                local chunk_end = response_body:find("\r\n", pos)
+                if not chunk_end then break end
+                local chunk_size = tonumber(response_body:sub(pos, chunk_end - 1), 16) or 0
+                if chunk_size == 0 then break end
+                local chunk_data = response_body:sub(chunk_end + 2, chunk_end + 1 + chunk_size)
+                table.insert(decoded, chunk_data)
+                pos = chunk_end + 2 + chunk_size + 2
+              end
+              response_body = table.concat(decoded)
+            end
+            finish(status_code >= 200 and status_code < 300, response_body)
+          else
+            finish(false, raw)
+          end
+        end
       end)
-    end,
-  })
+    end)
+  end)
 end
 
 -- ─── SSE Connection ───────────────────────────────────────────────────────────

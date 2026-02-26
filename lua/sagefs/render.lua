@@ -137,6 +137,9 @@ local test_ns = nil
 local cov_ns = nil
 -- Cached table for freshness_by_line (Nu cached-collections pattern: wipe and reuse)
 local _freshness_cache = {}
+-- Delta extmark state: track what was rendered last frame (FDA delta propagation)
+-- { [buf] = { test_signs = { [line_0indexed] = "hl_group" }, cov_signs = { [line_0indexed] = "hl_group" } } }
+local _prev_signs = {}
 
 local function get_test_ns()
   if not test_ns then test_ns = vim.api.nvim_create_namespace("sagefs_tests") end
@@ -150,10 +153,13 @@ end
 
 function M.render_test_signs(buf, testing_state, annotations_state)
   local tns = get_test_ns()
-  vim.api.nvim_buf_clear_namespace(buf, tns, 0, -1)
 
   local file = vim.api.nvim_buf_get_name(buf)
-  if file == "" then return end
+  if file == "" then
+    vim.api.nvim_buf_clear_namespace(buf, tns, 0, -1)
+    _prev_signs[buf] = nil
+    return
+  end
 
   -- Reuse cached table (Nu cached-collections: wipe instead of allocate)
   for k in pairs(_freshness_cache) do _freshness_cache[k] = nil end
@@ -171,48 +177,112 @@ function M.render_test_signs(buf, testing_state, annotations_state)
     end
   end
 
+  -- Build desired sign state: line_0indexed → { text, hl }
+  local desired = {}
   local by_file = testing.filter_by_file(testing_state, file)
   for _, t in ipairs(by_file) do
     if t.line and t.line > 0 then
       local sign = testing.gutter_sign(t.status)
-      -- Override to stale/running when freshness says so
       local fresh = _freshness_cache[t.line]
       if fresh == "Stale" then
         sign = { text = "~", hl = "SageFsTestStale" }
       elseif fresh == "Running" then
         sign = { text = "⏳", hl = "SageFsTestRunning" }
       end
-      pcall(vim.api.nvim_buf_set_extmark, buf, tns, t.line - 1, 0, {
-        sign_text = sign.text,
-        sign_hl_group = sign.hl,
-        priority = 200,
-      })
+      desired[t.line - 1] = sign.text .. "|" .. sign.hl
     end
   end
+
+  -- Delta update: compare with previous frame (FDA delta propagation)
+  local prev = _prev_signs[buf] and _prev_signs[buf].test_signs or {}
+  local changed = false
+
+  -- Check if anything changed at all (fast path)
+  for line, key in pairs(desired) do
+    if prev[line] ~= key then changed = true; break end
+  end
+  if not changed then
+    for line in pairs(prev) do
+      if not desired[line] then changed = true; break end
+    end
+  end
+
+  if not changed then return end
+
+  -- Full clear + readd (Neovim doesn't support per-extmark update by line efficiently
+  -- without tracking extmark IDs, but the version skip above already eliminates ~90% of calls;
+  -- this clear+readd only fires when actual sign content changed)
+  vim.api.nvim_buf_clear_namespace(buf, tns, 0, -1)
+  for line_0, key in pairs(desired) do
+    local text, hl = key:match("^(.+)|(.+)$")
+    pcall(vim.api.nvim_buf_set_extmark, buf, tns, line_0, 0, {
+      sign_text = text,
+      sign_hl_group = hl,
+      priority = 200,
+    })
+  end
+
+  -- Store current state for next delta comparison
+  if not _prev_signs[buf] then _prev_signs[buf] = {} end
+  _prev_signs[buf].test_signs = desired
 end
 
 -- ─── Coverage Gutter Signs ──────────────────────────────────────────────────
 
 function M.render_coverage_signs(buf, coverage_state)
   local cns = get_cov_ns()
-  vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
 
   local file = vim.api.nvim_buf_get_name(buf)
-  if file == "" then return end
+  if file == "" then
+    vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
+    if _prev_signs[buf] then _prev_signs[buf].cov_signs = nil end
+    return
+  end
 
   local lines = coverage.get_file_lines(coverage_state, file)
-  if not lines then return end
+  if not lines then
+    -- Clear if we had signs before
+    if _prev_signs[buf] and _prev_signs[buf].cov_signs then
+      vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
+      _prev_signs[buf].cov_signs = nil
+    end
+    return
+  end
 
+  -- Build desired state
+  local desired = {}
   for _, entry in ipairs(lines) do
     if entry.line and entry.line > 0 then
       local sign = coverage.gutter_sign(entry.hits)
-      pcall(vim.api.nvim_buf_set_extmark, buf, cns, entry.line - 1, 0, {
-        sign_text = sign.text,
-        sign_hl_group = sign.hl,
-        priority = 150,
-      })
+      desired[entry.line - 1] = sign.text .. "|" .. sign.hl
     end
   end
+
+  -- Delta check
+  local prev = _prev_signs[buf] and _prev_signs[buf].cov_signs or {}
+  local changed = false
+  for line, key in pairs(desired) do
+    if prev[line] ~= key then changed = true; break end
+  end
+  if not changed then
+    for line in pairs(prev) do
+      if not desired[line] then changed = true; break end
+    end
+  end
+  if not changed then return end
+
+  vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
+  for line_0, key in pairs(desired) do
+    local text, hl = key:match("^(.+)|(.+)$")
+    pcall(vim.api.nvim_buf_set_extmark, buf, cns, line_0, 0, {
+      sign_text = text,
+      sign_hl_group = hl,
+      priority = 150,
+    })
+  end
+
+  if not _prev_signs[buf] then _prev_signs[buf] = {} end
+  _prev_signs[buf].cov_signs = desired
 end
 
 -- ─── File Annotations (CodeLens + Inline Failures) ─────────────────────────

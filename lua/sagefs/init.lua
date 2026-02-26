@@ -205,7 +205,12 @@ end
 
 -- Debounce timer for gutter sign rendering (SSE can flood events)
 local render_timer = nil
-local RENDER_DEBOUNCE_MS = 30
+-- Adaptive debounce (Nu graduated sleep pattern):
+-- Fast when idle (single event → 8ms), slower under sustained load (burst → 30ms)
+local RENDER_DEBOUNCE_MIN_MS = 8
+local RENDER_DEBOUNCE_MAX_MS = 30
+local _render_request_count = 0
+local _render_burst_reset = nil
 
 -- Cached namespace for test failure diagnostics (avoid API call per render)
 local test_diag_ns = nil
@@ -215,11 +220,25 @@ local last_rendered_ann_version = -1
 local last_rendered_cov_version = -1
 local last_rendered_file = ""
 
+local function get_adaptive_debounce()
+  _render_request_count = _render_request_count + 1
+  -- Reset burst counter after 100ms of quiet
+  if _render_burst_reset then pcall(vim.fn.timer_stop, _render_burst_reset) end
+  _render_burst_reset = vim.fn.timer_start(100, function()
+    _render_request_count = 0
+    _render_burst_reset = nil
+  end)
+  if _render_request_count <= 1 then return RENDER_DEBOUNCE_MIN_MS end
+  if _render_request_count <= 3 then return 15 end
+  return RENDER_DEBOUNCE_MAX_MS
+end
+
 local function schedule_render()
   if render_timer then
     pcall(vim.fn.timer_stop, render_timer)
   end
-  render_timer = vim.fn.timer_start(RENDER_DEBOUNCE_MS, function()
+  local debounce_ms = get_adaptive_debounce()
+  render_timer = vim.fn.timer_start(debounce_ms, function()
     render_timer = nil
     vim.schedule(function()
       local buf = vim.api.nvim_get_current_buf()
