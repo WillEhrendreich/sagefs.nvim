@@ -207,7 +207,6 @@ All pure modules have zero vim API dependencies — they are testable under bust
 - **`/api/sessions/{id}/warmup-context`** — Session context (assemblies, namespaces)
 - **POST `/dashboard/completions`** — Code completions at cursor position
 - **POST `/reset`**, **POST `/hard-reset`** — Session reset endpoints
-- **GET `/api/live-testing/status`** — Bulk test status (summary + per-test entries)
 - **POST `/api/live-testing/enable`** — Enable live testing
 - **POST `/api/live-testing/disable`** — Disable live testing
 - **POST `/api/live-testing/policy`** — Set run policy per test category
@@ -215,10 +214,10 @@ All pure modules have zero vim API dependencies — they are testable under bust
 
 ### Known Gaps
 
-- **Test state recovery on reconnect** — When the SSE connection drops and reconnects, the plugin fires a `test_recovery_needed` user event but does not yet re-fetch full test state from `/api/live-testing/status`. Test updates resume immediately from the live SSE stream; only the backfill of tests that changed during the disconnect is missing.
+- **Test state recovery on reconnect** — When the SSE connection drops and reconnects, the plugin fires a `test_recovery_needed` user event. Test updates resume from the live SSE stream; only the backfill of tests that changed during the disconnect is missing.
 - **Individual test entries require test execution** — The SSE stream delivers summary counts (total/passed/failed) on every state change, but individual test entries (per-test name, file, line, status) only arrive via `tests_discovered` and `test_results_batch` events when tests actually run. The `:SageFsTests` command shows a summary with instructions when individual entries haven't been received yet.
 
-**What works today:** SageFs broadcasts `event: test_summary`, `event: test_results_batch`, and full test state fields in the SSE `/events` stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsEnableTesting`, `:SageFsDisableTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end. SageFs also exposes `/api/live-testing/status` as an HTTP endpoint for bulk test status queries.
+**What works today:** SageFs broadcasts `event: test_summary`, `event: test_results_batch`, and full test state fields in the SSE `/events` stream. The plugin receives these in real-time, normalizes PascalCase/camelCase payloads, updates the test state model, fires user events, and renders diagnostics. All test commands (`:SageFsRunTests`, `:SageFsEnableTesting`, `:SageFsDisableTesting`, `:SageFsTestPolicy`, `:SageFsTestPanel`) work end-to-end.
 
 ## Running Tests
 
