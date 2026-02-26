@@ -20,7 +20,7 @@ function M.http_json(opts)
   local temp_file = nil
   if opts.body then
     local body_str = type(opts.body) == "table"
-      and vim.fn.json_encode(opts.body) or opts.body
+      and vim.json.encode(opts.body) or opts.body
     if #body_str > 7000 then
       temp_file = vim.fn.tempname() .. ".json"
       local f = io.open(temp_file, "w")

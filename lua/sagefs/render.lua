@@ -116,8 +116,10 @@ end
 
 -- ─── Flash Animation ──────────────────────────────────────────────────────────
 
+local flash_ns = nil
+
 function M.flash_cell(buf, start_line, end_line)
-  local flash_ns = vim.api.nvim_create_namespace("sagefs_flash")
+  if not flash_ns then flash_ns = vim.api.nvim_create_namespace("sagefs_flash") end
   for i = start_line, end_line do
     pcall(vim.api.nvim_buf_add_highlight, buf, flash_ns, "SageFsRunning", i - 1, 0, -1)
   end

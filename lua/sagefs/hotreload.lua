@@ -19,7 +19,7 @@ function M.fetch_state(session_id, callback)
     url = hr_model.build_url(dashboard_port, session_id, ""),
     callback = function(ok, raw)
       if ok and raw ~= "" then
-        local decoded = vim.fn.json_decode(raw)
+        local decoded = vim.json.decode(raw)
         hr_model.apply_response(M.state, decoded)
       else
         M.state = hr_model.new()

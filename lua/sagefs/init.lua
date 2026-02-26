@@ -167,11 +167,8 @@ local function build_handlers()
     coverage_updated = function(raw)
       local data = decode_event_data(raw)
       if not data then return end
-      local parsed = coverage.parse_coverage_response(vim.fn.json_encode(data))
-      if parsed then
-        M.coverage_state = coverage.apply_coverage_response(M.coverage_state, parsed)
-        fire_user_event("coverage_updated", data)
-      end
+      M.coverage_state = coverage.apply_coverage_response(M.coverage_state, data)
+      fire_user_event("coverage_updated", data)
     end,
     coverage_cleared = function(raw)
       M.coverage_state = coverage.clear(M.coverage_state)
