@@ -13,6 +13,8 @@ local M = {}
 local function parse_url(url)
   local host, port, path = url:match("^https?://([^:/]+):?(%d*)(/?.*)")
   host = host or "127.0.0.1"
+  -- libuv tcp:connect requires numeric IP, not hostnames
+  if host == "localhost" then host = "127.0.0.1" end
   port = tonumber(port) or 80
   path = (path and path ~= "") and path or "/"
   return host, port, path
@@ -83,6 +85,10 @@ function M.http_json(opts)
         else
           -- EOF — parse response
           local raw = table.concat(response_parts)
+          if raw == "" then
+            finish(false, "empty response")
+            return
+          end
           -- Strip HTTP headers (find \r\n\r\n boundary)
           local body_start = raw:find("\r\n\r\n")
           if body_start then
