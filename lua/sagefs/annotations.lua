@@ -123,7 +123,7 @@ function M.format_codelens(lens)
     return label, "SageFsCodeLensPassed"
   elseif label:match("^✗") then
     return label, "SageFsCodeLensFailed"
-  elseif label:match("^●") then
+  elseif label:match("^●") or label:match("^⏳") then
     return label, "SageFsCodeLensRunning"
   elseif label:match("^~") then
     return label, "SageFsCodeLensStale"
