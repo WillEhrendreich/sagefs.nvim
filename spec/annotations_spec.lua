@@ -203,3 +203,51 @@ describe("annotations.clear_file", function()
     assert.is_not_nil(annotations.get_file(state, "B.fs"))
   end)
 end)
+
+describe("annotations.format_coverage_sign", function()
+  it("returns green triangle for fully covered (AllPassing)", function()
+    local sign, hl = annotations.format_coverage_sign({
+      Detail = { Case = "Covered", Fields = { 3, { Case = "AllPassing" } } }
+    })
+    assert.are.equal("▸", sign)
+    assert.are.equal("SageFsCovered", hl)
+  end)
+
+  it("returns half-circle for partial coverage (SomeFailing)", function()
+    local sign, hl = annotations.format_coverage_sign({
+      Detail = { Case = "Covered", Fields = { 2, { Case = "SomeFailing" } } }
+    })
+    assert.are.equal("◐", sign)
+    assert.are.equal("SageFsCovPartial", hl)
+  end)
+
+  it("returns circle for not covered", function()
+    local sign, hl = annotations.format_coverage_sign({
+      Detail = { Case = "NotCovered" }
+    })
+    assert.are.equal("○", sign)
+    assert.are.equal("SageFsCovNotCovered", hl)
+  end)
+
+  it("returns dot for pending", function()
+    local sign, hl = annotations.format_coverage_sign({
+      Detail = { Case = "Pending" }
+    })
+    assert.are.equal("·", sign)
+    assert.are.equal("SageFsCovPending", hl)
+  end)
+
+  it("returns nil for missing detail", function()
+    local sign, hl = annotations.format_coverage_sign({})
+    assert.is_nil(sign)
+    assert.is_nil(hl)
+  end)
+
+  it("handles lowercase detail field name", function()
+    local sign, hl = annotations.format_coverage_sign({
+      detail = { Case = "Covered", Fields = { 1, { Case = "AllPassing" } } }
+    })
+    assert.are.equal("▸", sign)
+    assert.are.equal("SageFsCovered", hl)
+  end)
+end)

@@ -40,6 +40,7 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { fg = "#585b70" })
   vim.api.nvim_set_hl(0, "SageFsCovPending", { fg = "#45475a" })
   vim.api.nvim_set_hl(0, "SageFsCovFailing", { fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsCovPartial", { fg = "#fab387" })
   -- CodeLens highlights
   vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
@@ -259,36 +260,28 @@ function M.render_annotations(buf, annotations_state)
     end
   end
 
-  -- Render coverage annotations as gutter signs on definition lines
+  -- Render coverage annotations as gutter signs on covered/uncovered lines
   local cov_anns = ann.CoverageAnnotations or ann.coverageAnnotations or {}
   for _, cov in ipairs(cov_anns) do
     local line = cov.Line or cov.line
     if line and line > 0 and line <= line_count then
-      local detail = cov.Detail or cov.detail
-      local sign_text, sign_hl
-      if detail and detail.Case == "Covered" then
-        local fields = detail.Fields or {}
-        local health = fields[2]
-        if health and health.Case == "SomeFailing" then
-          sign_text = "▸"
-          sign_hl = "SageFsCovFailing"
-        else
-          sign_text = "▸"
-          sign_hl = "SageFsCovered"
-        end
-      elseif detail and detail.Case == "NotCovered" then
-        sign_text = "○"
-        sign_hl = "SageFsCovNotCovered"
-      elseif detail and detail.Case == "Pending" then
-        sign_text = "·"
-        sign_hl = "SageFsCovPending"
-      end
+      local sign_text, sign_hl = ann_module.format_coverage_sign(cov)
       if sign_text then
-        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+        local opts = {
           sign_text = sign_text,
           sign_hl_group = sign_hl,
           priority = 140,
-        })
+        }
+        -- Show branch count as virtual text for partial coverage
+        if sign_hl == "SageFsCovPartial" then
+          local detail = cov.Detail or cov.detail
+          local count = detail and detail.Fields and detail.Fields[1] or 0
+          if count > 0 then
+            opts.virt_text = { { string.format(" ◐ %d branches", count), "SageFsCovPartial" } }
+            opts.virt_text_pos = "eol"
+          end
+        end
+        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, opts)
       end
     end
   end

@@ -168,6 +168,32 @@ function M.format_inline_failure(failure, max_len)
   return text, "SageFsInlineFailure"
 end
 
+-- ─── Coverage Sign Formatting ────────────────────────────────────────────────
+
+--- Format a coverage annotation for gutter display
+--- Extracts the CoverageStatus DU and returns sign text + highlight group
+---@param cov table CoverageLineAnnotation {Line, Detail, CoveringTestIds}
+---@return string|nil sign_text, string|nil sign_hl
+function M.format_coverage_sign(cov)
+  local detail = cov.Detail or cov.detail
+  if not detail then return nil, nil end
+
+  if detail.Case == "Covered" then
+    local fields = detail.Fields or {}
+    local health = fields[2]
+    if health and health.Case == "SomeFailing" then
+      return "◐", "SageFsCovPartial"
+    else
+      return "▸", "SageFsCovered"
+    end
+  elseif detail.Case == "NotCovered" then
+    return "○", "SageFsCovNotCovered"
+  elseif detail.Case == "Pending" then
+    return "·", "SageFsCovPending"
+  end
+  return nil, nil
+end
+
 -- ─── Clear ───────────────────────────────────────────────────────────────────
 
 --- Clear all annotations
