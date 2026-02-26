@@ -1,93 +1,114 @@
-# As-You-Type Live Testing for .fs Files
+# As-You-Type Live Testing — Neovim Plugin
 
-## Why This Matters
+> See `docs/live-testing-as-you-type.md` in the SageFs repo for the centralized architecture,
+> endpoint contract, server pipeline, and decision log. This doc covers **Neovim-specific** implementation only.
 
-As-you-type live testing is table stakes — VS Enterprise already does it. The differentiator:
-- **Faster**: Scope-level reloading via tree-sitter, not whole-solution Roslyn rebuild
-- **Lighter**: No VS Enterprise license. No IDE lock-in.
-- **Cross-editor**: Neovim, VS Code, VS — identical experience everywhere
-- **F#-native**: Built for F# from the ground up, not a C#-first afterthought
+## Current State
 
-## Problem
+- Plugin uses tree-sitter for test discovery (`[<Test>]`/`[<Fact>]` attributes)
+- Connects to SageFs daemon via HTTP + SSE (port 37749)
+- Has SSE listener, gutter rendering, Telescope integration
+- `TextChanged` autocmd fires for `*.fsx` only — **NOT** for `*.fs` files (this is the #1 bug)
+- Live testing is observe-only for `.fs` files (no reaction to typing)
 
-Live testing in SageFs only triggers on file SAVE (filesystem watcher). Users editing `.fs` files
-get ZERO feedback until they save. The whole point of live testing is seeing test results react to
-what you're typing IN REAL TIME — before you decide to save.
+## What Needs to Change
 
-## Design Principles (NON-NEGOTIABLE)
+Per the centralized design, the editor's only job is:
 
-- **NO auto-save.** The file on disk is NEVER touched. The user decides when to save.
-- **Tree-sitter scoping.** Neovim uses tree-sitter to identify the function/let binding being edited.
-  Tree-sitter does error-tolerant incremental parsing — even mid-keystroke with broken syntax, it
-  still identifies the enclosing function scope (ERROR nodes are INSIDE the scope, not replacing it).
-- **Pre-computed affected test mappings.** SageFs already knows which tests map to which source files.
-  The mapping from "this function in this file" → "these test IDs" should be pre-computed at discovery.
-- **Send just the scope.** The plugin sends the changed function chunk, NOT the whole buffer.
-- **SageFs patches server-side.** SageFs maintains an in-memory copy of loaded files. It splices
-  the changed function into its cached copy, writes to a temp path (NOT the source file), and
-  `#load`s it. Module gets redefined, tests pick up new definitions.
-- **Tree-sitter IS the broken-code guard.** Broken code mid-typing simply fails type-check on the
-  SageFs side and doesn't advance to `#load`. FSI session is never touched until compilation succeeds.
-  No special guard needed — just the normal pipeline.
-- **Results via SSE.** Existing SSE infrastructure pushes results. No new transport.
+1. Register `TextChanged` + `TextChangedI` autocmds for `*.fs` files (currently only `*.fsx`)
+2. On change: debounce 300ms, cancel previous timer
+3. After debounce: POST full buffer text + editRegion hint + generation counter
+4. Display results from existing SSE subscription (already done)
 
-## Architecture
+## Neovim-Specific: Tree-Sitter for editRegion Hint
 
+Neovim's unique advantage: tree-sitter provides **error-tolerant** scope detection.
+Even mid-keystroke with broken syntax, tree-sitter identifies the enclosing function
+scope (ERROR nodes appear INSIDE the scope, not replacing it).
+
+The `editRegion` hint uses tree-sitter `value_declaration` node walk:
+
+```lua
+local function find_enclosing_scope(bufnr, cursor_row)
+  local parser = vim.treesitter.get_parser(bufnr, "fsharp")
+  if not parser then return nil end
+  local tree = parser:parse()[1]
+  if not tree then return nil end
+
+  local node = tree:root():named_descendant_for_range(cursor_row, 0, cursor_row, 0)
+  while node do
+    if node:type() == "value_declaration"
+      or node:type() == "function_or_value_defn" then
+      local sr, _, er, _ = node:range()
+      return { startLine = sr, endLine = er }
+    end
+    node = node:parent()
+  end
+  return nil  -- fallback: server does full-file scope detection
+end
 ```
-TextChanged/TextChangedI (*.fs)
-  → debounce 300-500ms
-  → tree-sitter: find enclosing value_declaration
-  → extract { filePath, scopeName, scopeText, startLine, endLine }
-  → POST /api/live-testing/evaluate-scope
-  → SageFs patches in-memory file copy at line range
-  → type-check patched file (broken code just doesn't advance — normal flow)
-  → if OK: #load temp file → run affected tests → SSE results
-  → if error: SSE diagnostic event, FSI untouched
+
+This is ~15 lines of Lua. If tree-sitter can't find a scope (grammar mismatch, no parser),
+the hint is omitted and the server falls back to full-file analysis.
+
+## Implementation
+
+### Step 1: Fix TextChanged Autocmds (`commands.lua`)
+
+In `register_autocmds`, add `TextChanged` + `TextChangedI` for `*.fs`:
+
+```lua
+-- existing: TextChanged for *.fsx
+-- ADD: TextChanged + TextChangedI for *.fs
+vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+  pattern = "*.fs",
+  callback = function(ev)
+    if not state.live_testing_enabled then return end
+    debounce_post_buffer(ev.buf)
+  end,
+})
 ```
 
-## Implementation Plan
+### Step 2: Debounce + POST Full Buffer
 
-### Phase 1: sagefs.nvim — Tree-Sitter Scope Extraction + TextChanged
+```lua
+local debounce_timer = nil
+local generation = 0
 
-1. Add `TextChanged` + `TextChangedI` autocmds for `*.fs` in `commands.lua`
-2. Debounce timer (300-500ms, configurable)
-3. Tree-sitter query to find enclosing `value_declaration` / `function_or_value_defn`
-4. Extract scope: name, text, start/end lines
-5. POST to SageFs endpoint with extracted scope + file path
-6. Handle response (202 accepted, scope queued for eval)
+local function debounce_post_buffer(bufnr)
+  if debounce_timer then
+    vim.fn.timer_stop(debounce_timer)
+  end
+  debounce_timer = vim.fn.timer_start(300, function()
+    generation = generation + 1
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local full_text = table.concat(lines, "\n")
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local edit_region = find_enclosing_scope(bufnr, cursor[1] - 1)
 
-### Phase 2: SageFs — Evaluate-Scope Endpoint
+    transport.post("/api/live-testing/evaluate-scope", {
+      filePath = vim.api.nvim_buf_get_name(bufnr),
+      fullText = full_text,
+      editRegion = edit_region or { startLine = 0, endLine = #lines - 1 },
+      generation = generation,
+    })
+  end)
+end
+```
 
-1. New endpoint: `POST /api/live-testing/evaluate-scope`
-2. Accepts: `{ filePath, scopeName, scopeText, startLine, endLine }`
-3. Maintain in-memory shadow copies of loaded `.fs` files
-4. Patch shadow copy: replace lines startLine..endLine with scopeText
-5. Write patched file to temp path (NOT the real file)
-6. Type-check patched file via FCS
-7. If OK: `#load` temp file in FSI → run pre-mapped affected tests
-8. If error: emit `scope_check_failed` SSE event with diagnostics
-9. Clean up temp file after reload
+### Step 3: Existing SSE Handles Results
 
-### Phase 3: Pre-computed Function→Test Mappings
+No changes needed. `LiveTestingListener` already processes test result SSE events
+and `render_test_signs` already displays gutter markers.
 
-1. During test discovery, SageFs already has source locations for tests
-2. Extend mapping: source file + function name → test IDs
-3. When evaluate-scope arrives, use mapping to determine WHICH tests to run
-4. Only run tests affected by the specific function being edited
+## Files to Modify
 
-### Phase 4: Editor-Agnostic (VS Code, VS, other editors)
+1. `lua/sagefs/commands.lua` — add `TextChanged`/`TextChangedI` autocmds for `*.fs`
+2. `lua/sagefs/init.lua` — add `debounce_post_buffer` and `find_enclosing_scope`
+3. `lua/sagefs/transport.lua` — ensure `post` function exists (may already exist)
 
-1. The endpoint is HTTP — any editor can call it
-2. VS Code extension: use tree-sitter-equivalent (semantic tokens) for scope detection
-3. VS extension: Roslyn for scope detection
-4. Same POST, same SSE results
+## Dependencies
 
-## Key Technical Details
-
-- **FSI module redefinition**: When you `#load` a file that declares a module, FSI redefines that
-  module. Tests that reference `ModuleName.functionName` pick up the new definition automatically.
-- **Tree-sitter node types**: F# tree-sitter grammar uses `value_declaration` for let bindings.
-  Walk up from cursor node to find the enclosing one. `vim.treesitter.get_node()` + parent walk.
-- **Debounce**: Use `vim.fn.timer_start` with cancel-on-new-change pattern (same as existing
-  `schedule_render` in init.lua).
-- **Transport**: Use existing `sagefs.transport` module for HTTP POST to SageFs daemon.
+- **Requires** `POST /api/live-testing/evaluate-scope` endpoint in SageFs daemon
+- **tree-sitter fsharp grammar** for editRegion hint (optional — fallback is full-file range)
+- No new plugin dependencies
