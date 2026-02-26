@@ -301,7 +301,7 @@ function M.register_commands(plugin, helpers)
 
   -- Auto-update panel on test events
   local panel_group = vim.api.nvim_create_augroup("SageFsTestPanel", { clear = true })
-  for _, pattern in ipairs({ "SageFsTestPassed", "SageFsTestFailed", "SageFsTestRunCompleted", "SageFsTestsDiscovered", "SageFsTestState" }) do
+  for _, pattern in ipairs({ "SageFsTestResultsBatch", "SageFsTestRunCompleted", "SageFsTestsDiscovered", "SageFsTestState" }) do
     vim.api.nvim_create_autocmd("User", {
       group = panel_group,
       pattern = pattern,

@@ -72,6 +72,16 @@ if not vim then
     api = {},
     -- vim.env stub
     env = {},
+    -- vim.tbl_count
+    tbl_count = function(t)
+      local count = 0
+      for _ in pairs(t) do count = count + 1 end
+      return count
+    end,
+    -- vim.tbl_isempty
+    tbl_isempty = function(t)
+      return next(t) == nil
+    end,
     -- vim.g stub
     g = {},
     -- vim.b stub (buffer-local vars)

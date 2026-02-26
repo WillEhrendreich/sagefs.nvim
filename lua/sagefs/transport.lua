@@ -56,11 +56,11 @@ end
 ---@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, auto_reconnect: boolean|nil, reconnect_delay: number|nil }
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
-  local handle = { job_id = nil, _buffer = "", _stopped = false, _attempt = 0, _connected = false, _partial = "" }
+  local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "" }
 
   local function connect()
     if handle._stopped then return end
-    handle._buffer = ""
+    handle._buffer_parts = {}
     handle._partial = ""
     handle._connected = false
     handle._attempt = handle._attempt + 1
@@ -79,10 +79,12 @@ function M.connect_sse(url, opts)
           data[1] = handle._partial .. data[1]
           handle._partial = data[#data]
           for i = 1, #data - 1 do
-            handle._buffer = handle._buffer .. data[i] .. "\n"
+            table.insert(handle._buffer_parts, data[i])
+            table.insert(handle._buffer_parts, "\n")
           end
-          local events, remainder = sse_parser.parse_chunk(handle._buffer)
-          handle._buffer = remainder
+          local buffer = table.concat(handle._buffer_parts)
+          local events, remainder = sse_parser.parse_chunk(buffer)
+          handle._buffer_parts = { remainder }
           if #events > 0 and opts.on_events then
             opts.on_events(events)
           end

@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 11 event names", function()
-      assert.are.equal(11, #events.EVENT_NAMES)
+    it("contains 12 event names", function()
+      assert.are.equal(12, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -53,11 +53,12 @@ describe("events", function()
       assert.is_nil(result)
     end)
 
-    it("maps all 9 event types correctly", function()
+    it("maps all 10 event types correctly", function()
       local mappings = {
         { "eval_completed", "SageFsEvalCompleted" },
         { "test_passed", "SageFsTestPassed" },
         { "test_failed", "SageFsTestFailed" },
+        { "test_results_batch", "SageFsTestResultsBatch" },
         { "test_run_started", "SageFsTestRunStarted" },
         { "test_run_completed", "SageFsTestRunCompleted" },
         { "connected", "SageFsConnected" },

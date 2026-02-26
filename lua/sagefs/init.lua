@@ -102,20 +102,9 @@ local function build_handlers()
       local data = decode_event_data(raw)
       if not data then return end
       M.testing_state = testing.handle_results_batch(M.testing_state, data)
-      -- Fire per-test pass/fail events (enriched or legacy)
-      local entries = data.Entries or data.entries or data.results
-      if entries then
-        for _, r in ipairs(entries) do
-          local entry = testing.normalize_entry(r)
-          local status = entry.status or entry.Status
-          if status == "Passed" then
-            fire_user_event("test_passed", entry)
-          elseif status == "Failed" then
-            fire_user_event("test_failed", entry)
-          end
-        end
-      end
-      -- Test diagnostics update is debounced via schedule_render
+      -- Fire one batch event instead of per-test events to avoid vim.schedule explosion
+      -- (500+ scheduled autocmds can OOM Neovim)
+      fire_user_event("test_results_batch", data)
     end,
     test_run_started = function(raw)
       local data = decode_event_data(raw)
@@ -219,7 +208,10 @@ end
 
 -- Debounce timer for gutter sign rendering (SSE can flood events)
 local render_timer = nil
-local RENDER_DEBOUNCE_MS = 100
+local RENDER_DEBOUNCE_MS = 30
+
+-- Cached namespace for test failure diagnostics (avoid API call per render)
+local test_diag_ns = nil
 
 local function schedule_render()
   if render_timer then
@@ -235,9 +227,11 @@ local function schedule_render()
       -- Update test failure diagnostics for current buffer
       local file = vim.api.nvim_buf_get_name(buf)
       if file and file ~= "" then
-        local test_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
+        if not test_diag_ns then
+          test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
+        end
         local diags = testing.to_diagnostics(M.testing_state, file)
-        vim.diagnostic.set(test_ns, buf, diags)
+        vim.diagnostic.set(test_diag_ns, buf, diags)
       end
     end)
   end)
