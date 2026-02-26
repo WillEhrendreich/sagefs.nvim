@@ -370,6 +370,20 @@ function M.filter_by_file(state, file)
   return results
 end
 
+--- Get all tests as a flat list
+---@param state table
+---@return table[] list of test entries
+function M.all_tests(state)
+  local results = {}
+  for id, test in pairs(state.tests) do
+    local entry = {}
+    for k, v in pairs(test) do entry[k] = v end
+    entry.testId = id
+    table.insert(results, entry)
+  end
+  return results
+end
+
 --- Filter tests by status
 ---@param state table
 ---@param status string

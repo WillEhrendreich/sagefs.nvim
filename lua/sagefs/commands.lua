@@ -136,6 +136,12 @@ function M.register_commands(plugin, helpers)
   -- ─── Testing Commands ────────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsTests", function()
+    -- Prefer Telescope when available
+    local has_telescope = pcall(require, "telescope")
+    if has_telescope then
+      vim.cmd("Telescope sagefs tests")
+      return
+    end
     local lines = testing.format_test_list(plugin.testing_state)
     local s = plugin.testing_state.summary
     if #lines == 0 and s and s.total and s.total > 0 then
@@ -154,7 +160,26 @@ function M.register_commands(plugin, helpers)
     local summary = testing.compute_summary(plugin.testing_state)
     local title = testing.format_summary(summary)
     render.show_float(lines, { title = title })
-  end, { desc = "Show live test results panel" })
+  end, { desc = "Show live test results (Telescope or float)" })
+
+  vim.api.nvim_create_user_command("SageFsFailures", function()
+    local has_telescope = pcall(require, "telescope")
+    if has_telescope then
+      vim.cmd("Telescope sagefs failures")
+      return
+    end
+    -- Fallback: filter to failures in float
+    local failed = testing.filter_by_status(plugin.testing_state, "Failed")
+    local lines = {}
+    for _, t in ipairs(failed) do
+      table.insert(lines, string.format("  ✗ %s", t.displayName or "?"))
+      if t.file then
+        table.insert(lines, string.format("    %s:%d", t.file:match("[^\\/]+$") or t.file, t.line or 0))
+      end
+    end
+    if #lines == 0 then lines = { "  No failures 🎉" } end
+    render.show_float(lines, { title = string.format("Failures (%d)", #failed) })
+  end, { desc = "Show failing tests (Telescope or float)" })
 
   vim.api.nvim_create_user_command("SageFsRunTests", function(opts)
     local req = testing.build_run_request({
