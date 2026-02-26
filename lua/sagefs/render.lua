@@ -4,6 +4,7 @@
 local cells = require("sagefs.cells")
 local format = require("sagefs.format")
 local model = require("sagefs.model")
+local ann_module = require("sagefs.annotations")
 
 local M = {}
 
@@ -212,7 +213,6 @@ end
 -- ─── File Annotations (CodeLens + Inline Failures) ─────────────────────────
 
 local ann_ns = nil
-local ann_module = require("sagefs.annotations")
 
 local function get_ann_ns()
   if not ann_ns then ann_ns = vim.api.nvim_create_namespace("sagefs_annotations") end
