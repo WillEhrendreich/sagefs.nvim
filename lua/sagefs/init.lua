@@ -74,6 +74,14 @@ local function decode_event_data(event)
   return ok and data or nil
 end
 
+--- Three-way session filter (Wlaschin pattern):
+--- 1. No SessionId in data → accept (backward compat with older daemon)
+--- 2. No active_session → accept (show everything)
+--- 3. Both present → strict match
+local function session_matches(data)
+  return testing.session_matches(data, M.active_session)
+end
+
 local function fire_user_event(event_type, payload)
   local evt = events.build_autocmd_data(event_type, payload)
   if evt then
@@ -100,7 +108,7 @@ local function build_handlers()
     end,
     test_results_batch = function(raw)
       local data = decode_event_data(raw)
-      if not data then return end
+      if not data or not session_matches(data) then return end
       M.testing_state = testing.handle_results_batch(M.testing_state, data)
       -- Fire one batch event instead of per-test events to avoid vim.schedule explosion
       -- (500+ scheduled autocmds can OOM Neovim)
@@ -108,14 +116,14 @@ local function build_handlers()
     end,
     test_run_started = function(raw)
       local data = decode_event_data(raw)
-      if data then
+      if data and session_matches(data) then
         M.testing_state = testing.handle_test_run_started(M.testing_state, data)
         fire_user_event("test_run_started", data)
       end
     end,
     test_run_completed = function(raw)
       local data = decode_event_data(raw)
-      if data then
+      if data and session_matches(data) then
         M.testing_state = testing.handle_test_run_completed(M.testing_state, data)
         fire_user_event("test_run_completed", data)
       end
@@ -157,7 +165,7 @@ local function build_handlers()
     end,
     test_summary = function(raw)
       local data = decode_event_data(raw)
-      if data then
+      if data and session_matches(data) then
         M.testing_state = testing.handle_test_summary(M.testing_state, data)
         fire_user_event("test_summary", data)
       end
@@ -177,7 +185,7 @@ local function build_handlers()
     -- File annotations (CodeLens, inline failures, coverage detail)
     file_annotations = function(raw)
       local data = decode_event_data(raw)
-      if data then
+      if data and session_matches(data) then
         M.annotations_state = annotations.handle_file_annotations(M.annotations_state, data)
         fire_user_event("file_annotations", data)
       end

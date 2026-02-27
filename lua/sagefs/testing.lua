@@ -39,6 +39,21 @@ M.VALID_POLICIES = {
 
 local json_decode = require("sagefs.util").json_decode
 
+-- ─── Session Scoping ─────────────────────────────────────────────────────────
+
+--- Three-way session filter (Wlaschin pattern):
+--- 1. nil data → reject
+--- 2. No SessionId in data → accept (backward compat with older daemon)
+--- 3. No active_session → accept (show everything)
+--- 4. Both present → strict match
+function M.session_matches(data, active_session)
+  if not data then return false end
+  local sid = data.SessionId
+  if sid == nil then return true end
+  if active_session == nil then return true end
+  return sid == active_session.id
+end
+
 -- ─── Validation ──────────────────────────────────────────────────────────────
 
 function M.is_valid_status(status)
