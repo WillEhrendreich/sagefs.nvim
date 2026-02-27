@@ -13,6 +13,7 @@ M.container_types = {
   file = true,
   namespace = true,
   module_defn = true,
+  named_module = true,
 }
 
 --- Find the enclosing cell node for a given cursor position.
@@ -103,7 +104,7 @@ function M.find_all_cells(buf)
           end_line = er + 1,
           node_type = ctype,
         })
-      elseif ctype == "namespace" or ctype == "module_defn" then
+      elseif ctype == "namespace" or ctype == "module_defn" or ctype == "named_module" then
         collect_cells(child)
       end
     end
@@ -144,7 +145,7 @@ function M.get_module_context(buf, cursor_line)
           if text then
             table.insert(opens, text)
           end
-        elseif ctype == "namespace" or ctype == "module_defn" then
+        elseif ctype == "namespace" or ctype == "module_defn" or ctype == "named_module" then
           collect_opens(child)
         end
       end
