@@ -251,6 +251,43 @@ describe("testing.filter_by_scope (module)", function()
   end)
 end)
 
+-- ─── filter_by_scope: binding (treesitter-detected) ─────────────────────────
+
+describe("testing.filter_by_scope (binding)", function()
+  it("returns tests whose fullName contains the binding name", function()
+    local s = build_test_state()
+    -- "allEditorTests" appears in fullName: SageFs.Tests.EditorTests.allEditorTests/Editor/...
+    local scope = { kind = "binding", name = "allEditorTests", path = "C:\\SageFs\\EditorTests.fs" }
+    local results = testing.filter_by_scope(s, scope)
+    assert.are.equal(3, #results)
+    for _, r in ipairs(results) do
+      assert.is_truthy(r.fullName:find("allEditorTests"), "should match binding name")
+    end
+  end)
+
+  it("returns empty when no tests match the binding name", function()
+    local s = build_test_state()
+    local scope = { kind = "binding", name = "nonexistentBinding", path = "C:\\SageFs\\EditorTests.fs" }
+    local results = testing.filter_by_scope(s, scope)
+    assert.are.equal(0, #results)
+  end)
+
+  it("scopes to file first, then filters by binding name", function()
+    local s = build_test_state()
+    -- "allEditorTests" only in EditorTests.fs, not in SessionTests.fs
+    local scope = { kind = "binding", name = "allEditorTests", path = "C:\\SageFs\\SessionTests.fs" }
+    local results = testing.filter_by_scope(s, scope)
+    assert.are.equal(0, #results)
+  end)
+
+  it("returns empty when name is nil", function()
+    local s = build_test_state()
+    local scope = { kind = "binding", name = nil, path = "C:\\SageFs\\EditorTests.fs" }
+    local results = testing.filter_by_scope(s, scope)
+    assert.are.equal(0, #results)
+  end)
+end)
+
 -- ─── filter_by_scope: unknown kind ──────────────────────────────────────────
 
 describe("testing.filter_by_scope (unknown kind)", function()
@@ -361,6 +398,15 @@ describe("testing.format_scoped_panel_entries", function()
     end
     assert.is_true(has_nav, "at least one entry should have file+line for navigation")
   end)
+
+  it("hint line shows [b]inding when binding scope active", function()
+    local s = build_test_state()
+    local scope = { kind = "binding", name = "allEditorTests", path = "C:\\SageFs\\EditorTests.fs" }
+    local entries = testing.format_scoped_panel_entries(s, scope)
+    local hint = entries[2].text
+    assert.is_truthy(hint:find("%[b%]"), "should show [b] for active binding scope")
+    assert.is_truthy(hint:find("f:file"), "should show f:file as inactive")
+  end)
 end)
 
 -- ─── scope_label: human-readable description ────────────────────────────────
@@ -390,19 +436,30 @@ describe("testing.scope_label", function()
     local label = testing.scope_label({ kind = "module", prefix = nil })
     assert.are.equal("module: (none)", label)
   end)
+
+  it("returns binding name for binding scope", function()
+    local label = testing.scope_label({ kind = "binding", name = "allEditorTests" })
+    assert.are.equal("binding: allEditorTests", label)
+  end)
+
+  it("handles nil binding name gracefully", function()
+    local label = testing.scope_label({ kind = "binding", name = nil })
+    assert.are.equal("binding: (none)", label)
+  end)
 end)
 
 -- ─── next_scope: cycling ────────────────────────────────────────────────────
 
 describe("testing.next_scope", function()
-  it("cycles file → module → all → file", function()
+  it("cycles binding → file → module → all → binding", function()
+    assert.are.equal("file", testing.next_scope("binding"))
     assert.are.equal("module", testing.next_scope("file"))
     assert.are.equal("all", testing.next_scope("module"))
-    assert.are.equal("file", testing.next_scope("all"))
+    assert.are.equal("binding", testing.next_scope("all"))
   end)
 
-  it("defaults to file for unknown input", function()
-    assert.are.equal("file", testing.next_scope("banana"))
-    assert.are.equal("file", testing.next_scope(nil))
+  it("defaults to binding for unknown input", function()
+    assert.are.equal("binding", testing.next_scope("banana"))
+    assert.are.equal("binding", testing.next_scope(nil))
   end)
 end)

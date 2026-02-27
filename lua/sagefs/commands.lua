@@ -233,6 +233,7 @@ function M.register_commands(plugin, helpers)
   local test_panel_scope_kind = "file"  -- default operational scope
   local test_panel_source_file = nil    -- filepath of last active .fs buffer
   local test_panel_module_prefix = nil  -- derived from source_file
+  local test_panel_binding_name = nil   -- treesitter-detected enclosing binding
 
   --- Derive module prefix from a file path.
   --- Heuristic: basename without extension, prepended with common namespace.
@@ -256,12 +257,52 @@ function M.register_commands(plugin, helpers)
     return nil
   end
 
+  --- Detect the enclosing F# let binding name via treesitter.
+  --- Walks from cursor up the tree to find function_or_value_defn → identifier_pattern.
+  ---@param buf number buffer handle
+  ---@param row number|nil 0-based row (uses cursor of buf's window if nil)
+  ---@param col number|nil 0-based col
+  ---@return string|nil binding name or nil
+  local function detect_binding_name(buf, row, col)
+    local ok, parser = pcall(vim.treesitter.get_parser, buf, "fsharp")
+    if not ok or not parser then return nil end
+    -- If no explicit position, find the window showing this buffer
+    if not row then
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_buf(w) == buf then
+          local pos = vim.api.nvim_win_get_cursor(w)
+          row = pos[1] - 1  -- 0-based
+          col = pos[2]
+          break
+        end
+      end
+    end
+    if not row then return nil end
+    local node = vim.treesitter.get_node({ bufnr = buf, pos = { row, col or 0 } })
+    while node and node:type() ~= "function_or_value_defn" do
+      node = node:parent()
+    end
+    if not node then return nil end
+    -- value_declaration_left → identifier_pattern
+    local vdl = node:child(1)
+    if not vdl then return nil end
+    for i = 0, vdl:child_count() - 1 do
+      local c = vdl:child(i)
+      if c:type() == "identifier_pattern" then
+        return vim.treesitter.get_node_text(c, buf)
+      end
+    end
+    return nil
+  end
+
   --- Build the current scope table from panel state
   local function build_panel_scope()
     if test_panel_scope_kind == "file" then
       return { kind = "file", path = test_panel_source_file }
     elseif test_panel_scope_kind == "module" then
       return { kind = "module", prefix = test_panel_module_prefix }
+    elseif test_panel_scope_kind == "binding" then
+      return { kind = "binding", name = test_panel_binding_name, path = test_panel_source_file }
     else
       return { kind = "all" }
     end
@@ -305,6 +346,13 @@ function M.register_commands(plugin, helpers)
     -- Recompute module prefix when switching to module scope
     if kind == "module" then
       test_panel_module_prefix = derive_module_prefix(plugin.testing_state, test_panel_source_file)
+    elseif kind == "binding" then
+      -- Detect binding from the source window (previous window)
+      local prev_win = vim.fn.win_getid(vim.fn.winnr("#"))
+      if prev_win and prev_win ~= 0 then
+        local prev_buf = vim.api.nvim_win_get_buf(prev_win)
+        test_panel_binding_name = detect_binding_name(prev_buf)
+      end
     end
     update_test_panel()
   end
@@ -353,6 +401,8 @@ function M.register_commands(plugin, helpers)
       { buffer = test_panel_buf, desc = "Filter: module scope" })
     vim.keymap.set("n", "a", function() set_panel_scope("all") end,
       { buffer = test_panel_buf, desc = "Filter: all tests" })
+    vim.keymap.set("n", "b", function() set_panel_scope("binding") end,
+      { buffer = test_panel_buf, desc = "Filter: binding scope (treesitter)" })
     vim.keymap.set("n", "<Tab>", function()
       set_panel_scope(testing.next_scope(test_panel_scope_kind))
     end, { buffer = test_panel_buf, desc = "Cycle filter scope" })

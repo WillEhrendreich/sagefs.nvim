@@ -1142,9 +1142,10 @@ end
 ---@param current string|nil
 ---@return string
 function M.next_scope(current)
+  if current == "binding" then return "file" end
   if current == "file" then return "module" end
   if current == "module" then return "all" end
-  return "file"
+  return "binding"
 end
 
 --- Human-readable label for a scope
@@ -1158,6 +1159,9 @@ function M.scope_label(scope)
     if not scope.prefix then return "module: (none)" end
     -- Show last segment: "SageFs.Tests.EditorTests" → "EditorTests"
     return "module: " .. scope.prefix:match("([^%.]+)$")
+  elseif scope.kind == "binding" then
+    if not scope.name then return "binding: (none)" end
+    return "binding: " .. scope.name
   elseif scope.kind == "all" then
     return "all"
   end
@@ -1183,6 +1187,17 @@ function M.filter_by_scope(state, scope)
         for k, v in pairs(test) do entry[k] = v end
         entry.testId = id
         table.insert(results, entry)
+      end
+    end
+    return results
+  elseif scope.kind == "binding" then
+    if not scope.name then return {} end
+    local file_tests = M.filter_by_file(state, scope.path)
+    local results = {}
+    for _, t in ipairs(file_tests) do
+      local fn = t.fullName or ""
+      if fn:find(scope.name, 1, true) then
+        table.insert(results, t)
       end
     end
     return results
@@ -1216,8 +1231,8 @@ function M.format_scoped_panel_entries(state, scope)
   -- Keybinding hints
   local current = scope.kind
   local hints = {}
-  for _, s in ipairs({ "f", "m", "a" }) do
-    local full = ({ f = "file", m = "module", a = "all" })[s]
+  for _, s in ipairs({ "b", "f", "m", "a" }) do
+    local full = ({ b = "binding", f = "file", m = "module", a = "all" })[s]
     if full == current then
       table.insert(hints, string.format("[%s]%s", s, full:sub(2)))
     else
