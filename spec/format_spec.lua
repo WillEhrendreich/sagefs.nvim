@@ -374,6 +374,21 @@ describe("format.parse_bindings", function()
     local bs = format.parse_bindings(nil)
     assert.are.equal(0, #bs)
   end)
+
+  it("skips val mutable declarations", function()
+    local bs = format.parse_bindings("val mutable x : int = 0")
+    assert.are.equal(0, #bs)
+  end)
+
+  it("skips val it (REPL auto-binding)", function()
+    local bs = format.parse_bindings("val it : int = 42")
+    assert.are.equal(0, #bs)
+  end)
+
+  it("skips tuple pattern bindings", function()
+    local bs = format.parse_bindings("val (x, y) : int * string")
+    assert.are.equal(0, #bs)
+  end)
 end)
 
 -- ─── binding tracker: detect shadowing ───────────────────────────────────────

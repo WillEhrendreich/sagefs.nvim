@@ -259,7 +259,7 @@ function M.parse_bindings(output)
   if not output then return bindings end
   for line in output:gmatch("[^\n]+") do
     local name, type_sig = line:match("^val%s+(%S+)%s*:%s*(.+)")
-    if name then
+    if name and name ~= "mutable" and name ~= "it" and not name:match("^%(") then
       -- Strip trailing " = <value>" from type_sig
       local ts = type_sig:match("^(.-)%s*=") or type_sig
       table.insert(bindings, { name = name, type_sig = ts:match("^%s*(.-)%s*$") })
@@ -275,10 +275,11 @@ function M.new_binding_tracker()
 end
 
 --- Update tracker with new bindings from an eval result.
---- Returns the updated tracker and a list of shadowed bindings.
----@param tracker table binding tracker state
+--- MUTATES tracker in-place and returns the same reference for chaining.
+--- Returns shadows detected during this update.
+---@param tracker table binding tracker state (mutated in-place)
 ---@param output string FSI output text
----@return table tracker, table[] shadows [{name, old_type, new_type}]
+---@return table tracker (same reference), table[] shadows [{name, old_type, new_type}]
 function M.update_bindings(tracker, output)
   local parsed = M.parse_bindings(output)
   local shadows = {}

@@ -53,6 +53,12 @@ M.binding_tracker = format.new_binding_tracker()
 
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
+
+-- Pre-allocated namespaces (created once, reused everywhere)
+local ns = {
+  fsi_diagnostics = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics"),
+  shadow_warnings = vim.api.nvim_create_namespace("sagefs_shadow_warnings"),
+}
 local diag_ns = nil
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -359,41 +365,42 @@ end
 
 -- ─── HTTP: eval + session API ─────────────────────────────────────────────────
 
+--- Show shadow warning virtual text at cell end, auto-clears after 5s.
+---@param buf number buffer handle
+---@param cell_id string
+---@param shadows table[] list of {name, old_type, new_type}
+local function show_shadow_warnings(buf, cell_id, shadows)
+  vim.schedule(function()
+    local cell = M.state.cells[cell_id]
+    local line = cell and cell.end_line or 0
+    if line <= 0 then return end
+    for _, s in ipairs(shadows) do
+      local msg = s.old_type == s.new_type
+        and string.format("⚠ shadowed: %s (was already defined)", s.name)
+        or string.format("⚠ shadowed: %s (was %s, now %s)", s.name, s.old_type, s.new_type)
+      vim.api.nvim_buf_set_extmark(buf, ns.shadow_warnings, line - 1, 0, {
+        virt_text = {{ msg, "DiagnosticWarn" }},
+        virt_text_pos = "eol",
+      })
+    end
+    vim.defer_fn(function()
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_clear_namespace(buf, ns.shadow_warnings, 0, -1)
+      end
+    end, 5000)
+  end)
+end
+
 local function handle_result(buf, cell_id, result)
   if result.ok then
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output)
-    -- Clear FSI diagnostics on success
     vim.schedule(function()
-      local fsi_ns = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics")
-      vim.diagnostic.set(fsi_ns, buf, {})
+      vim.diagnostic.set(ns.fsi_diagnostics, buf, {})
     end)
-    -- Shadow detection: track bindings and show warnings
     local shadows
     M.binding_tracker, shadows = format.update_bindings(M.binding_tracker, result.output)
     if #shadows > 0 then
-      vim.schedule(function()
-        local shadow_ns = vim.api.nvim_create_namespace("sagefs_shadow_warnings")
-        -- Find the cell end line for virtual text placement
-        local cell = M.state.cells[cell_id]
-        local line = cell and cell.end_line or 0
-        if line > 0 then
-          for _, s in ipairs(shadows) do
-            local msg = s.old_type == s.new_type
-              and string.format("⚠ shadowed: %s (was already defined)", s.name)
-              or string.format("⚠ shadowed: %s (was %s, now %s)", s.name, s.old_type, s.new_type)
-            vim.api.nvim_buf_set_extmark(buf, shadow_ns, line - 1, 0, {
-              virt_text = {{ msg, "DiagnosticWarn" }},
-              virt_text_pos = "eol",
-            })
-          end
-          -- Auto-clear after 5 seconds
-          vim.defer_fn(function()
-            if vim.api.nvim_buf_is_valid(buf) then
-              vim.api.nvim_buf_clear_namespace(buf, shadow_ns, 0, -1)
-            end
-          end, 5000)
-        end
-      end)
+      show_shadow_warnings(buf, cell_id, shadows)
     end
   else
     M.state = model.set_cell_state(M.state, cell_id, "error", result.error)
@@ -415,7 +422,6 @@ local function post_exec(code, buf, cell_id)
         -- Set FSI diagnostics via vim.diagnostic if structured diagnostics present
         if result.diagnostics and #result.diagnostics > 0 then
           vim.schedule(function()
-            local fsi_diag_ns = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics")
             local vim_diags = {}
             for _, d in ipairs(result.diagnostics) do
               local severity = vim.diagnostic.severity.ERROR
@@ -431,7 +437,7 @@ local function post_exec(code, buf, cell_id)
                 source = "sagefs-fsi",
               })
             end
-            vim.diagnostic.set(fsi_diag_ns, buf, vim_diags)
+            vim.diagnostic.set(ns.fsi_diagnostics, buf, vim_diags)
           end)
         end
         handle_result(buf, cell_id, result)
