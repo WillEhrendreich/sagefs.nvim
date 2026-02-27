@@ -1005,6 +1005,12 @@ function M.register_keymaps(plugin, helpers)
     local sid = plugin.active_session and plugin.active_session.id or nil
     hotreload.picker(sid)
   end, { desc = "SageFs: Hot Reload Files", silent = true })
+  vim.keymap.set("n", "<leader>sD", function()
+    local dens = require("sagefs.density")
+    plugin.density_state = dens.cycle(plugin.density_state)
+    vim.notify("[SageFs] Density: " .. plugin.density_state.preset, vim.log.levels.INFO)
+    helpers.render_signs(vim.api.nvim_get_current_buf())
+  end, { desc = "SageFs: Cycle density (minimal/normal/full)", silent = true })
 end
 
 --- Register autocmds

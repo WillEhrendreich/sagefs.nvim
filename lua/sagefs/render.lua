@@ -298,7 +298,7 @@ local function get_ann_ns()
   return ann_ns
 end
 
-function M.render_annotations(buf, annotations_state)
+function M.render_annotations(buf, annotations_state, density_state)
   local ans = get_ann_ns()
   vim.api.nvim_buf_clear_namespace(buf, ans, 0, -1)
 
@@ -309,57 +309,63 @@ function M.render_annotations(buf, annotations_state)
   if not ann then return end
 
   local line_count = vim.api.nvim_buf_line_count(buf)
+  local density = density_state or { signs = true, codelens = true, inline_failures = true, branch_eol = false }
 
   -- Render CodeLens as virtual lines above test functions
-  local lenses = ann.CodeLenses or ann.codeLenses or {}
-  for _, lens in ipairs(lenses) do
-    local line = lens.Line or lens.line
-    if line and line > 0 and line <= line_count then
-      local text, hl = ann_module.format_codelens(lens)
-      pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
-        virt_lines_above = true,
-        virt_lines = { { { "  " .. text, hl } } },
-        priority = 180,
-      })
+  if density.codelens then
+    local lenses = ann.CodeLenses or ann.codeLenses or {}
+    for _, lens in ipairs(lenses) do
+      local line = lens.Line or lens.line
+      if line and line > 0 and line <= line_count then
+        local text, hl = ann_module.format_codelens(lens)
+        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+          virt_lines_above = true,
+          virt_lines = { { { "  " .. text, hl } } },
+          priority = 180,
+        })
+      end
     end
   end
 
   -- Render inline failures as virtual text at end of line
-  local failures = ann.InlineFailures or ann.inlineFailures or {}
-  for _, failure in ipairs(failures) do
-    local line = failure.Line or failure.line
-    if line and line > 0 and line <= line_count then
-      local text, hl = ann_module.format_inline_failure(failure)
-      pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
-        virt_text = { { text, hl } },
-        virt_text_pos = "eol",
-        priority = 190,
-      })
+  if density.inline_failures then
+    local failures = ann.InlineFailures or ann.inlineFailures or {}
+    for _, failure in ipairs(failures) do
+      local line = failure.Line or failure.line
+      if line and line > 0 and line <= line_count then
+        local text, hl = ann_module.format_inline_failure(failure)
+        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, {
+          virt_text = { { text, hl } },
+          virt_text_pos = "eol",
+          priority = 190,
+        })
+      end
     end
   end
 
   -- Render coverage annotations as gutter signs on covered/uncovered lines
-  local cov_anns = ann.CoverageAnnotations or ann.coverageAnnotations or {}
-  for _, cov in ipairs(cov_anns) do
-    local line = cov.Line or cov.line
-    if line and line > 0 and line <= line_count then
-      local sign_text, sign_hl = ann_module.format_coverage_sign(cov)
-      if sign_text then
-        local opts = {
-          sign_text = sign_text,
-          sign_hl_group = sign_hl,
-          priority = 140,
-        }
-        -- Show branch count as virtual text for partial coverage
-        if sign_hl == "SageFsCovPartial" then
-          local detail = cov.Detail or cov.detail
-          local count = detail and detail.Fields and detail.Fields[1] or 0
-          if count > 0 then
-            opts.virt_text = { { string.format(" ◐ %d branches", count), "SageFsCovPartial" } }
-            opts.virt_text_pos = "eol"
+  if density.signs then
+    local cov_anns = ann.CoverageAnnotations or ann.coverageAnnotations or {}
+    for _, cov in ipairs(cov_anns) do
+      local line = cov.Line or cov.line
+      if line and line > 0 and line <= line_count then
+        local sign_text, sign_hl = ann_module.format_coverage_sign(cov)
+        if sign_text then
+          local opts = {
+            sign_text = sign_text,
+            sign_hl_group = sign_hl,
+            priority = 140,
+          }
+          -- Show branch EOL text for partial branch coverage
+          if density.branch_eol then
+            local eol_text = ann_module.format_branch_eol(cov)
+            if eol_text then
+              opts.virt_text = { { " " .. eol_text .. " branches", "SageFsBranchPartial" } }
+              opts.virt_text_pos = "eol"
+            end
           end
+          pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, opts)
         end
-        pcall(vim.api.nvim_buf_set_extmark, buf, ans, line - 1, 0, opts)
       end
     end
   end

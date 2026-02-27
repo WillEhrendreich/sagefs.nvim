@@ -17,6 +17,7 @@ local daemon = require("sagefs.daemon")
 local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
+local density = require("sagefs.density")
 
 local M = {}
 
@@ -44,6 +45,7 @@ M.state = model.new()
 M.testing_state = testing.new()
 M.coverage_state = coverage.new()
 M.annotations_state = annotations.new()
+M.density_state = density.new()
 M.daemon_state = daemon.new()
 M.active_session = nil
 M.session_list = {}
@@ -267,7 +269,7 @@ local function schedule_render()
       last_rendered_file = file
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
-      render.render_annotations(buf, M.annotations_state)
+      render.render_annotations(buf, M.annotations_state, M.density_state)
       if file ~= "" then
         if not test_diag_ns then
           test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
@@ -897,9 +899,8 @@ function M.setup(opts)
     render_signs = function(buf)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
-      render.render_annotations(buf, M.annotations_state)
+      render.render_annotations(buf, M.annotations_state, M.density_state)
     end,
-    check_code = check_code,
     check_on_save = function() return M.config.check_on_save end,
   }
 
