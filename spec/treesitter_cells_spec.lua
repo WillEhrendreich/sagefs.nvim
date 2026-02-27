@@ -383,7 +383,75 @@ describe("treesitter_cells: attributed_and_typed.fs", function()
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
--- ─── Results ────────────────────────────────────────────────────────────────
+-- ─── type_with_members.fs ────────────────────────────────────────────────────
+-- Tests the tree-sitter-fsharp `with` member parsing workaround.
+-- tree-sitter-fsharp incorrectly parses `type Foo = { ... } with member ...`
+-- as type_definition + application_expression. We need to handle this.
+
+describe("treesitter_cells: type_with_members.fs", function()
+  local buf, lines = load_fixture("type_with_members.fs")
+
+  describe("find_all_cells", function()
+    local cells = ts_cells.find_all_cells(buf)
+
+    it("detects 4 cells (Point+with, origin, Color+with, defaultColor)", function()
+      assert_eq(4, #cells, "cell count")
+    end)
+
+    it("cell 1: Point record WITH members (lines 3-11)", function()
+      assert_eq(3, cells[1].start_line, "start")
+      assert_eq(11, cells[1].end_line, "end")
+    end)
+
+    it("cell 2: let origin (line 13)", function()
+      assert_eq(13, cells[2].start_line, "start")
+      assert_eq(13, cells[2].end_line, "end")
+    end)
+
+    it("cell 3: Color DU WITH members (lines 15-24)", function()
+      assert_eq(15, cells[3].start_line, "start")
+      assert_eq(24, cells[3].end_line, "end")
+    end)
+
+    it("cell 4: let defaultColor (line 26)", function()
+      assert_eq(26, cells[4].start_line, "start")
+      assert_eq(26, cells[4].end_line, "end")
+    end)
+
+    it("no cells overlap", function()
+      for i = 2, #cells do
+        assert_truthy(cells[i].start_line > cells[i-1].end_line,
+          string.format("cell %d starts at %d but cell %d ends at %d",
+            i, cells[i].start_line, i-1, cells[i-1].end_line))
+      end
+    end)
+  end)
+
+  describe("find_enclosing_cell", function()
+    it("cursor on with member (line 8) returns Point+with cell", function()
+      local cell = ts_cells.find_enclosing_cell(buf, 8)
+      assert_truthy(cell, "should find cell")
+      assert_eq(3, cell.start_line, "start should be type definition")
+      assert_eq(11, cell.end_line, "end should include with members")
+    end)
+
+    it("cursor on let origin (line 13) returns just origin", function()
+      local cell = ts_cells.find_enclosing_cell(buf, 13)
+      assert_truthy(cell, "should find cell")
+      assert_eq(13, cell.start_line, "start")
+      assert_eq(13, cell.end_line, "end")
+    end)
+
+    it("cursor on Color with member (line 21) returns Color+with cell", function()
+      local cell = ts_cells.find_enclosing_cell(buf, 21)
+      assert_truthy(cell, "should find cell")
+      assert_eq(15, cell.start_line, "start should be type definition")
+      assert_eq(24, cell.end_line, "end should include with members")
+    end)
+  end)
+
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
 
 io.write("\n")
 io.write(string.format("treesitter_cells: %d passed, %d failed\n", passed, failed))
