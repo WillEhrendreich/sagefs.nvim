@@ -453,7 +453,61 @@ describe("treesitter_cells: type_with_members.fs", function()
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
-io.write("\n")
+-- ─── do_expressions.fs ───────────────────────────────────────────────────────
+-- Verifies that `do` expressions (common in .fsx scripts) are detected as cells.
+
+describe("treesitter_cells: do_expressions.fs", function()
+  local buf, lines = load_fixture("do_expressions.fs")
+
+  describe("find_all_cells", function()
+    local cells = ts_cells.find_all_cells(buf)
+
+    it("detects 6 cells (3 lets + 3 dos)", function()
+      assert_eq(6, #cells, "cell count")
+    end)
+
+    it("cell 1: let greeting (line 3)", function()
+      assert_eq(3, cells[1].start_line, "start")
+      assert_eq(3, cells[1].end_line, "end")
+    end)
+
+    it("cell 2: do printfn (line 5)", function()
+      assert_eq(5, cells[2].start_line, "start")
+      assert_eq(5, cells[2].end_line, "end")
+    end)
+
+    it("cell 3: let mutable counter (line 7)", function()
+      assert_eq(7, cells[3].start_line, "start")
+      assert_eq(7, cells[3].end_line, "end")
+    end)
+
+    it("cell 4: multi-line do block (lines 9-11)", function()
+      assert_eq(9, cells[4].start_line, "start")
+      assert_eq(11, cells[4].end_line, "end")
+    end)
+
+    it("cell 5: let add (line 13)", function()
+      assert_eq(13, cells[5].start_line, "start")
+      assert_eq(13, cells[5].end_line, "end")
+    end)
+
+    it("cell 6: do with let binding (lines 15-17)", function()
+      assert_eq(15, cells[6].start_line, "start")
+      assert_eq(17, cells[6].end_line, "end")
+    end)
+  end)
+
+  describe("find_enclosing_cell", function()
+    it("cursor inside multi-line do (line 10) returns the do block", function()
+      local cell = ts_cells.find_enclosing_cell(buf, 10)
+      assert_truthy(cell, "should find cell")
+      assert_eq(9, cell.start_line, "start")
+      assert_eq(11, cell.end_line, "end")
+    end)
+  end)
+
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
 io.write(string.format("treesitter_cells: %d passed, %d failed\n", passed, failed))
 if #errors > 0 then
   io.write("\nFailures:\n")
