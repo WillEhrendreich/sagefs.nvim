@@ -330,31 +330,38 @@ end)
 -- Current implementation uses fixed 3000ms. This should be a pure function
 -- that computes the next delay given current attempt count.
 
-describe("sse.reconnect_delay [RED]", function()
-  it("first reconnect delay is 1 second", function()
+describe("sse.reconnect_delay", function()
+  it("first reconnect delay is ~1 second (±20% jitter)", function()
     assert.is_function(sse.reconnect_delay)
     local delay = sse.reconnect_delay(1)
-    assert.are.equal(1000, delay)
+    assert.is_true(delay >= 800 and delay <= 1200,
+      "attempt 1 should be ~1000ms ±20%, got " .. delay)
   end)
 
-  it("second reconnect doubles to 2 seconds", function()
-    assert.are.equal(2000, sse.reconnect_delay(2))
+  it("second reconnect doubles to ~2 seconds", function()
+    local delay = sse.reconnect_delay(2)
+    assert.is_true(delay >= 1600 and delay <= 2400,
+      "attempt 2 should be ~2000ms ±20%, got " .. delay)
   end)
 
-  it("third reconnect doubles to 4 seconds", function()
-    assert.are.equal(4000, sse.reconnect_delay(3))
+  it("third reconnect doubles to ~4 seconds", function()
+    local delay = sse.reconnect_delay(3)
+    assert.is_true(delay >= 3200 and delay <= 4800,
+      "attempt 3 should be ~4000ms ±20%, got " .. delay)
   end)
 
-  it("caps at 32 seconds", function()
-    assert.are.equal(32000, sse.reconnect_delay(6))
-    assert.are.equal(32000, sse.reconnect_delay(10))
-    assert.are.equal(32000, sse.reconnect_delay(100))
+  it("caps at ~32 seconds", function()
+    for _, attempt in ipairs({6, 10, 100}) do
+      local delay = sse.reconnect_delay(attempt)
+      assert.is_true(delay >= 25600 and delay <= 38400,
+        "attempt " .. attempt .. " should be ~32000ms ±20%, got " .. delay)
+    end
   end)
 
   it("resets after successful connection", function()
-    -- After a successful connect, the attempt counter resets.
-    -- sse.reconnect_delay(0) or sse.reset_backoff() should give initial state.
-    assert.are.equal(1000, sse.reconnect_delay(1))
+    local delay = sse.reconnect_delay(1)
+    assert.is_true(delay >= 800 and delay <= 1200,
+      "after reset, attempt 1 should be ~1000ms ±20%, got " .. delay)
   end)
 end)
 

@@ -167,7 +167,7 @@ function M.render_test_signs(buf, testing_state, annotations_state)
 
   -- Reuse cached table (Nu cached-collections: wipe instead of allocate — 7.9x faster in LuaJIT)
   for k in pairs(_freshness_cache) do _freshness_cache[k] = nil end
-  if annotations_state then
+  if annotations_state and ann_module then
     local ann = ann_module.get_file(annotations_state, file)
     if ann then
       for _, ta in ipairs(ann.TestAnnotations or ann.testAnnotations or {}) do

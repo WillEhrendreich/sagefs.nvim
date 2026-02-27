@@ -310,3 +310,68 @@ describe("sse parse + classify typed test events", function()
     assert.are.equal("test_results_batch", classified.action)
   end)
 end)
+
+-- ─── reconnect_delay: exponential backoff with jitter ─────────────────────────
+
+describe("sse.reconnect_delay", function()
+  it("returns ~1000ms for attempt 1 (with ±20% jitter)", function()
+    local delay = sse.reconnect_delay(1)
+    assert.is_true(delay >= 800 and delay <= 1200,
+      "attempt 1 should be ~1000ms ±20%, got " .. delay)
+  end)
+
+  it("doubles base for each successive attempt within jitter range", function()
+    for attempt = 1, 5 do
+      local expected_base = 1000 * (2 ^ (attempt - 1))
+      local lo = expected_base * 0.8
+      local hi = expected_base * 1.2
+      for _ = 1, 20 do
+        local delay = sse.reconnect_delay(attempt)
+        assert.is_true(delay >= lo and delay <= hi,
+          string.format("attempt %d: expected [%d,%d], got %d", attempt, lo, hi, delay))
+      end
+    end
+  end)
+
+  it("caps at 32000ms base (attempt 6+)", function()
+    for _ = 1, 20 do
+      local delay = sse.reconnect_delay(10)
+      assert.is_true(delay >= 25600 and delay <= 38400,
+        "capped delay should be ~32000 ±20%, got " .. delay)
+    end
+  end)
+
+  it("is not fully deterministic (jitter produces variation)", function()
+    local delays = {}
+    for _ = 1, 10 do
+      table.insert(delays, sse.reconnect_delay(3))
+    end
+    local all_same = true
+    for i = 2, #delays do
+      if delays[i] ~= delays[1] then all_same = false; break end
+    end
+    assert.is_false(all_same, "10 calls should produce at least some variation with jitter")
+  end)
+end)
+
+-- ─── connection_status: attempt → status string ──────────────────────────────
+
+describe("sse.connection_status", function()
+  it("returns 'reconnecting' for attempts 1-4", function()
+    for attempt = 1, 4 do
+      assert.are.equal("reconnecting", sse.connection_status(attempt),
+        "attempt " .. attempt .. " should be reconnecting")
+    end
+  end)
+
+  it("returns 'disconnected' for attempt 5+", function()
+    for _, attempt in ipairs({5, 6, 10, 100}) do
+      assert.are.equal("disconnected", sse.connection_status(attempt),
+        "attempt " .. attempt .. " should be disconnected")
+    end
+  end)
+
+  it("returns 'connected' for attempt 0", function()
+    assert.are.equal("connected", sse.connection_status(0))
+  end)
+end)

@@ -59,13 +59,24 @@ function M.parse_chunk(chunk)
   return events, remainder
 end
 
---- Calculate reconnection delay with exponential backoff
+--- Calculate reconnection delay with exponential backoff and ±20% jitter
 ---@param attempt number Attempt number (1-based)
 ---@return number Delay in milliseconds
 function M.reconnect_delay(attempt)
-  local delay = 1000 * (2 ^ (attempt - 1))
-  if delay > 32000 then delay = 32000 end
-  return delay
+  local base = 1000 * (2 ^ (attempt - 1))
+  if base > 32000 then base = 32000 end
+  local jitter = 0.8 + math.random() * 0.4  -- ±20%
+  return math.floor(base * jitter)
+end
+
+--- Map reconnect attempt number to a connection status string.
+--- 0 = connected (successful), 1-4 = reconnecting, 5+ = disconnected.
+---@param attempt number Current attempt (0 = connected)
+---@return string "connected"|"reconnecting"|"disconnected"
+function M.connection_status(attempt)
+  if attempt <= 0 then return "connected" end
+  if attempt < 5 then return "reconnecting" end
+  return "disconnected"
 end
 
 --- Classify an SSE event into an action type

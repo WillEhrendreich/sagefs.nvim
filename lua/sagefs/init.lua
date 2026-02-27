@@ -336,6 +336,12 @@ local function start_sse()
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
     end,
+    on_reconnecting = function(attempt, status)
+      M.state = model.set_status(M.state, status)
+      if status == "reconnecting" then
+        fire_user_event("reconnecting")
+      end
+    end,
     auto_reconnect = true,
     reconnect_delay = 3000,
   })
@@ -951,7 +957,9 @@ function M.statusline()
   if M.active_session then
     table.insert(parts, sessions.format_statusline(M.active_session))
   else
-    local icon = M.state.status == "connected" and "⚡" or "💤"
+    local icon = M.state.status == "connected" and "⚡"
+      or M.state.status == "reconnecting" and "🔌"
+      or "💤"
     local cell_count = model.cell_count(M.state)
     local running = 0
     for _, c in pairs(M.state.cells or {}) do
