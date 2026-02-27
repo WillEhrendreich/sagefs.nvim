@@ -39,9 +39,17 @@ function M.register_commands(plugin, helpers)
     plugin.eval_file()
   end, { desc = "Evaluate entire file" })
 
+  vim.api.nvim_create_user_command("SageFsEvalLine", function()
+    plugin.eval_current_line()
+  end, { desc = "Evaluate current line only" })
+
   vim.api.nvim_create_user_command("SageFsClear", function()
     helpers.clear_and_render()
   end, { desc = "Clear all cell results" })
+
+  vim.api.nvim_create_user_command("SageFsCellStyle", function()
+    require("sagefs.cell_highlight").cycle_style()
+  end, { desc = "Cycle cell highlight style (off/minimal/normal/full)" })
 
   vim.api.nvim_create_user_command("SageFsConnect", function()
     plugin.health_check(function(healthy)
@@ -84,6 +92,44 @@ function M.register_commands(plugin, helpers)
       vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
     end)
   end, { desc = "SageFs status dashboard" })
+
+  vim.api.nvim_create_user_command("SageFsBindings", function()
+    local tracker = plugin.binding_tracker
+    local lines = { "═══ FSI Bindings ═══", "" }
+    local sorted = {}
+    for name, info in pairs(tracker.bindings) do
+      table.insert(sorted, { name = name, type_sig = info.type_sig, count = info.count })
+    end
+    table.sort(sorted, function(a, b) return a.name < b.name end)
+    if #sorted == 0 then
+      table.insert(lines, "(no bindings tracked yet)")
+    else
+      for _, b in ipairs(sorted) do
+        local suffix = b.count > 1
+          and string.format("  (shadowed %dx)", b.count - 1)
+          or ""
+        table.insert(lines, string.format("  val %s : %s%s", b.name, b.type_sig, suffix))
+      end
+    end
+    table.insert(lines, "")
+    table.insert(lines, string.format("Total: %d bindings", #sorted))
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].bufhidden = "wipe"
+    local width = 50
+    for _, l in ipairs(lines) do width = math.max(width, #l + 4) end
+    vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = math.min(#lines, 30),
+      row = math.floor((vim.o.lines - math.min(#lines, 30)) / 2),
+      col = math.floor((vim.o.columns - width) / 2),
+      style = "minimal",
+      border = "rounded",
+    })
+    vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
+  end, { desc = "Show FSI binding state" })
 
   vim.api.nvim_create_user_command("SageFsSessions", function()
     plugin.session_picker()
@@ -313,7 +359,7 @@ function M.register_commands(plugin, helpers)
     if not test_panel_win or not vim.api.nvim_win_is_valid(test_panel_win) then return end
 
     local scope = build_panel_scope()
-    test_panel_entries = testing.format_scoped_panel_entries(plugin.testing_state, scope)
+    test_panel_entries = testing.format_scoped_panel_entries(plugin.testing_state, scope, plugin.annotations_state)
 
     local lines = {}
     -- Show poll-based summary when we have summary but no individual tests
@@ -1046,11 +1092,15 @@ function M.register_keymaps(plugin, helpers)
 
   vim.keymap.set("n", "<leader>se", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })
+  vim.keymap.set("n", "<leader>sl", function() plugin.eval_current_line() end,
+    { desc = "SageFs: Evaluate current line", silent = true })
   vim.keymap.set("n", "<leader>sc", function()
     helpers.clear_and_render()
   end, { desc = "SageFs: Clear results", silent = true })
   vim.keymap.set("n", "<leader>ss", function() plugin.session_picker() end,
     { desc = "SageFs: Sessions", silent = true })
+  vim.keymap.set("n", "<leader>sb", "<cmd>SageFsBindings<CR>",
+    { desc = "SageFs: Show bindings", silent = true })
   vim.keymap.set("n", "<leader>sh", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     hotreload.picker(sid)
@@ -1108,6 +1158,26 @@ function M.register_autocmds(plugin, helpers)
       if not helpers.check_on_save() then return end
       local lines = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false)
       helpers.check_code(table.concat(lines, "\n"))
+    end,
+  })
+
+  -- Cell highlight: show eval region as cursor moves
+  local cell_highlight = require("sagefs.cell_highlight")
+  cell_highlight.setup_highlights()
+
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function()
+      cell_highlight.update()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufLeave", {
+    group = group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function(ev)
+      pcall(vim.api.nvim_buf_clear_namespace, ev.buf, vim.api.nvim_create_namespace("sagefs_cell_highlight"), 0, -1)
     end,
   })
 end

@@ -205,11 +205,11 @@ describe("annotations.clear_file", function()
 end)
 
 describe("annotations.format_coverage_sign", function()
-  it("returns green triangle for fully covered (AllPassing)", function()
+  it("returns quiet bar for fully covered (AllPassing)", function()
     local sign, hl = annotations.format_coverage_sign({
       Detail = { Case = "Covered", Fields = { 3, { Case = "AllPassing" } } }
     })
-    assert.are.equal("▸", sign)
+    assert.are.equal("│", sign)
     assert.are.equal("SageFsCovered", hl)
   end)
 
@@ -221,11 +221,11 @@ describe("annotations.format_coverage_sign", function()
     assert.are.equal("SageFsCovPartial", hl)
   end)
 
-  it("returns circle for not covered", function()
+  it("returns loud block for not covered", function()
     local sign, hl = annotations.format_coverage_sign({
       Detail = { Case = "NotCovered" }
     })
-    assert.are.equal("○", sign)
+    assert.are.equal("█", sign)
     assert.are.equal("SageFsCovNotCovered", hl)
   end)
 
@@ -247,7 +247,7 @@ describe("annotations.format_coverage_sign", function()
     local sign, hl = annotations.format_coverage_sign({
       detail = { Case = "Covered", Fields = { 1, { Case = "AllPassing" } } }
     })
-    assert.are.equal("▸", sign)
+    assert.are.equal("│", sign)
     assert.are.equal("SageFsCovered", hl)
   end)
 end)

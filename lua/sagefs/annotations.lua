@@ -213,10 +213,10 @@ function M.format_coverage_sign(cov)
     if health and health.Case == "SomeFailing" then
       return "◐", "SageFsCovPartial"
     else
-      return "▸", "SageFsCovered"
+      return "│", "SageFsCovered"
     end
   elseif detail.Case == "NotCovered" then
-    return "○", "SageFsCovNotCovered"
+    return "█", "SageFsCovNotCovered"
   elseif detail.Case == "Pending" then
     return "·", "SageFsCovPending"
   end

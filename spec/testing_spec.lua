@@ -1820,3 +1820,75 @@ describe("testing.handle_test_summary", function()
     assert.are.equal(42, s.summary.total)
   end)
 end)
+
+-- ─── filter_by_covering_file: tests via coverage annotations ─────────────────
+
+describe("testing.filter_by_covering_file", function()
+  local annotations = require("sagefs.annotations")
+
+  it("returns tests that cover a production file", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "pong test 1",
+      status = "Passed", origin = { Case = "SourceMapped", Fields = { "/tests/PongTests.fs", 10 } },
+    })
+    s = testing.update_test(s, {
+      testId = "t2", displayName = "pong test 2",
+      status = "Failed", origin = { Case = "SourceMapped", Fields = { "/tests/PongTests.fs", 20 } },
+    })
+    -- annotations state with CoveringTestIds pointing back to t1, t2
+    local ann_state = annotations.new()
+    ann_state = annotations.handle_file_annotations(ann_state, {
+      FilePath = "/src/Pong.fs",
+      CoverageAnnotations = {
+        { Line = 5, Detail = "Covered", CoveringTestIds = { "t1" } },
+        { Line = 10, Detail = "Covered", CoveringTestIds = { "t1", "t2" } },
+        { Line = 15, Detail = "NotCovered", CoveringTestIds = {} },
+      },
+    })
+
+    local results = testing.filter_by_covering_file(s, ann_state, "/src/Pong.fs")
+    assert.are.equal(2, #results)
+    local ids = {}
+    for _, r in ipairs(results) do ids[r.testId] = true end
+    assert.is_true(ids["t1"])
+    assert.is_true(ids["t2"])
+  end)
+
+  it("returns empty when no coverage annotations exist", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "some test",
+      status = "Passed", origin = { Case = "SourceMapped", Fields = { "/tests/Tests.fs", 1 } },
+    })
+    local ann_state = annotations.new()
+    local results = testing.filter_by_covering_file(s, ann_state, "/src/Unknown.fs")
+    assert.are.equal(0, #results)
+  end)
+
+  it("returns empty when annotations_state is nil", function()
+    local s = testing.new()
+    local results = testing.filter_by_covering_file(s, nil, "/src/Foo.fs")
+    assert.are.equal(0, #results)
+  end)
+
+  it("deduplicates test ids across coverage lines", function()
+    local s = testing.new()
+    s = testing.update_test(s, {
+      testId = "t1", displayName = "test 1",
+      status = "Passed", origin = { Case = "SourceMapped", Fields = { "/tests/T.fs", 1 } },
+    })
+    local ann_state = annotations.new()
+    ann_state = annotations.handle_file_annotations(ann_state, {
+      FilePath = "/src/Prod.fs",
+      CoverageAnnotations = {
+        { Line = 1, Detail = "Covered", CoveringTestIds = { "t1" } },
+        { Line = 2, Detail = "Covered", CoveringTestIds = { "t1" } },
+        { Line = 3, Detail = "Covered", CoveringTestIds = { "t1" } },
+      },
+    })
+    local results = testing.filter_by_covering_file(s, ann_state, "/src/Prod.fs")
+    assert.are.equal(1, #results)
+    assert.are.equal("t1", results[1].testId)
+  end)
+end)

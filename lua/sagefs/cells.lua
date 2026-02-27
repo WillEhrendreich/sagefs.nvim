@@ -204,4 +204,110 @@ function M.find_boundaries_treesitter(nodes)
   return boundaries
 end
 
+--- Check if a buffer uses manual cell delimiters (any valid ;; boundary exists)
+---@param lines string[]
+---@return boolean
+function M.has_manual_cells(lines)
+  return #M.find_boundaries(lines) > 0
+end
+
+--- Determine the cell detection mode: "manual" if ;; delimiters exist, "inferred" otherwise
+---@param lines string[]
+---@return "manual"|"inferred"
+function M.cell_mode(lines)
+  return M.has_manual_cells(lines) and "manual" or "inferred"
+end
+
+--- Find cell using auto-detection: manual mode (;;) or inferred (tree-sitter).
+--- This is the primary entry point for eval_cell — it picks the right strategy.
+---@param buf number buffer handle
+---@param lines string[] buffer lines
+---@param cursor_line number 1-indexed
+---@return {start_line: number, end_line: number, text: string}|nil
+function M.find_cell_auto(buf, lines, cursor_line)
+  if #lines == 0 then return nil end
+  if cursor_line < 1 or cursor_line > #lines then return nil end
+
+  local mode = M.cell_mode(lines)
+  if mode == "manual" then
+    return M.find_cell(lines, cursor_line)
+  end
+
+  -- Inferred mode: use tree-sitter
+  local ok, ts_cells = pcall(require, "sagefs.treesitter_cells")
+  if not ok then
+    -- Fallback: whole file as one cell (same as original no-;; behavior)
+    return M.find_cell(lines, cursor_line)
+  end
+
+  local cell_info = ts_cells.find_enclosing_cell(buf, cursor_line)
+  if not cell_info then
+    -- Cursor on a non-cell line (comment, blank, module declaration)
+    -- Fallback: whole file
+    return M.find_cell(lines, cursor_line)
+  end
+
+  -- Build text from the detected range
+  local cell_lines = {}
+  for i = cell_info.start_line, cell_info.end_line do
+    table.insert(cell_lines, lines[i])
+  end
+
+  return {
+    start_line = cell_info.start_line,
+    end_line = cell_info.end_line,
+    text = table.concat(cell_lines, "\n"),
+  }
+end
+
+--- Auto-select find_all_cells: manual uses ;;-based, inferred uses tree-sitter.
+---@param buf number buffer handle
+---@param lines string[] buffer lines
+---@return {id: number, start_line: number, end_line: number, text: string}[]
+function M.find_all_cells_auto(buf, lines)
+  if #lines == 0 then return {} end
+
+  local mode = M.cell_mode(lines)
+  if mode == "manual" then
+    return M.find_all_cells(lines)
+  end
+
+  local ok, ts_cells = pcall(require, "sagefs.treesitter_cells")
+  if not ok then
+    return M.find_all_cells(lines)
+  end
+
+  local ts_results = ts_cells.find_all_cells(buf)
+  local result = {}
+  for _, info in ipairs(ts_results) do
+    local cell_lines = {}
+    for i = info.start_line, info.end_line do
+      table.insert(cell_lines, lines[i] or "")
+    end
+    table.insert(result, {
+      id = info.id,
+      start_line = info.start_line,
+      end_line = info.end_line,
+      text = table.concat(cell_lines, "\n"),
+    })
+  end
+  return result
+end
+
+--- Get module context (opens) for a cell in inferred mode.
+--- Returns nil in manual mode or if tree-sitter unavailable.
+---@param buf number buffer handle
+---@param lines string[] buffer lines
+---@param cursor_line number 1-indexed
+---@return string|nil opens F# open statements to prepend
+function M.get_module_context(buf, lines, cursor_line)
+  local mode = M.cell_mode(lines)
+  if mode == "manual" then return nil end
+
+  local ok, ts_cells = pcall(require, "sagefs.treesitter_cells")
+  if not ok then return nil end
+
+  return ts_cells.get_module_context(buf, cursor_line)
+end
+
 return M

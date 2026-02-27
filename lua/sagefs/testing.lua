@@ -421,6 +421,47 @@ function M.filter_by_file(state, file)
   return results
 end
 
+--- Filter tests that cover a given production file.
+--- Uses CoveringTestIds from coverage annotations to find tests that exercise the file.
+---@param state table testing state
+---@param annotations_state table annotations state (from annotations module)
+---@param file string production file path
+---@return table[] list of test entries that cover this file
+function M.filter_by_covering_file(state, annotations_state, file)
+  local results = {}
+  if not file or not annotations_state then return results end
+
+  local annotations = require("sagefs.annotations")
+  local file_ann = annotations.get_file(annotations_state, file)
+  if not file_ann then return results end
+
+  local cov_anns = file_ann.CoverageAnnotations or file_ann.coverageAnnotations
+  if not cov_anns then return results end
+
+  -- Collect unique test IDs from all coverage annotations
+  local test_ids = {}
+  for _, cov in ipairs(cov_anns) do
+    local ids = cov.CoveringTestIds or cov.coveringTestIds
+    if ids then
+      for _, tid in ipairs(ids) do
+        test_ids[tid] = true
+      end
+    end
+  end
+
+  -- Look up each test by ID
+  for id in pairs(test_ids) do
+    local test = state.tests[id]
+    if test then
+      local entry = {}
+      for k, v in pairs(test) do entry[k] = v end
+      entry.testId = id
+      table.insert(results, entry)
+    end
+  end
+  return results
+end
+
 --- Get all tests as a flat list
 ---@param state table
 ---@return table[] list of test entries
@@ -1172,11 +1213,16 @@ end
 ---@param state table testing state
 ---@param scope table {kind="file"|"module"|"all", path?, prefix?}
 ---@return table[] list of test entries with testId, displayName, fullName, status, file, line
-function M.filter_by_scope(state, scope)
+function M.filter_by_scope(state, scope, annotations_state)
   if scope.kind == "all" then
     return M.all_tests(state)
   elseif scope.kind == "file" then
-    return M.filter_by_file(state, scope.path)
+    local results = M.filter_by_file(state, scope.path)
+    -- Fallback: if no source-mapped tests, try covering tests from annotations
+    if #results == 0 and annotations_state then
+      results = M.filter_by_covering_file(state, annotations_state, scope.path)
+    end
+    return results
   elseif scope.kind == "module" then
     if not scope.prefix then return {} end
     local results = {}
@@ -1211,8 +1257,8 @@ end
 ---@param state table testing state
 ---@param scope table {kind, path?, prefix?}
 ---@return table[]
-function M.format_scoped_panel_entries(state, scope)
-  local filtered = M.filter_by_scope(state, scope)
+function M.format_scoped_panel_entries(state, scope, annotations_state)
+  local filtered = M.filter_by_scope(state, scope, annotations_state)
 
   -- Build a proxy state for summary computation
   local proxy = M.new()

@@ -29,11 +29,19 @@ function M.parse_exec_response(json_str)
     return { ok = false, error = "invalid JSON: " .. tostring(json_str) }
   end
 
+  local result
   if data.success then
-    return { ok = true, output = data.result or "" }
+    result = { ok = true, output = data.result or "" }
   else
-    return { ok = false, error = data.result or data.error or "unknown error" }
+    result = { ok = false, error = data.result or data.error or "unknown error" }
   end
+
+  -- Pass through structured diagnostics if present (from JSON format)
+  if data.diagnostics and type(data.diagnostics) == "table" then
+    result.diagnostics = data.diagnostics
+  end
+
+  return result
 end
 
 --- Format result for inline extmark (single line, truncated)
@@ -238,6 +246,57 @@ function M.format_status_report(info)
   end
 
   return lines
+end
+
+-- ─── FSI Binding Tracker ──────────────────────────────────────────────────────
+
+--- Parse FSI output for binding declarations.
+--- FSI output format: "val <name> : <type>" or "val <name> : <type> = <value>"
+---@param output string FSI result text
+---@return table[] list of {name, type_sig}
+function M.parse_bindings(output)
+  local bindings = {}
+  if not output then return bindings end
+  for line in output:gmatch("[^\n]+") do
+    local name, type_sig = line:match("^val%s+(%S+)%s*:%s*(.+)")
+    if name then
+      -- Strip trailing " = <value>" from type_sig
+      local ts = type_sig:match("^(.-)%s*=") or type_sig
+      table.insert(bindings, { name = name, type_sig = ts:match("^%s*(.-)%s*$") })
+    end
+  end
+  return bindings
+end
+
+--- Create a new binding tracker state.
+---@return table {bindings: table<string, {type_sig, count}>}
+function M.new_binding_tracker()
+  return { bindings = {} }
+end
+
+--- Update tracker with new bindings from an eval result.
+--- Returns the updated tracker and a list of shadowed bindings.
+---@param tracker table binding tracker state
+---@param output string FSI output text
+---@return table tracker, table[] shadows [{name, old_type, new_type}]
+function M.update_bindings(tracker, output)
+  local parsed = M.parse_bindings(output)
+  local shadows = {}
+  for _, b in ipairs(parsed) do
+    local existing = tracker.bindings[b.name]
+    if existing then
+      table.insert(shadows, {
+        name = b.name,
+        old_type = existing.type_sig,
+        new_type = b.type_sig,
+      })
+      existing.type_sig = b.type_sig
+      existing.count = existing.count + 1
+    else
+      tracker.bindings[b.name] = { type_sig = b.type_sig, count = 1 }
+    end
+  end
+  return tracker, shadows
 end
 
 return M

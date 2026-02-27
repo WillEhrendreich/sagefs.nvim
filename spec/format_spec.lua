@@ -338,3 +338,80 @@ describe("format_status_report", function()
     assert.is_truthy(joined:find("running") or joined:find("1234"))
   end)
 end)
+
+
+-- ─── parse_bindings: extract FSI val declarations ────────────────────────────
+
+describe("format.parse_bindings", function()
+  it("parses a simple val binding", function()
+    local bs = format.parse_bindings("val x : int = 42")
+    assert.are.equal(1, #bs)
+    assert.are.equal("x", bs[1].name)
+    assert.are.equal("int", bs[1].type_sig)
+  end)
+
+  it("parses multiple bindings", function()
+    local bs = format.parse_bindings("val x : int = 42\nval name : string = \"hello\"")
+    assert.are.equal(2, #bs)
+    assert.are.equal("x", bs[1].name)
+    assert.are.equal("name", bs[2].name)
+    assert.are.equal("string", bs[2].type_sig)
+  end)
+
+  it("parses binding without value", function()
+    local bs = format.parse_bindings("val myFunc : int -> string")
+    assert.are.equal(1, #bs)
+    assert.are.equal("myFunc", bs[1].name)
+    assert.are.equal("int -> string", bs[1].type_sig)
+  end)
+
+  it("returns empty for non-binding output", function()
+    local bs = format.parse_bindings("it = 42")
+    assert.are.equal(0, #bs)
+  end)
+
+  it("returns empty for nil", function()
+    local bs = format.parse_bindings(nil)
+    assert.are.equal(0, #bs)
+  end)
+end)
+
+-- ─── binding tracker: detect shadowing ───────────────────────────────────────
+
+describe("format.update_bindings", function()
+  it("returns no shadows on first binding", function()
+    local tracker = format.new_binding_tracker()
+    tracker, shadows = format.update_bindings(tracker, "val x : int = 42")
+    assert.are.equal(0, #shadows)
+    assert.are.equal("int", tracker.bindings["x"].type_sig)
+  end)
+
+  it("detects shadow on rebinding", function()
+    local tracker = format.new_binding_tracker()
+    tracker = format.update_bindings(tracker, "val x : int = 42")
+    local shadows
+    tracker, shadows = format.update_bindings(tracker, "val x : int = 99")
+    assert.are.equal(1, #shadows)
+    assert.are.equal("x", shadows[1].name)
+    assert.are.equal("int", shadows[1].old_type)
+    assert.are.equal("int", shadows[1].new_type)
+  end)
+
+  it("detects shadow with type change", function()
+    local tracker = format.new_binding_tracker()
+    tracker = format.update_bindings(tracker, "val x : int = 42")
+    local shadows
+    tracker, shadows = format.update_bindings(tracker, "val x : string = \"hello\"")
+    assert.are.equal(1, #shadows)
+    assert.are.equal("int", shadows[1].old_type)
+    assert.are.equal("string", shadows[1].new_type)
+  end)
+
+  it("tracks count on repeated shadowing", function()
+    local tracker = format.new_binding_tracker()
+    tracker = format.update_bindings(tracker, "val x : int = 1")
+    tracker = format.update_bindings(tracker, "val x : int = 2")
+    tracker = format.update_bindings(tracker, "val x : int = 3")
+    assert.are.equal(3, tracker.bindings["x"].count)
+  end)
+end)

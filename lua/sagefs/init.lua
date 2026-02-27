@@ -49,6 +49,7 @@ M.density_state = density.new()
 M.daemon_state = daemon.new()
 M.active_session = nil
 M.session_list = {}
+M.binding_tracker = format.new_binding_tracker()
 
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
@@ -361,6 +362,39 @@ end
 local function handle_result(buf, cell_id, result)
   if result.ok then
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output)
+    -- Clear FSI diagnostics on success
+    vim.schedule(function()
+      local fsi_ns = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics")
+      vim.diagnostic.set(fsi_ns, buf, {})
+    end)
+    -- Shadow detection: track bindings and show warnings
+    local shadows
+    M.binding_tracker, shadows = format.update_bindings(M.binding_tracker, result.output)
+    if #shadows > 0 then
+      vim.schedule(function()
+        local shadow_ns = vim.api.nvim_create_namespace("sagefs_shadow_warnings")
+        -- Find the cell end line for virtual text placement
+        local cell = M.state.cells[cell_id]
+        local line = cell and cell.end_line or 0
+        if line > 0 then
+          for _, s in ipairs(shadows) do
+            local msg = s.old_type == s.new_type
+              and string.format("⚠ shadowed: %s (was already defined)", s.name)
+              or string.format("⚠ shadowed: %s (was %s, now %s)", s.name, s.old_type, s.new_type)
+            vim.api.nvim_buf_set_extmark(buf, shadow_ns, line - 1, 0, {
+              virt_text = {{ msg, "DiagnosticWarn" }},
+              virt_text_pos = "eol",
+            })
+          end
+          -- Auto-clear after 5 seconds
+          vim.defer_fn(function()
+            if vim.api.nvim_buf_is_valid(buf) then
+              vim.api.nvim_buf_clear_namespace(buf, shadow_ns, 0, -1)
+            end
+          end, 5000)
+        end
+      end)
+    end
   else
     M.state = model.set_cell_state(M.state, cell_id, "error", result.error)
   end
@@ -373,11 +407,33 @@ local function post_exec(code, buf, cell_id)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
-    body = { code = code, working_directory = vim.fn.getcwd() },
+    body = { code = code, working_directory = vim.fn.getcwd(), format = "json" },
     timeout = 60,
     callback = function(ok, raw)
       if ok then
         local result = format.parse_exec_response(raw)
+        -- Set FSI diagnostics via vim.diagnostic if structured diagnostics present
+        if result.diagnostics and #result.diagnostics > 0 then
+          vim.schedule(function()
+            local fsi_diag_ns = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics")
+            local vim_diags = {}
+            for _, d in ipairs(result.diagnostics) do
+              local severity = vim.diagnostic.severity.ERROR
+              if d.severity == "warning" then severity = vim.diagnostic.severity.WARN
+              elseif d.severity == "info" then severity = vim.diagnostic.severity.INFO end
+              table.insert(vim_diags, {
+                lnum = (d.startLine or 1) - 1,
+                col = d.startColumn or 0,
+                end_lnum = d.endLine and (d.endLine - 1) or nil,
+                end_col = d.endColumn,
+                message = d.message or "unknown error",
+                severity = severity,
+                source = "sagefs-fsi",
+              })
+            end
+            vim.diagnostic.set(fsi_diag_ns, buf, vim_diags)
+          end)
+        end
         handle_result(buf, cell_id, result)
       else
         handle_result(buf, cell_id, { ok = false, error = "HTTP request failed" })
@@ -404,7 +460,7 @@ function M.eval_cell()
   local cursor_line = cursor[1]
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local cell = cells.find_cell(lines, cursor_line)
+  local cell = cells.find_cell_auto(buf, lines, cursor_line)
 
   if not cell then
     notify("No cell found at cursor", vim.log.levels.WARN)
@@ -417,7 +473,13 @@ function M.eval_cell()
     return
   end
 
-  local all = cells.find_all_cells(lines)
+  -- Prepend module context (opens) in inferred mode
+  local ctx = cells.get_module_context(buf, lines, cell.start_line)
+  if ctx then
+    code = ctx .. "\n" .. code
+  end
+
+  local all = cells.find_all_cells_auto(buf, lines)
   local cell_id = 1
   for _, c in ipairs(all) do
     if c.start_line == cell.start_line then
@@ -438,7 +500,7 @@ function M.eval_cell_and_advance()
   local cursor_line = cursor[1]
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-  local cell = cells.find_cell(lines, cursor_line)
+  local cell = cells.find_cell_auto(buf, lines, cursor_line)
   if not cell then
     notify("No cell found at cursor", vim.log.levels.WARN)
     return
@@ -450,7 +512,13 @@ function M.eval_cell_and_advance()
     return
   end
 
-  local all = cells.find_all_cells(lines)
+  -- Prepend module context (opens) in inferred mode
+  local ctx = cells.get_module_context(buf, lines, cell.start_line)
+  if ctx then
+    code = ctx .. "\n" .. code
+  end
+
+  local all = cells.find_all_cells_auto(buf, lines)
   local cell_id = 1
   for _, c in ipairs(all) do
     if c.start_line == cell.start_line then
@@ -489,6 +557,29 @@ function M.eval_selection()
 
   M.state = model.set_cell_state(M.state, 0, "running")
   render.flash_cell(buf, start_pos[2], end_pos[2])
+  post_exec(code, buf, 0)
+end
+
+function M.eval_current_line()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line_nr = cursor[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)
+  local text = lines[1]
+
+  if not text or text:match("^%s*$") then
+    notify("Current line is empty", vim.log.levels.WARN)
+    return
+  end
+
+  local code = cells.prepare_code(text)
+  if not code then
+    notify("Current line is empty", vim.log.levels.WARN)
+    return
+  end
+
+  M.state = model.set_cell_state(M.state, 0, "running")
+  render.flash_cell(buf, line_nr, line_nr)
   post_exec(code, buf, 0)
 end
 

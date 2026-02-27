@@ -48,8 +48,8 @@ describe("format_coverage_sign with BranchCoverage", function()
       BranchCoverage = nil,
     }
     local sign, hl = annotations.format_coverage_sign(cov)
-    -- Should use the old logic: Covered + AllPassing = "▸", "SageFsCovered"
-    assert.are.equal("▸", sign)
+    -- Should use the new logic: Covered + AllPassing = "│", "SageFsCovered"
+    assert.are.equal("│", sign)
     assert.are.equal("SageFsCovered", hl)
   end)
 
@@ -61,7 +61,7 @@ describe("format_coverage_sign with BranchCoverage", function()
       BranchCoverage = vim.NIL,
     }
     local sign, hl = annotations.format_coverage_sign(cov)
-    assert.are.equal("▸", sign)
+    assert.are.equal("│", sign)
     assert.are.equal("SageFsCovered", hl)
   end)
 

@@ -34,10 +34,10 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsTestDetected", { fg = "#585b70" })
   vim.api.nvim_set_hl(0, "SageFsTestDisabled", { fg = "#585b70" })
   vim.api.nvim_set_hl(0, "SageFsTestSkipped", { fg = "#585b70" })
-  -- Coverage highlights
-  vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#a6e3a1" })
+  -- Coverage highlights (covered = quiet, uncovered = loud)
+  vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#587358" })
   vim.api.nvim_set_hl(0, "SageFsUncovered", { fg = "#f38ba8" })
-  vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { fg = "#f38ba8" })
   vim.api.nvim_set_hl(0, "SageFsCovPending", { fg = "#45475a" })
   vim.api.nvim_set_hl(0, "SageFsCovFailing", { fg = "#f38ba8" })
   vim.api.nvim_set_hl(0, "SageFsCovPartial", { fg = "#fab387" })
@@ -102,7 +102,7 @@ function M.render_all(buf, state)
   M.clear_extmarks(buf)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local all_cells = cells.find_all_cells(lines)
+  local all_cells = cells.find_all_cells_auto(buf, lines)
 
   for _, cell in ipairs(all_cells) do
     M.render_cell(buf, cell.end_line, cell.id, state)

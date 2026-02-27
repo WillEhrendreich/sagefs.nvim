@@ -593,3 +593,102 @@ describe("cells.find_next_cell_start", function()
     assert.is_nil(next_start)
   end)
 end)
+
+-- ─── has_manual_cells: detect whether buffer uses ;; delimiters ──────────────
+
+describe("cells.has_manual_cells", function()
+  it("returns false for empty buffer", function()
+    assert.is_false(cells.has_manual_cells({}))
+  end)
+
+  it("returns false when no ;; present", function()
+    local lines = {
+      "module Pong",
+      "let x = 1",
+      "let y = 2",
+    }
+    assert.is_false(cells.has_manual_cells(lines))
+  end)
+
+  it("returns true when ;; present at end of line", function()
+    local lines = {
+      "let x = 1;;",
+      "let y = 2",
+    }
+    assert.is_true(cells.has_manual_cells(lines))
+  end)
+
+  it("returns true when standalone ;; line exists", function()
+    local lines = {
+      "let x = 1",
+      ";;",
+      "let y = 2",
+    }
+    assert.is_true(cells.has_manual_cells(lines))
+  end)
+
+  it("ignores ;; inside string literals", function()
+    local lines = {
+      'let s = "hello;;"',
+      "let y = 2",
+    }
+    assert.is_false(cells.has_manual_cells(lines))
+  end)
+
+  it("ignores ;; inside comments", function()
+    local lines = {
+      "// let x = 1;;",
+      "let y = 2",
+    }
+    assert.is_false(cells.has_manual_cells(lines))
+  end)
+
+  it("returns true when ;; appears alongside non-boundary lines", function()
+    local lines = {
+      "let x = 1",
+      "let y = 2;;",
+      "let z = 3",
+    }
+    assert.is_true(cells.has_manual_cells(lines))
+  end)
+end)
+
+-- ─── cell_mode: binary mode detection ────────────────────────────────────────
+
+describe("cells.cell_mode", function()
+  it("returns 'inferred' when no ;; present", function()
+    local lines = { "let x = 1", "let y = 2" }
+    assert.are.equal("inferred", cells.cell_mode(lines))
+  end)
+
+  it("returns 'manual' when ;; present", function()
+    local lines = { "let x = 1;;", "let y = 2" }
+    assert.are.equal("manual", cells.cell_mode(lines))
+  end)
+
+  it("returns 'inferred' for typical .fs file", function()
+    local lines = {
+      "module Pong",
+      "",
+      "open System",
+      "",
+      "let moveToward current target speed =",
+      "  let diff = target - current",
+      "  if abs diff < speed then target",
+      "  elif diff > 0.0 then current + speed",
+      "  else current - speed",
+    }
+    assert.are.equal("inferred", cells.cell_mode(lines))
+  end)
+
+  it("returns 'manual' for typical .fsx file with cells", function()
+    local lines = {
+      '#r "nuget: FSharp.Data"',
+      ";;",
+      "open FSharp.Data",
+      "let x = 1",
+      ";;",
+    }
+    assert.are.equal("manual", cells.cell_mode(lines))
+  end)
+end)
