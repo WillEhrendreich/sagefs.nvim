@@ -392,8 +392,9 @@ local function show_shadow_warnings(buf, cell_id, shadows)
 end
 
 local function handle_result(buf, cell_id, result)
+  local meta = { duration_ms = result.duration_ms }
   if result.ok then
-    M.state = model.set_cell_state(M.state, cell_id, "success", result.output)
+    M.state = model.set_cell_state(M.state, cell_id, "success", result.output, meta)
     vim.schedule(function()
       vim.diagnostic.set(ns.fsi_diagnostics, buf, {})
     end)
@@ -403,7 +404,7 @@ local function handle_result(buf, cell_id, result)
       show_shadow_warnings(buf, cell_id, shadows)
     end
   else
-    M.state = model.set_cell_state(M.state, cell_id, "error", result.error)
+    M.state = model.set_cell_state(M.state, cell_id, "error", result.error, meta)
   end
   vim.schedule(function()
     render.render_all(buf, M.state)
@@ -411,14 +412,19 @@ local function handle_result(buf, cell_id, result)
 end
 
 local function post_exec(code, buf, cell_id)
+  local start_time = vim.loop.hrtime()
+  M.state = model.set_cell_state(M.state, cell_id, "running", nil)
+  vim.schedule(function() render.render_all(buf, M.state) end)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
     body = { code = code, working_directory = vim.fn.getcwd(), format = "json" },
     timeout = 60,
     callback = function(ok, raw)
+      local elapsed_ms = math.floor((vim.loop.hrtime() - start_time) / 1e6)
       if ok then
         local result = format.parse_exec_response(raw)
+        result.duration_ms = elapsed_ms
         -- Set FSI diagnostics via vim.diagnostic if structured diagnostics present
         if result.diagnostics and #result.diagnostics > 0 then
           vim.schedule(function()
@@ -442,7 +448,7 @@ local function post_exec(code, buf, cell_id)
         end
         handle_result(buf, cell_id, result)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed" })
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms })
       end
     end,
   })
@@ -947,7 +953,13 @@ function M.statusline()
   else
     local icon = M.state.status == "connected" and "⚡" or "💤"
     local cell_count = model.cell_count(M.state)
-    if cell_count > 0 then
+    local running = 0
+    for _, c in pairs(M.state.cells or {}) do
+      if c.status == "running" then running = running + 1 end
+    end
+    if running > 0 then
+      table.insert(parts, "⏳ SageFs [" .. cell_count .. "]")
+    elseif cell_count > 0 then
       table.insert(parts, icon .. " SageFs [" .. cell_count .. "]")
     else
       table.insert(parts, icon .. " SageFs")

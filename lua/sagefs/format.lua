@@ -44,8 +44,20 @@ function M.parse_exec_response(json_str)
   return result
 end
 
+--- Format a duration in milliseconds for human display.
+---@param ms number|nil Duration in milliseconds
+---@return string|nil Formatted string like "42ms" or "2.5s"
+function M.format_duration(ms)
+  if not ms or ms == 0 then return nil end
+  if ms < 1000 then
+    return string.format("%dms", ms)
+  else
+    return string.format("%.1fs", ms / 1000)
+  end
+end
+
 --- Format result for inline extmark (single line, truncated)
----@param result {ok: boolean, output: string?, error: string?}
+---@param result {ok: boolean, output: string?, error: string?, duration_ms: number?}
 ---@return {text: string, hl: string}
 function M.format_inline(result)
   local text, hl
@@ -92,6 +104,12 @@ function M.format_inline(result)
   -- Prefix with status indicator
   local prefix = result.ok and "→ " or "✖ "
   text = prefix .. text
+
+  -- Append duration if available
+  local dur = M.format_duration(result.duration_ms)
+  if dur then
+    text = text .. "  " .. dur
+  end
 
   return { text = text, hl = hl }
 end
@@ -156,9 +174,9 @@ function M.build_render_options(cell, cell_id)
   local is_ok = cell.status == "success" or is_stale
   local result
   if is_ok then
-    result = { ok = true, output = cell.output, stale = is_stale }
+    result = { ok = true, output = cell.output, stale = is_stale, duration_ms = cell.duration_ms }
   else
-    result = { ok = false, error = cell.output }
+    result = { ok = false, error = cell.output, duration_ms = cell.duration_ms }
   end
 
   local opts = {

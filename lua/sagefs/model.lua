@@ -54,8 +54,9 @@ end
 ---@param cell_id number
 ---@param status string "running"|"success"|"error"
 ---@param output string|nil
+---@param metadata table|nil Optional extra data (e.g. duration_ms)
 ---@return table
-function M.set_cell_state(m, cell_id, status, output)
+function M.set_cell_state(m, cell_id, status, output, metadata)
   if not status or not M.VALID_CELL_STATUSES[status] then
     error(string.format("invalid cell status: %s", tostring(status)))
   end
@@ -77,6 +78,7 @@ function M.set_cell_state(m, cell_id, status, output)
   m.cells[cell_id] = {
     status = status,
     output = output,
+    duration_ms = metadata and metadata.duration_ms or nil,
   }
   return m
 end

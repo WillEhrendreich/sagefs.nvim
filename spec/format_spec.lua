@@ -105,6 +105,40 @@ describe("format.format_inline", function()
     assert.is_falsy(result.text:find("\r"))
     assert.is_truthy(result.text:find("42"))
   end)
+
+  it("appends duration when duration_ms is present", function()
+    local result = format.format_inline({
+      ok = true, output = "val it: int = 42", duration_ms = 150,
+    })
+    assert.is_truthy(result.text:find("150ms"))
+  end)
+
+  it("formats sub-second durations in ms", function()
+    local result = format.format_inline({
+      ok = true, output = "val it: int = 42", duration_ms = 42,
+    })
+    assert.is_truthy(result.text:find("42ms"))
+  end)
+
+  it("formats multi-second durations with decimal seconds", function()
+    local result = format.format_inline({
+      ok = true, output = "val it: int = 42", duration_ms = 2500,
+    })
+    assert.is_truthy(result.text:find("2%.5s"))
+  end)
+
+  it("omits duration when nil", function()
+    local result = format.format_inline({ ok = true, output = "val it: int = 42" })
+    assert.is_falsy(result.text:find("ms"))
+    assert.is_falsy(result.text:find("%ds"))
+  end)
+
+  it("shows duration for errors too", function()
+    local result = format.format_inline({
+      ok = false, error = "type mismatch", duration_ms = 80,
+    })
+    assert.is_truthy(result.text:find("80ms"))
+  end)
 end)
 
 -- ─── format_virtual_lines: format result for virtual lines below ;; ──────────
@@ -428,5 +462,33 @@ describe("format.update_bindings", function()
     tracker = format.update_bindings(tracker, "val x : int = 2")
     tracker = format.update_bindings(tracker, "val x : int = 3")
     assert.are.equal(3, tracker.bindings["x"].count)
+  end)
+end)
+
+-- ─── format_duration: human-readable eval timing ─────────────────────────────
+
+describe("format.format_duration", function()
+  it("formats sub-second as milliseconds", function()
+    assert.are.equal("42ms", format.format_duration(42))
+  end)
+
+  it("formats exactly 1 second", function()
+    assert.are.equal("1.0s", format.format_duration(1000))
+  end)
+
+  it("formats multi-second with one decimal", function()
+    assert.are.equal("2.5s", format.format_duration(2500))
+  end)
+
+  it("formats large durations", function()
+    assert.are.equal("10.0s", format.format_duration(10000))
+  end)
+
+  it("returns nil for nil input", function()
+    assert.is_nil(format.format_duration(nil))
+  end)
+
+  it("returns nil for zero", function()
+    assert.is_nil(format.format_duration(0))
   end)
 end)
