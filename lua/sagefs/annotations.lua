@@ -172,11 +172,38 @@ end
 
 -- ─── Coverage Sign Formatting ────────────────────────────────────────────────
 
+--- Parse the BranchCoverage JSON object into a classification string.
+--- Returns "full", "partial", "none", or nil.
+---@param bc table|nil BranchCoverage field from CoverageLineAnnotation
+---@return string|nil kind, number|nil covered, number|nil total
+local function parse_branch_coverage(bc)
+  if bc == nil or bc == vim.NIL then return nil end
+  if bc.FullyCovered then return "full" end
+  if bc.PartiallyCovered then
+    local p = bc.PartiallyCovered
+    return "partial", p.covered, p.total
+  end
+  if bc.NotCovered then return "none" end
+  return nil
+end
+
 --- Format a coverage annotation for gutter display
 --- Extracts the CoverageStatus DU and returns sign text + highlight group
----@param cov table CoverageLineAnnotation {Line, Detail, CoveringTestIds}
+--- When BranchCoverage is present, it takes priority over Detail.
+---@param cov table CoverageLineAnnotation {Line, Detail, CoveringTestIds, BranchCoverage}
 ---@return string|nil sign_text, string|nil sign_hl
 function M.format_coverage_sign(cov)
+  -- Branch coverage takes priority when present
+  local bkind = parse_branch_coverage(cov.BranchCoverage)
+  if bkind == "full" then
+    return "▐", "SageFsBranchFull"
+  elseif bkind == "partial" then
+    return "◐", "SageFsBranchPartial"
+  elseif bkind == "none" then
+    return "▌", "SageFsBranchNone"
+  end
+
+  -- Fall back to test-level Detail
   local detail = cov.Detail or cov.detail
   if not detail then return nil, nil end
 
@@ -194,6 +221,18 @@ function M.format_coverage_sign(cov)
     return "·", "SageFsCovPending"
   end
   return nil, nil
+end
+
+--- Format branch coverage as EOL text (e.g., "2/3").
+--- Returns nil when no partial data is worth showing.
+---@param cov table CoverageLineAnnotation
+---@return string|nil text
+function M.format_branch_eol(cov)
+  local kind, covered, total = parse_branch_coverage(cov.BranchCoverage)
+  if kind == "partial" and covered and total then
+    return string.format("%d/%d", covered, total)
+  end
+  return nil
 end
 
 -- ─── Clear ───────────────────────────────────────────────────────────────────

@@ -41,6 +41,10 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsCovPending", { fg = "#45475a" })
   vim.api.nvim_set_hl(0, "SageFsCovFailing", { fg = "#f38ba8" })
   vim.api.nvim_set_hl(0, "SageFsCovPartial", { fg = "#fab387" })
+  -- Branch coverage highlights (shape + color for accessibility)
+  vim.api.nvim_set_hl(0, "SageFsBranchFull", { fg = "#a6e3a1" })    -- green ▐
+  vim.api.nvim_set_hl(0, "SageFsBranchPartial", { fg = "#f9e2af" }) -- yellow ◐
+  vim.api.nvim_set_hl(0, "SageFsBranchNone", { fg = "#f38ba8" })    -- red ▌
   -- CodeLens highlights
   vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
   vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
