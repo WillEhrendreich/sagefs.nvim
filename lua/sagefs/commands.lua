@@ -225,16 +225,55 @@ function M.register_commands(plugin, helpers)
     end)
   end, { desc = "Configure test run policies" })
 
-  -- ─── Persistent Test Panel ─────────────────────────────────────────────────
+  -- ─── Persistent Test Panel (scope-filtered) ──────────────────────────────────
 
   local test_panel_buf = nil
   local test_panel_win = nil
   local test_panel_entries = {}
+  local test_panel_scope_kind = "file"  -- default operational scope
+  local test_panel_source_file = nil    -- filepath of last active .fs buffer
+  local test_panel_module_prefix = nil  -- derived from source_file
+
+  --- Derive module prefix from a file path.
+  --- Heuristic: basename without extension, prepended with common namespace.
+  --- E.g. "C:\SageFs\EditorTests.fs" → nil (we use fullName prefix matching,
+  --- which needs the actual namespace. We'll extract from first test match.)
+  local function derive_module_prefix(state, filepath)
+    if not filepath then return nil end
+    -- Find any test in this file and extract its top-level module from fullName
+    -- Use testing.filter_by_file which handles path separator normalization
+    local file_tests = testing.filter_by_file(state, filepath)
+    for _, test in ipairs(file_tests) do
+      if test.fullName then
+        -- fullName = "Ns.Module.binding/group/test" → extract "Ns.Module"
+        local prefix = test.fullName:match("^([^/]+)")
+        if prefix then
+          -- Strip trailing binding: "Ns.Module.binding" → "Ns.Module"
+          return prefix:match("^(.+)%.[^%.]+$") or prefix
+        end
+      end
+    end
+    return nil
+  end
+
+  --- Build the current scope table from panel state
+  local function build_panel_scope()
+    if test_panel_scope_kind == "file" then
+      return { kind = "file", path = test_panel_source_file }
+    elseif test_panel_scope_kind == "module" then
+      return { kind = "module", prefix = test_panel_module_prefix }
+    else
+      return { kind = "all" }
+    end
+  end
 
   local function update_test_panel()
     if not test_panel_buf or not vim.api.nvim_buf_is_valid(test_panel_buf) then return end
     if not test_panel_win or not vim.api.nvim_win_is_valid(test_panel_win) then return end
-    test_panel_entries = testing.format_panel_entries(plugin.testing_state)
+
+    local scope = build_panel_scope()
+    test_panel_entries = testing.format_scoped_panel_entries(plugin.testing_state, scope)
+
     local lines = {}
     -- Show poll-based summary when we have summary but no individual tests
     local s = plugin.testing_state.summary
@@ -260,12 +299,36 @@ function M.register_commands(plugin, helpers)
     vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", false)
   end
 
+  --- Set scope kind and refresh
+  local function set_panel_scope(kind)
+    test_panel_scope_kind = kind
+    -- Recompute module prefix when switching to module scope
+    if kind == "module" then
+      test_panel_module_prefix = derive_module_prefix(plugin.testing_state, test_panel_source_file)
+    end
+    update_test_panel()
+  end
+
   vim.api.nvim_create_user_command("SageFsTestPanel", function()
-    -- Toggle: close if open
+    -- Toggle: close if open (guard against E444 if it's the last window)
     if test_panel_win and vim.api.nvim_win_is_valid(test_panel_win) then
-      vim.api.nvim_win_close(test_panel_win, true)
+      if #vim.api.nvim_tabpage_list_wins(0) > 1 then
+        vim.api.nvim_win_close(test_panel_win, true)
+      else
+        vim.api.nvim_win_set_buf(test_panel_win, vim.api.nvim_create_buf(true, false))
+      end
       test_panel_win = nil
       return
+    end
+    -- Capture source file from current buffer before creating panel
+    local cur_file = vim.fn.expand("%:p")
+    if cur_file:match("%.fs$") or cur_file:match("%.fsx$") then
+      test_panel_source_file = cur_file
+      test_panel_module_prefix = derive_module_prefix(plugin.testing_state, cur_file)
+    end
+    -- If no .fs context yet, default to all scope
+    if not test_panel_source_file then
+      test_panel_scope_kind = "all"
     end
     -- Create scratch buffer
     test_panel_buf = vim.api.nvim_create_buf(false, true)
@@ -277,13 +340,22 @@ function M.register_commands(plugin, helpers)
       local row = vim.api.nvim_win_get_cursor(0)[1]
       local entry = test_panel_entries[row]
       if not entry or not entry.file then return end
-      -- Jump to source in the previous window
       vim.cmd("wincmd p")
       vim.cmd.edit(entry.file)
       if entry.line then
         vim.api.nvim_win_set_cursor(0, { entry.line, 0 })
       end
     end, { buffer = test_panel_buf, desc = "Jump to test source" })
+    -- Buffer-local scope keymaps
+    vim.keymap.set("n", "f", function() set_panel_scope("file") end,
+      { buffer = test_panel_buf, desc = "Filter: file scope" })
+    vim.keymap.set("n", "m", function() set_panel_scope("module") end,
+      { buffer = test_panel_buf, desc = "Filter: module scope" })
+    vim.keymap.set("n", "a", function() set_panel_scope("all") end,
+      { buffer = test_panel_buf, desc = "Filter: all tests" })
+    vim.keymap.set("n", "<Tab>", function()
+      set_panel_scope(testing.next_scope(test_panel_scope_kind))
+    end, { buffer = test_panel_buf, desc = "Cycle filter scope" })
     -- Open in vertical split
     vim.cmd("botright vsplit")
     test_panel_win = vim.api.nvim_get_current_win()
@@ -310,6 +382,23 @@ function M.register_commands(plugin, helpers)
       end,
     })
   end
+
+  -- Track source buffer: when user enters an F# buffer, update panel context
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = panel_group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function(args)
+      local filepath = vim.api.nvim_buf_get_name(args.buf)
+      if filepath and filepath ~= "" then
+        test_panel_source_file = filepath
+        test_panel_module_prefix = derive_module_prefix(plugin.testing_state, filepath)
+        -- Only refresh if scope depends on file context
+        if test_panel_scope_kind ~= "all" then
+          vim.schedule(update_test_panel)
+        end
+      end
+    end,
+  })
 
   -- ─── Tests Here (current file) ─────────────────────────────────────────────
 

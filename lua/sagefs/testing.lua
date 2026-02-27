@@ -74,6 +74,20 @@ function M.new()
   }
 end
 
+--- Normalize file path separators: try original, then flipped slashes.
+--- Handles Windows daemon (forward slashes) vs Neovim buffer names (backslashes)
+---@param file_index table the _file_index map
+---@param file string the file path to look up
+---@return table|nil the id_set if found
+local function resolve_file_index(file_index, file)
+  if not file_index or not file then return nil end
+  local id_set = file_index[file]
+  if id_set then return id_set end
+  local alt = file:gsub("\\", "/")
+  if alt == file then alt = file:gsub("/", "\\") end
+  return file_index[alt]
+end
+
 -- ─── Toggle ──────────────────────────────────────────────────────────────────
 
 --- Set live testing enabled or disabled
@@ -378,7 +392,7 @@ end
 function M.filter_by_file(state, file)
   local results = {}
   if not file then return results end
-  local id_set = state._file_index and state._file_index[file]
+  local id_set = resolve_file_index(state._file_index, file)
   if not id_set then return results end
   for id in pairs(id_set) do
     local test = state.tests[id]
@@ -543,7 +557,7 @@ end
 function M.to_diagnostics(state, file)
   if not file then return {} end
   local diags = {}
-  local id_set = state._file_index and state._file_index[file]
+  local id_set = resolve_file_index(state._file_index, file)
   if not id_set then return diags end
   for id in pairs(id_set) do
     local test = state.tests[id]
@@ -767,7 +781,7 @@ local status_to_icon = {
 ---@return table[] annotations [{line, icon, tooltip}]
 function M.annotations_for_file(state, file)
   local anns = {}
-  local id_set = state._file_index and state._file_index[file]
+  local id_set = resolve_file_index(state._file_index, file)
   if not id_set then return anns end
   for id in pairs(id_set) do
     local test = state.tests[id]
@@ -1096,6 +1110,133 @@ function M.format_file_panel_content(state, filepath)
   local proxy = M.new()
   proxy.tests = filtered
   return M.format_panel_content(proxy)
+end
+
+-- ─── Filter Scopes ──────────────────────────────────────────────────────────
+
+M.VALID_SCOPES = { file = true, module = true, all = true }
+
+--- Check if a scope kind is valid
+---@param kind string|nil
+---@return boolean
+function M.is_valid_scope(kind)
+  return M.VALID_SCOPES[kind] == true
+end
+
+--- Cycle to the next scope kind: file → module → all → file
+---@param current string|nil
+---@return string
+function M.next_scope(current)
+  if current == "file" then return "module" end
+  if current == "module" then return "all" end
+  return "file"
+end
+
+--- Human-readable label for a scope
+---@param scope table {kind, path?, prefix?}
+---@return string
+function M.scope_label(scope)
+  if scope.kind == "file" then
+    if not scope.path then return "file: (none)" end
+    return "file: " .. scope.path:match("[/\\]?([^/\\]+)$")
+  elseif scope.kind == "module" then
+    if not scope.prefix then return "module: (none)" end
+    -- Show last segment: "SageFs.Tests.EditorTests" → "EditorTests"
+    return "module: " .. scope.prefix:match("([^%.]+)$")
+  elseif scope.kind == "all" then
+    return "all"
+  end
+  return scope.kind
+end
+
+--- Filter tests by scope. Pure function — no vim API.
+---@param state table testing state
+---@param scope table {kind="file"|"module"|"all", path?, prefix?}
+---@return table[] list of test entries with testId, displayName, fullName, status, file, line
+function M.filter_by_scope(state, scope)
+  if scope.kind == "all" then
+    return M.all_tests(state)
+  elseif scope.kind == "file" then
+    return M.filter_by_file(state, scope.path)
+  elseif scope.kind == "module" then
+    if not scope.prefix then return {} end
+    local results = {}
+    for id, test in pairs(state.tests) do
+      local fn = test.fullName or ""
+      if fn:sub(1, #scope.prefix) == scope.prefix then
+        local entry = {}
+        for k, v in pairs(test) do entry[k] = v end
+        entry.testId = id
+        table.insert(results, entry)
+      end
+    end
+    return results
+  else
+    error("unknown scope kind: " .. tostring(scope.kind))
+  end
+end
+
+--- Format panel entries with scope-aware header + keybinding hints.
+--- Returns structured entries: {text, file?, line?}
+---@param state table testing state
+---@param scope table {kind, path?, prefix?}
+---@return table[]
+function M.format_scoped_panel_entries(state, scope)
+  local filtered = M.filter_by_scope(state, scope)
+
+  -- Build a proxy state for summary computation
+  local proxy = M.new()
+  for _, entry in ipairs(filtered) do
+    proxy.tests[entry.testId] = entry
+  end
+  local summary = M.compute_summary(proxy)
+
+  local entries = {}
+  -- Header: scope + summary counts
+  local label = M.scope_label(scope)
+  table.insert(entries, {
+    text = string.format("═══ Tests (%s) — %d✓ %d✗ ═══",
+      label, summary.passed, summary.failed),
+  })
+  -- Keybinding hints
+  local current = scope.kind
+  local hints = {}
+  for _, s in ipairs({ "f", "m", "a" }) do
+    local full = ({ f = "file", m = "module", a = "all" })[s]
+    if full == current then
+      table.insert(hints, string.format("[%s]%s", s, full:sub(2)))
+    else
+      table.insert(hints, string.format(" %s:%s", s, full))
+    end
+  end
+  table.insert(entries, { text = table.concat(hints, "  ") })
+  -- Separator
+  table.insert(entries, { text = string.rep("─", 40) })
+
+  if #filtered == 0 then
+    table.insert(entries, { text = "No tests match current scope" })
+    return entries
+  end
+
+  -- Sort: failures first, then alphabetical
+  table.sort(filtered, function(a, b)
+    local oa = STATUS_ORDER[a.status] or 99
+    local ob = STATUS_ORDER[b.status] or 99
+    if oa ~= ob then return oa < ob end
+    return (a.displayName or "") < (b.displayName or "")
+  end)
+
+  -- Test lines with navigation metadata
+  for _, t in ipairs(filtered) do
+    local icon = STATUS_ICON[t.status] or "?"
+    table.insert(entries, {
+      text = string.format("%s %s", icon, t.displayName or t.testId),
+      file = t.file,
+      line = t.line,
+    })
+  end
+
+  return entries
 end
 
 return M
