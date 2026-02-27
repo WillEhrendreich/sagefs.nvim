@@ -124,7 +124,7 @@ end
 
 --- Create a managed SSE connection with auto-reconnect
 ---@param url string
----@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, on_reconnecting: fun(attempt: number)|nil, auto_reconnect: boolean|nil, reconnect_delay: number|nil }
+---@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, on_reconnecting: fun(attempt: number, status: string)|nil, auto_reconnect: boolean|nil }
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
   local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "" }

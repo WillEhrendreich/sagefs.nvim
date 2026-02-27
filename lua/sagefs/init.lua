@@ -343,7 +343,6 @@ local function start_sse()
       end
     end,
     auto_reconnect = true,
-    reconnect_delay = 3000,
   })
   events_sse.start()
 end
