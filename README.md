@@ -10,7 +10,7 @@ SageFs is a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/too
 
 - **Sub-second hot reload** — Save a `.fs` file and your running web server picks up the change in ~100ms. [Harmony](https://github.com/pardeike/Harmony) patches method pointers at runtime — no restart, no rebuild. Browsers auto-refresh via SSE.
 - **Live unit testing** — A three-speed pipeline: tree-sitter detects tests in ~50ms (even in broken code), F# Compiler Service type-checks and builds a dependency graph in ~350ms, then affected tests execute in ~500ms total. Gutter markers show pass/fail inline. Covers xUnit, NUnit, MSTest, TUnit, and Expecto via a two-tier provider system. Configurable run policies per test category (unit tests on every keystroke, integration on save, browser on demand). Free — no VS Enterprise license needed.
-- **FCS-based coverage** — Line-level code coverage computed from F# Compiler Service typed AST symbol graph (lightweight, no IL instrumentation), streamed as SSE events with per-file and per-line annotations.
+- **FCS-based coverage + IL branch coverage** — Line-level code coverage computed from F# Compiler Service typed AST symbol graph (lightweight, no IL instrumentation for basic coverage), plus IL-instrumented branch-level coverage showing which branches within a line are hit. Both streamed as SSE events with per-file and per-line annotations.
 - **Full project context in the REPL** — All NuGet packages, project references, and namespaces loaded automatically. No `#r` directives.
 - **Affordance-driven MCP** — AI tools (Copilot, Claude, etc.) can execute F# code, type-check, explore .NET APIs, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state — agents see `get_fsi_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
 - **Multi-session isolation** — Run multiple FSI sessions simultaneously across different projects, each in an isolated worker sub-process. A standby pool of pre-warmed sessions makes hard resets near-instant.
@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, zero failures.**
+This plugin provides the Neovim integration layer. **25 Lua modules, 900+ tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -71,6 +71,11 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, 
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
 | **Treesitter cell detection** | Structural `;;` detection filtering boundaries in strings/comments. |
+| **SSE session scoping** | Events tagged with `SessionId` — only your active session's data renders. Multi-session safe. |
+| **Branch coverage gutters** | Three-state gutter signs from IL probe data: ▐ green (full), ◐ yellow (partial), ▌ red (uncovered). Color-blind accessible (shape+color pairing). |
+| **Branch EOL text** | Optional `n/m` branches annotation at end of line for partial coverage. Behind density preset. |
+| **Filterable test panel** | Test panel filters by scope: `f` = current file, `m` = module, `a` = all, `Tab` = cycle. Failures sorted first. |
+| **Display density presets** | `<leader>sD` cycles minimal (signs only) → normal (signs+codelens+inline) → full (everything+branch EOL). |
 
 ## Requirements
 
@@ -122,6 +127,7 @@ This plugin provides the Neovim integration layer. **24 Lua modules, 858 tests, 
 | `<leader>sc` | n | Clear all results |
 | `<leader>ss` | n | Session picker |
 | `<leader>sh` | n | Hot reload file picker |
+| `<leader>sD` | n | Cycle display density (minimal/normal/full) |
 
 ## Commands
 
@@ -186,6 +192,8 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `hotreload_model.lua` | ~65 | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | ~75 | Daemon lifecycle state machine (idle→starting→running→stopped) |
 | `pipeline.lua` | ~75 | Pipeline trace parsing and formatting |
+| `annotations.lua` | ~260 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
+| `density.lua` | ~65 | Display density presets (minimal/normal/full), layer visibility control |
 | **Integration layer** | | |
 | `init.lua` | ~900 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | ~115 | HTTP via curl, SSE connections with exponential backoff reconnect |
