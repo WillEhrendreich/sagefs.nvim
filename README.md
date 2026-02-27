@@ -74,7 +74,7 @@ This plugin provides the Neovim integration layer. **25 Lua modules, 900+ tests,
 | **SSE session scoping** | Events tagged with `SessionId` — only your active session's data renders. Multi-session safe. |
 | **Branch coverage gutters** | Three-state gutter signs from IL probe data: ▐ green (full), ◐ yellow (partial), ▌ red (uncovered). Color-blind accessible (shape+color pairing). |
 | **Branch EOL text** | Optional `n/m` branches annotation at end of line for partial coverage. Behind density preset. |
-| **Filterable test panel** | Test panel filters by scope: `f` = current file, `m` = module, `a` = all, `Tab` = cycle. Failures sorted first. |
+| **Filterable test panel** | Test panel filters by scope: `b` = binding (treesitter), `f` = current file, `m` = module, `a` = all, `Tab` = cycle. Failures sorted first. |
 | **Display density presets** | `<leader>sD` cycles minimal (signs only) → normal (signs+codelens+inline) → full (everything+branch EOL). |
 
 ## Requirements
