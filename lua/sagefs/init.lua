@@ -84,9 +84,10 @@ end
 
 -- ─── SSE Dispatch ─────────────────────────────────────────────────────────────
 
-local function decode_event_data(event)
-  if not event.data then return nil end
-  local ok, data = pcall(vim.json.decode, event.data)
+local function decode_event_data(raw)
+  local json_str = type(raw) == "string" and raw or (raw and raw.data)
+  if not json_str then return nil end
+  local ok, data = pcall(vim.json.decode, json_str)
   return ok and data or nil
 end
 
@@ -336,7 +337,7 @@ local function on_sse_events(raw_events)
   for _, event in ipairs(raw_events) do
     local c = sse_parser.classify_event(event)
     if c then
-      table.insert(classified, { action = c.action, data = event })
+      table.insert(classified, { action = c.action, data = c.data })
     end
   end
 
@@ -414,6 +415,10 @@ end
 --- Show shadow warning virtual text at cell end, auto-clears after 5s.
 ---@param buf number buffer handle
 ---@param cell_id string
+-- TODO: cell.end_line does not exist in model.set_cell_state — the model only
+-- stores {status, output, duration_ms}. This function silently exits because
+-- cell.end_line is always nil → line is always 0 → early return. To fix,
+-- thread cell.end_line from the parsed cell through post_exec/handle_result.
 ---@param shadows table[] list of {name, old_type, new_type}
 local function show_shadow_warnings(buf, cell_id, shadows)
   vim.schedule(function()
@@ -519,30 +524,28 @@ end
 
 -- ─── Eval Functions ───────────────────────────────────────────────────────────
 
-function M.eval_cell()
+--- Shared cell preparation: find cell at cursor, prepare code, resolve cell_id.
+--- Returns nil (with user notification) if no valid cell found.
+local function prepare_cell_eval()
   local buf = vim.api.nvim_get_current_buf()
   local cursor = vim.api.nvim_win_get_cursor(0)
   local cursor_line = cursor[1]
-
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local cell = cells.find_cell_auto(buf, lines, cursor_line)
 
+  local cell = cells.find_cell_auto(buf, lines, cursor_line)
   if not cell then
     notify("No cell found at cursor", vim.log.levels.WARN)
-    return
+    return nil
   end
 
   local code = cells.prepare_code(cell.text)
   if not code then
     notify("Cell is empty", vim.log.levels.WARN)
-    return
+    return nil
   end
 
-  -- Prepend module context (opens) in inferred mode
   local ctx = cells.get_module_context(buf, lines, cell.start_line)
-  if ctx then
-    code = ctx .. "\n" .. code
-  end
+  if ctx then code = ctx .. "\n" .. code end
 
   local all = cells.find_all_cells_auto(buf, lines)
   local cell_id = 1
@@ -553,52 +556,30 @@ function M.eval_cell()
     end
   end
 
-  M.state = model.set_cell_state(M.state, cell_id, "running")
-  render.render_all(buf, M.state)
-  render.flash_cell(buf, cell.start_line, cell.end_line)
-  post_exec(code, buf, cell_id)
+  return {
+    buf = buf,
+    lines = lines,
+    cursor_line = cursor_line,
+    cell = cell,
+    code = code,
+    cell_id = cell_id,
+  }
+end
+
+function M.eval_cell()
+  local ctx = prepare_cell_eval()
+  if not ctx then return end
+  render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id)
 end
 
 function M.eval_cell_and_advance()
-  local buf = vim.api.nvim_get_current_buf()
-  local cursor = vim.api.nvim_win_get_cursor(0)
-  local cursor_line = cursor[1]
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local ctx = prepare_cell_eval()
+  if not ctx then return end
+  render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id)
 
-  local cell = cells.find_cell_auto(buf, lines, cursor_line)
-  if not cell then
-    notify("No cell found at cursor", vim.log.levels.WARN)
-    return
-  end
-
-  local code = cells.prepare_code(cell.text)
-  if not code then
-    notify("Cell is empty", vim.log.levels.WARN)
-    return
-  end
-
-  -- Prepend module context (opens) in inferred mode
-  local ctx = cells.get_module_context(buf, lines, cell.start_line)
-  if ctx then
-    code = ctx .. "\n" .. code
-  end
-
-  local all = cells.find_all_cells_auto(buf, lines)
-  local cell_id = 1
-  for _, c in ipairs(all) do
-    if c.start_line == cell.start_line then
-      cell_id = c.id
-      break
-    end
-  end
-
-  M.state = model.set_cell_state(M.state, cell_id, "running")
-  render.render_all(buf, M.state)
-  render.flash_cell(buf, cell.start_line, cell.end_line)
-  post_exec(code, buf, cell_id)
-
-  -- Move cursor to next cell start
-  local next_start = cells.find_next_cell_start(lines, cursor_line)
+  local next_start = cells.find_next_cell_start(ctx.lines, ctx.cursor_line)
   if next_start then
     vim.api.nvim_win_set_cursor(0, { next_start, 0 })
   end
@@ -620,7 +601,6 @@ function M.eval_selection()
     return
   end
 
-  M.state = model.set_cell_state(M.state, 0, "running")
   render.flash_cell(buf, start_pos[2], end_pos[2])
   post_exec(code, buf, 0)
 end
@@ -643,7 +623,6 @@ function M.eval_current_line()
     return
   end
 
-  M.state = model.set_cell_state(M.state, 0, "running")
   render.flash_cell(buf, line_nr, line_nr)
   post_exec(code, buf, 0)
 end
@@ -660,7 +639,6 @@ function M.eval_file()
   end
 
   notify("Evaluating file: " .. vim.fn.expand("%:t"))
-  M.state = model.set_cell_state(M.state, 0, "running")
   render.flash_cell(buf, 1, #lines)
   post_exec(code, buf, 0)
 end
