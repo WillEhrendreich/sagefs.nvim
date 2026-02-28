@@ -90,8 +90,9 @@ local function build_virt_text(style, i, start_line, end_line, cell_lines)
       return { { " ╰ " .. cell_lines, "SageFsCellBound" } }
     end
   elseif style == "full" then
+    local line_word = cell_lines == 1 and "line" or "lines"
     if is_top then
-      return { { "┄ " .. cell_lines .. " lines", "SageFsCellBound" } }
+      return { { "┄ " .. cell_lines .. " " .. line_word, "SageFsCellBound" } }
     elseif is_bottom then
       return { { "┄ cell end", "SageFsCellBound" } }
     end
@@ -179,17 +180,20 @@ local function update_now()
 end
 
 --- Update cell highlight at cursor position (debounced, with fast-path)
-function M.update()
+---@param force boolean|nil Skip fast-path cache (required for TextChanged events)
+function M.update(force)
   if M.style == "off" then return end
   if not timer_open then return end
 
-  -- Fast path: cursor still within cached cell, hint unchanged → skip
-  local buf = vim.api.nvim_get_current_buf()
-  local cur_hint = (buf == hint_buf) and hint_status or nil
-  if buf == last.buf and last.start_line and cur_hint == last.hint then
-    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, 0)
-    if ok and cursor[1] >= last.start_line and cursor[1] <= last.end_line then
-      return
+  if not force then
+    -- Fast path: cursor still within cached cell, hint unchanged → skip
+    local buf = vim.api.nvim_get_current_buf()
+    local cur_hint = (buf == hint_buf) and hint_status or nil
+    if buf == last.buf and last.start_line and cur_hint == last.hint then
+      local ok, cursor = pcall(vim.api.nvim_win_get_cursor, 0)
+      if ok and cursor[1] >= last.start_line and cursor[1] <= last.end_line then
+        return
+      end
     end
   end
 

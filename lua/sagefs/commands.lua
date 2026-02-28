@@ -1240,15 +1240,25 @@ function M.register_autocmds(plugin, helpers)
 
   -- Cell highlight: show eval region as cursor moves
   local cell_highlight = require("sagefs.cell_highlight")
-  cell_highlight.setup_highlights()
 
   vim.api.nvim_create_autocmd(
-    { "CursorMoved", "CursorMovedI", "TextChanged", "TextChangedI" },
+    { "CursorMoved", "CursorMovedI" },
     {
       group = group,
       pattern = { "*.fs", "*.fsx" },
       callback = function()
         cell_highlight.update()
+      end,
+    }
+  )
+
+  vim.api.nvim_create_autocmd(
+    { "TextChanged", "TextChangedI" },
+    {
+      group = group,
+      pattern = { "*.fs", "*.fsx" },
+      callback = function()
+        cell_highlight.update(true)
       end,
     }
   )
