@@ -212,6 +212,40 @@ function M.register_commands(plugin, helpers)
     plugin.show_session_context()
   end, { desc = "Show session context (assemblies, namespaces, warmup)" })
 
+  vim.api.nvim_create_user_command("SageFsExport", function()
+    local transport = require("sagefs.transport")
+    local sid = plugin.active_session and plugin.active_session.id or nil
+    if not sid then
+      helpers.notify("No active session", vim.log.levels.WARN)
+      return
+    end
+    local port = plugin.config and plugin.config.port or 37749
+    local url = string.format("http://localhost:%d/api/sessions/%s/export-fsx", port, sid)
+    transport.http_json({
+      method = "GET",
+      url = url,
+      callback = function(ok, raw)
+        vim.schedule(function()
+          if not ok then
+            helpers.notify("Failed to export session", vim.log.levels.ERROR)
+            return
+          end
+          local data = vim.fn.json_decode(raw)
+          if not data or (data.evalCount or 0) == 0 then
+            helpers.notify("No evaluations to export", vim.log.levels.INFO)
+            return
+          end
+          local buf = vim.api.nvim_create_buf(true, false)
+          vim.bo[buf].filetype = "fsharp"
+          local lines = vim.split(data.content, "\n")
+          vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+          vim.api.nvim_set_current_buf(buf)
+          helpers.notify(string.format("Exported %d evaluations", data.evalCount))
+        end)
+      end,
+    })
+  end, { desc = "Export session eval history as .fsx" })
+
   -- ─── Testing Commands ────────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsTests", function()
