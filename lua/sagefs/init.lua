@@ -462,7 +462,7 @@ local function handle_result(buf, cell_id, result)
 end
 
 local function post_exec(code, buf, cell_id)
-  local start_time = vim.loop.hrtime()
+  local start_time = vim.uv.hrtime()
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
   vim.schedule(function()
     render.render_all(buf, M.state)
@@ -474,7 +474,7 @@ local function post_exec(code, buf, cell_id)
     body = { code = code, working_directory = vim.fn.getcwd(), format = "json" },
     timeout = 60,
     callback = function(ok, raw)
-      local elapsed_ms = math.floor((vim.loop.hrtime() - start_time) / 1e6)
+      local elapsed_ms = math.floor((vim.uv.hrtime() - start_time) / 1e6)
       if ok then
         local result = format.parse_exec_response(raw)
         result.duration_ms = elapsed_ms

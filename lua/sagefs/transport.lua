@@ -5,7 +5,7 @@ local sse_parser = require("sagefs.sse")
 
 local M = {}
 
--- ─── HTTP JSON (vim.loop TCP — no curl process spawn) ──────────────────────
+-- ─── HTTP JSON (vim.uv TCP — no curl process spawn) ──────────────────────
 
 --- Parse a URL into host, port, path
 ---@param url string
@@ -20,7 +20,7 @@ local function parse_url(url)
   return host, port, path
 end
 
---- Generic HTTP JSON request via vim.loop TCP (eliminates curl process spawn)
+--- Generic HTTP JSON request via vim.uv TCP (eliminates curl process spawn)
 ---@param opts { method: string, url: string, body: table|string|nil, timeout: number|nil, callback: fun(ok: boolean, raw: string) }
 function M.http_json(opts)
   local host, port, path = parse_url(opts.url)
@@ -29,7 +29,7 @@ function M.http_json(opts)
     body_str = type(opts.body) == "table" and vim.json.encode(opts.body) or opts.body
   end
 
-  local tcp = vim.loop.new_tcp()
+  local tcp = vim.uv.new_tcp()
   if not tcp then
     vim.schedule(function() opts.callback(false, "failed to create TCP handle") end)
     return
@@ -37,7 +37,7 @@ function M.http_json(opts)
 
   -- Timeout watchdog
   local timeout_ms = (opts.timeout or 5) * 1000
-  local timer = vim.loop.new_timer()
+  local timer = vim.uv.new_timer()
   local completed = false
 
   local function finish(ok, data)
@@ -62,14 +62,15 @@ function M.http_json(opts)
     local req_parts = {
       opts.method .. " " .. path .. " HTTP/1.1\r\n",
       "Host: " .. host .. ":" .. port .. "\r\n",
-      "Content-Type: application/json\r\n",
-      "Connection: close\r\n",
     }
     if body_str then
+      table.insert(req_parts, "Content-Type: application/json\r\n")
       table.insert(req_parts, "Content-Length: " .. #body_str .. "\r\n")
+      table.insert(req_parts, "Connection: close\r\n")
       table.insert(req_parts, "\r\n")
       table.insert(req_parts, body_str)
     else
+      table.insert(req_parts, "Connection: close\r\n")
       table.insert(req_parts, "\r\n")
     end
 

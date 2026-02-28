@@ -21,6 +21,16 @@ M.EVENT_NAMES = {
   "SageFsHotReloadTriggered",
   "SageFsWarmupContext",
   "SageFsHotReloadSnapshot",
+  "SageFsProvidersDetected",
+  "SageFsAffectedTestsComputed",
+  "SageFsPipelineTimingRecorded",
+  "SageFsRunTestsRequested",
+  "SageFsTestSummary",
+  "SageFsFileAnnotations",
+  "SageFsBindingsSnapshot",
+  "SageFsPipelineTrace",
+  "SageFsReconnecting",
+  "SageFsTestRecoveryNeeded",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -40,6 +50,16 @@ local EVENT_MAP = {
   hot_reload_triggered = "SageFsHotReloadTriggered",
   warmup_context = "SageFsWarmupContext",
   hotreload_snapshot = "SageFsHotReloadSnapshot",
+  providers_detected = "SageFsProvidersDetected",
+  affected_tests_computed = "SageFsAffectedTestsComputed",
+  pipeline_timing_recorded = "SageFsPipelineTimingRecorded",
+  run_tests_requested = "SageFsRunTestsRequested",
+  test_summary = "SageFsTestSummary",
+  file_annotations = "SageFsFileAnnotations",
+  bindings_snapshot = "SageFsBindingsSnapshot",
+  pipeline_trace = "SageFsPipelineTrace",
+  reconnecting = "SageFsReconnecting",
+  test_recovery_needed = "SageFsTestRecoveryNeeded",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────

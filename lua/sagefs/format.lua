@@ -325,7 +325,13 @@ end
 function M.tracker_from_snapshot(snapshot)
   local tracker = { bindings = {} }
   for _, b in ipairs(snapshot) do
-    tracker.bindings[b.Name] = { type_sig = b.TypeSig, count = b.ShadowCount }
+    local name = b.Name or b.name
+    if name then
+      tracker.bindings[name] = {
+        type_sig = b.TypeSig or b.typeSig,
+        count = b.ShadowCount or b.shadowCount,
+      }
+    end
   end
   return tracker
 end

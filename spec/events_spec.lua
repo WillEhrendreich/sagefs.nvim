@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 14 event names", function()
-      assert.are.equal(14, #events.EVENT_NAMES)
+    it("contains 24 event names", function()
+      assert.are.equal(24, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -53,7 +53,7 @@ describe("events", function()
       assert.is_nil(result)
     end)
 
-    it("maps all 10 event types correctly", function()
+    it("maps all 24 event types correctly", function()
       local mappings = {
         { "eval_completed", "SageFsEvalCompleted" },
         { "test_passed", "SageFsTestPassed" },
@@ -65,6 +65,20 @@ describe("events", function()
         { "disconnected", "SageFsDisconnected" },
         { "coverage_updated", "SageFsCoverageUpdated" },
         { "hot_reload_triggered", "SageFsHotReloadTriggered" },
+        { "warmup_context", "SageFsWarmupContext" },
+        { "hotreload_snapshot", "SageFsHotReloadSnapshot" },
+        { "test_state", "SageFsTestState" },
+        { "tests_discovered", "SageFsTestsDiscovered" },
+        { "providers_detected", "SageFsProvidersDetected" },
+        { "affected_tests_computed", "SageFsAffectedTestsComputed" },
+        { "pipeline_timing_recorded", "SageFsPipelineTimingRecorded" },
+        { "run_tests_requested", "SageFsRunTestsRequested" },
+        { "test_summary", "SageFsTestSummary" },
+        { "file_annotations", "SageFsFileAnnotations" },
+        { "bindings_snapshot", "SageFsBindingsSnapshot" },
+        { "pipeline_trace", "SageFsPipelineTrace" },
+        { "reconnecting", "SageFsReconnecting" },
+        { "test_recovery_needed", "SageFsTestRecoveryNeeded" },
       }
       for _, pair in ipairs(mappings) do
         local result = events.build_autocmd_data(pair[1], {})
