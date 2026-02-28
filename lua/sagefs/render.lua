@@ -391,6 +391,12 @@ function M.render_annotations(buf, annotations_state, density_state)
   end
 end
 
+--- Clean up cached sign state for a buffer (call on BufWipeout/BufDelete)
+---@param buf number
+function M.clear_sign_cache(buf)
+  _prev_signs[buf] = nil
+end
+
 -- ─── Floating Window ──────────────────────────────────────────────────────────
 
 --- Show content in a centered floating window with q-to-close

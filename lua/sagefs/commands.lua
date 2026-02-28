@@ -141,38 +141,7 @@ function M.register_commands(plugin, helpers)
     vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
   end, { desc = "Show FSI binding state" })
 
-  vim.api.nvim_create_user_command("SageFsPipelineTrace", function()
-    local trace = plugin.pipeline_trace
-    local lines = { "═══ Pipeline Trace ═══", "" }
-    if not trace then
-      table.insert(lines, "(no pipeline trace data yet)")
-    else
-      table.insert(lines, string.format("  Enabled:  %s", trace.Enabled and "yes" or "no"))
-      table.insert(lines, string.format("  Running:  %s", trace.IsRunning and "yes" or "no"))
-      local s = trace.Summary or {}
-      table.insert(lines, string.format("  Total:    %d", s.Total or 0))
-      table.insert(lines, string.format("  Passed:   %d", s.Passed or 0))
-      table.insert(lines, string.format("  Failed:   %d", s.Failed or 0))
-      table.insert(lines, string.format("  Stale:    %d", s.Stale or 0))
-      table.insert(lines, string.format("  Running:  %d", s.Running or 0))
-    end
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].modifiable = false
-    vim.bo[buf].bufhidden = "wipe"
-    local width = 40
-    for _, l in ipairs(lines) do width = math.max(width, #l + 4) end
-    vim.api.nvim_open_win(buf, true, {
-      relative = "editor",
-      width = width,
-      height = math.min(#lines, 20),
-      row = math.floor((vim.o.lines - math.min(#lines, 20)) / 2),
-      col = math.floor((vim.o.columns - width) / 2),
-      style = "minimal",
-      border = "rounded",
-    })
-    vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
-  end, { desc = "Show live testing pipeline trace" })
+  -- Note: SageFsPipelineTrace is registered later with HTTP fetch (richer than SSE state)
 
   vim.api.nvim_create_user_command("SageFsSessions", function()
     plugin.session_picker()
@@ -313,7 +282,7 @@ function M.register_commands(plugin, helpers)
       url = helpers.base_url() .. "/api/live-testing/run",
       body = req,
       timeout = 10,
-      callback = function(ok)
+      callback = function(ok, raw)
         if ok then helpers.notify("Tests triggered")
         else helpers.notify("Failed to trigger tests" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
@@ -339,7 +308,7 @@ function M.register_commands(plugin, helpers)
           url = helpers.base_url() .. "/api/live-testing/policy",
           body = { category = category, policy = policy },
           timeout = 5,
-          callback = function(ok)
+          callback = function(ok, raw)
             if ok then helpers.notify(category .. " → " .. policy)
             else helpers.notify("Failed to set policy" .. err_detail(raw), vim.log.levels.ERROR) end
           end,
@@ -458,9 +427,9 @@ function M.register_commands(plugin, helpers)
         table.insert(lines, e.text)
       end
     end
-    vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", true)
+    vim.bo[test_panel_buf].modifiable = true
     vim.api.nvim_buf_set_lines(test_panel_buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(test_panel_buf, "modifiable", false)
+    vim.bo[test_panel_buf].modifiable = false
   end
 
   --- Set scope kind and refresh
@@ -503,8 +472,8 @@ function M.register_commands(plugin, helpers)
     end
     -- Create scratch buffer
     test_panel_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(test_panel_buf, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(test_panel_buf, "bufhidden", "wipe")
+    vim.bo[test_panel_buf].buftype = "nofile"
+    vim.bo[test_panel_buf].bufhidden = "wipe"
     vim.api.nvim_buf_set_name(test_panel_buf, "sagefs://tests")
     -- Buffer-local <CR> to jump to test source
     vim.keymap.set("n", "<CR>", function()
@@ -534,10 +503,10 @@ function M.register_commands(plugin, helpers)
     test_panel_win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(test_panel_win, test_panel_buf)
     vim.api.nvim_win_set_width(test_panel_win, 45)
-    vim.api.nvim_win_set_option(test_panel_win, "number", false)
-    vim.api.nvim_win_set_option(test_panel_win, "relativenumber", false)
-    vim.api.nvim_win_set_option(test_panel_win, "signcolumn", "no")
-    vim.api.nvim_win_set_option(test_panel_win, "winfixwidth", true)
+    vim.wo[test_panel_win].number = false
+    vim.wo[test_panel_win].relativenumber = false
+    vim.wo[test_panel_win].signcolumn = "no"
+    vim.wo[test_panel_win].winfixwidth = true
     -- Fill initial content
     update_test_panel()
     -- Return focus to previous window
@@ -638,7 +607,7 @@ function M.register_commands(plugin, helpers)
       method = "POST",
       url = helpers.base_url() .. "/api/live-testing/enable",
       timeout = 5,
-      callback = function(ok)
+      callback = function(ok, raw)
         if ok then helpers.notify("Live testing enabled")
         else helpers.notify("Failed to enable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
@@ -650,7 +619,7 @@ function M.register_commands(plugin, helpers)
       method = "POST",
       url = helpers.base_url() .. "/api/live-testing/disable",
       timeout = 5,
-      callback = function(ok)
+      callback = function(ok, raw)
         if ok then helpers.notify("Live testing disabled")
         else helpers.notify("Failed to disable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
@@ -663,7 +632,7 @@ function M.register_commands(plugin, helpers)
       url = helpers.base_url() .. "/api/cancel-eval",
       body = { working_directory = vim.fn.getcwd() },
       timeout = 5,
-      callback = function(ok)
+      callback = function(ok, raw)
         if ok then helpers.notify("Eval cancelled")
         else helpers.notify("Failed to cancel eval" .. err_detail(raw), vim.log.levels.ERROR) end
       end,
@@ -1065,7 +1034,7 @@ function M.register_commands(plugin, helpers)
 
   -- ─── Export Command ──────────────────────────────────────────────────────
 
-  vim.api.nvim_create_user_command("SageFsExport", function()
+  vim.api.nvim_create_user_command("SageFsExportFile", function()
     transport.http_json({
       method = "GET",
       url = helpers.dashboard_url() .. "/api/history",
@@ -1091,7 +1060,7 @@ function M.register_commands(plugin, helpers)
         end
       end,
     })
-  end, { desc = "Export session history as .fsx file" })
+  end, { desc = "Export session history as .fsx file (to disk)" })
 
   -- ─── Call Graph Commands ─────────────────────────────────────────────────
 
@@ -1283,6 +1252,14 @@ function M.register_autocmds(plugin, helpers)
     group = group,
     callback = function()
       cell_highlight.setup_highlights()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = group,
+    callback = function(ev)
+      local render = require("sagefs.render")
+      render.clear_sign_cache(ev.buf)
     end,
   })
 end

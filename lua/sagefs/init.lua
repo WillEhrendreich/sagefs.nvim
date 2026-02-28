@@ -242,8 +242,10 @@ local function build_handlers()
     -- CQRS: server-pushed bindings snapshot (replaces client-side parsing as source of truth)
     bindings_snapshot = function(raw)
       local data = decode_event_data(raw)
-      if not data or not data.Bindings then return end
-      M.binding_tracker = format.tracker_from_snapshot(data.Bindings)
+      if not data then return end
+      local bindings = data.Bindings or data.bindings
+      if not bindings then return end
+      M.binding_tracker = format.tracker_from_snapshot(bindings)
       fire_user_event("bindings_snapshot", data)
     end,
 
@@ -505,12 +507,12 @@ local function post_exec(code, buf, cell_id)
   })
 end
 
-local function session_http(method, path, body, callback)
+local function session_http(method, path, body, callback, opts)
   transport.http_json({
     method = method,
     url = base_url() .. path,
     body = body,
-    timeout = 5,
+    timeout = (opts and opts.timeout) or 5,
     callback = callback,
   })
 end
@@ -789,7 +791,7 @@ function M.hard_reset(callback)
     if ok then notify("Hard reset complete (rebuild)")
     else notify("Failed to hard reset", vim.log.levels.ERROR) end
     if callback then callback(ok) end
-  end)
+  end, { timeout = 60 })
 end
 
 -- ─── Session Context ─────────────────────────────────────────────────────────
@@ -1076,6 +1078,7 @@ function M.setup(opts)
       render.render_annotations(buf, M.annotations_state, M.density_state)
     end,
     check_on_save = function() return M.config.check_on_save end,
+    check_code = check_code,
   }
 
   commands.register_commands(M, helpers)
@@ -1097,7 +1100,7 @@ function M.setup(opts)
                   table.insert(names, vim.fn.fnamemodify(f, ":~:."))
                 end
                 vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                  if choice then M.create_session(choice) end
+                  if choice then M.create_session({ choice }) end
                 end)
               end
             end
