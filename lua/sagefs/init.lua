@@ -52,6 +52,7 @@ M.warmup_context = nil
 M.hotreload_files = {}
 M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
+M.pipeline_trace = nil
 
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
@@ -232,6 +233,22 @@ local function build_handlers()
         M.hotreload_files = data.watchedFiles or {}
         fire_user_event("hotreload_snapshot", data)
       end
+    end,
+
+    -- CQRS: server-pushed bindings snapshot (replaces client-side parsing as source of truth)
+    bindings_snapshot = function(raw)
+      local data = decode_event_data(raw)
+      if not data or not data.Bindings then return end
+      M.binding_tracker = format.tracker_from_snapshot(data.Bindings)
+      fire_user_event("bindings_snapshot", data)
+    end,
+
+    -- CQRS: server-pushed pipeline trace state
+    pipeline_trace = function(raw)
+      local data = decode_event_data(raw)
+      if not data then return end
+      M.pipeline_trace = data
+      fire_user_event("pipeline_trace", data)
     end,
   })
 end

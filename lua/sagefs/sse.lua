@@ -126,6 +126,9 @@ function M.classify_event(event)
     FileChanged = "file_changed",
     -- Session events (typed envelope from SageFs daemon)
     session = "session_event",
+    -- CQRS: server-pushed bindings and pipeline state
+    bindings_snapshot = "bindings_snapshot",
+    pipeline_trace = "pipeline_trace",
   }
 
   local action = type_to_action[event.type] or "unknown"

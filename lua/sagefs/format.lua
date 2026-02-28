@@ -318,4 +318,16 @@ function M.update_bindings(tracker, output)
   return tracker, shadows
 end
 
+--- Rebuild tracker from server-pushed bindings snapshot (CQRS: server is source of truth).
+--- Replaces the entire tracker state from the authoritative snapshot.
+---@param snapshot table[] array of {Name, TypeSig, ShadowCount}
+---@return table tracker fresh tracker from snapshot
+function M.tracker_from_snapshot(snapshot)
+  local tracker = { bindings = {} }
+  for _, b in ipairs(snapshot) do
+    tracker.bindings[b.Name] = { type_sig = b.TypeSig, count = b.ShadowCount }
+  end
+  return tracker
+end
+
 return M
