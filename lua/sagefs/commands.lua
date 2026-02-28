@@ -47,9 +47,19 @@ function M.register_commands(plugin, helpers)
     helpers.clear_and_render()
   end, { desc = "Clear all cell results" })
 
-  vim.api.nvim_create_user_command("SageFsCellStyle", function()
-    require("sagefs.cell_highlight").cycle_style()
-  end, { desc = "Cycle cell highlight style (off/minimal/normal/full)" })
+  vim.api.nvim_create_user_command("SageFsCellStyle", function(cmd)
+    local ch = require("sagefs.cell_highlight")
+    if cmd.args ~= "" then
+      ch.set_style(cmd.args)
+      vim.notify("[SageFs] Cell highlight: " .. ch.style, vim.log.levels.INFO)
+    else
+      ch.cycle_style()
+    end
+  end, {
+    nargs = "?",
+    complete = function() return { "off", "minimal", "normal", "full" } end,
+    desc = "Set or cycle cell highlight style (off/minimal/normal/full)",
+  })
 
   vim.api.nvim_create_user_command("SageFsConnect", function()
     plugin.health_check(function(healthy)
@@ -1232,7 +1242,18 @@ function M.register_autocmds(plugin, helpers)
   local cell_highlight = require("sagefs.cell_highlight")
   cell_highlight.setup_highlights()
 
-  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+  vim.api.nvim_create_autocmd(
+    { "CursorMoved", "CursorMovedI", "TextChanged", "TextChangedI" },
+    {
+      group = group,
+      pattern = { "*.fs", "*.fsx" },
+      callback = function()
+        cell_highlight.update()
+      end,
+    }
+  )
+
+  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
     group = group,
     pattern = { "*.fs", "*.fsx" },
     callback = function()

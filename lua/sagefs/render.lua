@@ -124,18 +124,32 @@ local flash_ns = nil
 
 function M.flash_cell(buf, start_line, end_line)
   if not flash_ns then flash_ns = vim.api.nvim_create_namespace("sagefs_flash") end
-  for i = start_line, end_line do
-    pcall(vim.api.nvim_buf_set_extmark, buf, flash_ns, i - 1, 0, {
-      hl_eol = true,
-      line_hl_group = "SageFsRunning",
-      priority = 200,
-    })
-  end
-  vim.defer_fn(function()
-    if vim.api.nvim_buf_is_valid(buf) then
-      pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
+
+  local function set_flash(hl_group)
+    pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    for i = start_line, end_line do
+      pcall(vim.api.nvim_buf_set_extmark, buf, flash_ns, i - 1, 0, {
+        hl_eol = true,
+        line_hl_group = hl_group,
+        priority = 200,
+      })
     end
-  end, 150)
+  end
+
+  -- 3-step fade: full (80ms) → dim (70ms) → barely (70ms) → clear
+  set_flash("SageFsRunning")
+  vim.defer_fn(function()
+    set_flash("SageFsFlashFade1")
+    vim.defer_fn(function()
+      set_flash("SageFsFlashFade2")
+      vim.defer_fn(function()
+        if vim.api.nvim_buf_is_valid(buf) then
+          pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
+        end
+      end, 70)
+    end, 70)
+  end, 80)
 end
 
 -- ─── Test Gutter Signs ────────────────────────────────────────────────────────

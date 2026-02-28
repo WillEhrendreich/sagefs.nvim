@@ -37,6 +37,9 @@ M.config = {
     running = { fg = "#f9e2af" },
     stale = { fg = "#6c7086", italic = true },
   },
+  cell_highlight = {
+    style = "normal", -- "off" | "minimal" | "normal" | "full"
+  },
 }
 
 -- ─── State ───────────────────────────────────────────────────────────────────
@@ -437,6 +440,7 @@ local function handle_result(buf, cell_id, result)
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output, meta)
     vim.schedule(function()
       vim.diagnostic.set(ns.fsi_diagnostics, buf, {})
+      require("sagefs.cell_highlight").set_eval_hint("success")
     end)
     local shadows
     M.binding_tracker, shadows = format.update_bindings(M.binding_tracker, result.output)
@@ -445,6 +449,9 @@ local function handle_result(buf, cell_id, result)
     end
   else
     M.state = model.set_cell_state(M.state, cell_id, "error", result.error, meta)
+    vim.schedule(function()
+      require("sagefs.cell_highlight").set_eval_hint("error")
+    end)
   end
   vim.schedule(function()
     render.render_all(buf, M.state)
@@ -454,7 +461,10 @@ end
 local function post_exec(code, buf, cell_id)
   local start_time = vim.loop.hrtime()
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
-  vim.schedule(function() render.render_all(buf, M.state) end)
+  vim.schedule(function()
+    render.render_all(buf, M.state)
+    require("sagefs.cell_highlight").set_eval_hint("running")
+  end)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
@@ -1026,6 +1036,13 @@ function M.setup(opts)
 
   render.get_namespace()
   render.setup_highlights(M.config.highlight)
+
+  -- Apply cell_highlight config
+  local ch = require("sagefs.cell_highlight")
+  ch.setup_highlights()
+  if M.config.cell_highlight and M.config.cell_highlight.style then
+    ch.set_style(M.config.cell_highlight.style)
+  end
 
   -- Helper closures that commands/keymaps/autocmds need
   local helpers = {
