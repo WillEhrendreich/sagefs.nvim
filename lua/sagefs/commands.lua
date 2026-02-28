@@ -1244,7 +1244,14 @@ function M.register_autocmds(plugin, helpers)
     group = group,
     pattern = { "*.fs", "*.fsx" },
     callback = function(ev)
-      pcall(vim.api.nvim_buf_clear_namespace, ev.buf, vim.api.nvim_create_namespace("sagefs_cell_highlight"), 0, -1)
+      cell_highlight.clear(ev.buf)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = group,
+    callback = function()
+      cell_highlight.setup_highlights()
     end,
   })
 end

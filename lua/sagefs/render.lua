@@ -125,10 +125,16 @@ local flash_ns = nil
 function M.flash_cell(buf, start_line, end_line)
   if not flash_ns then flash_ns = vim.api.nvim_create_namespace("sagefs_flash") end
   for i = start_line, end_line do
-    pcall(vim.api.nvim_buf_add_highlight, buf, flash_ns, "SageFsRunning", i - 1, 0, -1)
+    pcall(vim.api.nvim_buf_set_extmark, buf, flash_ns, i - 1, 0, {
+      hl_eol = true,
+      line_hl_group = "SageFsRunning",
+      priority = 200,
+    })
   end
   vim.defer_fn(function()
-    pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_clear_namespace, buf, flash_ns, 0, -1)
+    end
   end, 150)
 end
 

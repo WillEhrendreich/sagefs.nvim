@@ -127,7 +127,26 @@ end
 ---@param opts { on_events: fun(events: table[]), on_connect: fun()|nil, on_disconnect: fun(code: number)|nil, on_reconnecting: fun(attempt: number, status: string)|nil, auto_reconnect: boolean|nil }
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
-  local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "" }
+  local inactivity_ms = (opts.inactivity_timeout or 60) * 1000
+  local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "", _inactivity_timer = nil }
+
+  local function reset_inactivity_timer()
+    if handle._inactivity_timer then
+      pcall(vim.fn.timer_stop, handle._inactivity_timer)
+      handle._inactivity_timer = nil
+    end
+    if handle._connected and not handle._stopped then
+      handle._inactivity_timer = vim.fn.timer_start(inactivity_ms, function()
+        if handle._connected and not handle._stopped then
+          vim.schedule(function()
+            if handle.job_id then
+              pcall(vim.fn.jobstop, handle.job_id)
+            end
+          end)
+        end
+      end)
+    end
+  end
 
   local function connect()
     if handle._stopped then return end
@@ -145,6 +164,7 @@ function M.connect_sse(url, opts)
             handle._attempt = 0
             if opts.on_connect then opts.on_connect() end
           end
+          reset_inactivity_timer()
           -- Neovim splits stdout on newlines: last element is a partial line
           -- that continues into the next callback. Join it with the previous partial.
           data[1] = handle._partial .. data[1]
@@ -162,6 +182,10 @@ function M.connect_sse(url, opts)
         end,
         on_exit = function(_, code)
           handle.job_id = nil
+          if handle._inactivity_timer then
+            pcall(vim.fn.timer_stop, handle._inactivity_timer)
+            handle._inactivity_timer = nil
+          end
           local was_connected = handle._connected
           handle._connected = false
           if not handle._stopped and was_connected and opts.on_disconnect then
@@ -191,6 +215,10 @@ function M.connect_sse(url, opts)
 
   function handle.stop()
     handle._stopped = true
+    if handle._inactivity_timer then
+      pcall(vim.fn.timer_stop, handle._inactivity_timer)
+      handle._inactivity_timer = nil
+    end
     if handle.job_id then
       pcall(vim.fn.jobstop, handle.job_id)
       handle.job_id = nil

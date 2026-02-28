@@ -10,8 +10,8 @@ local ns = vim.api.nvim_create_namespace("sagefs_cell_highlight")
 -- Style: "off" | "minimal" | "normal" | "full"
 M.style = "normal"
 
--- Debounce timer handle
-local timer = nil
+-- Persistent debounce timer (one allocation, reused per CursorMoved)
+local timer = vim.uv.new_timer()
 local DEBOUNCE_MS = 50
 
 -- Last rendered range (avoid redundant redraws)
@@ -27,6 +27,9 @@ local function clear(buf)
   last_start = nil
   last_end = nil
 end
+
+-- Public alias so BufLeave can route through cache invalidation
+M.clear = clear
 
 --- Render cell boundary indicators
 ---@param buf number
@@ -59,23 +62,52 @@ local function render(buf, start_line, end_line)
     end
 
   elseif style == "normal" then
-    -- Left bar + subtle line highlight
+    -- Sign bar + undercurl + colored line numbers (additive over minimal)
     for i = start_line, math.min(end_line, line_count) do
       pcall(vim.api.nvim_buf_set_extmark, buf, ns, i - 1, 0, {
         sign_text = "▎",
         sign_hl_group = "SageFsCellBar",
-        line_hl_group = "SageFsCellLine",
+        line_hl_group = "SageFsCellGlow",
+        number_hl_group = "SageFsCellNumber",
         priority = 5,
       })
     end
+    -- Boundary markers
+    if start_line == end_line then
+      -- Single-line cell: one combined marker
+      if start_line >= 1 and start_line <= line_count then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns, start_line - 1, 0, {
+          virt_text = { { " ◆", "SageFsCellBound" } },
+          virt_text_pos = "eol",
+          priority = 5,
+        })
+      end
+    else
+      -- Multi-line: ╭ top, ╰ bottom
+      if start_line >= 1 and start_line <= line_count then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns, start_line - 1, 0, {
+          virt_text = { { " ╭", "SageFsCellBound" } },
+          virt_text_pos = "eol",
+          priority = 5,
+        })
+      end
+      if end_line >= 1 and end_line <= line_count then
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns, end_line - 1, 0, {
+          virt_text = { { " ╰", "SageFsCellBound" } },
+          virt_text_pos = "eol",
+          priority = 5,
+        })
+      end
+    end
 
   elseif style == "full" then
-    -- Full line highlight + bar + top/bottom virtual text markers
+    -- Everything from normal + opaque bg + text labels (additive over normal)
     for i = start_line, math.min(end_line, line_count) do
       pcall(vim.api.nvim_buf_set_extmark, buf, ns, i - 1, 0, {
         sign_text = "▎",
         sign_hl_group = "SageFsCellBar",
         line_hl_group = "SageFsCellLineFull",
+        number_hl_group = "SageFsCellNumber",
         priority = 5,
       })
     end
@@ -102,12 +134,11 @@ end
 function M.update()
   if M.style == "off" then return end
 
-  if timer then
-    timer:stop()
-  end
-
-  timer = vim.defer_fn(function()
+  timer:stop()
+  timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(function()
     local buf = vim.api.nvim_get_current_buf()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+
     local ft = vim.bo[buf].filetype
     if ft ~= "fsharp" then
       clear(buf)
@@ -117,28 +148,14 @@ function M.update()
     local cursor = vim.api.nvim_win_get_cursor(0)
     local cursor_line = cursor[1]
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local mode = cells.cell_mode(lines)
 
-    local cell = nil
-    if mode == "manual" then
-      cell = cells.find_cell(lines, cursor_line)
-    else
-      -- Inferred: use tree-sitter directly, no whole-file fallback
-      local ok, ts_cells = pcall(require, "sagefs.treesitter_cells")
-      if ok then
-        local info = ts_cells.find_enclosing_cell(buf, cursor_line)
-        if info then
-          cell = { start_line = info.start_line, end_line = info.end_line }
-        end
-      end
-    end
-
+    local cell = cells.find_cell_auto(buf, lines, cursor_line)
     if cell then
       render(buf, cell.start_line, cell.end_line)
     else
       clear(buf)
     end
-  end, DEBOUNCE_MS)
+  end))
 end
 
 --- Set highlight style
@@ -169,10 +186,12 @@ end
 
 --- Setup highlight groups (call once at startup)
 function M.setup_highlights()
-  -- Subtle left bar in blue/cyan
+  -- Subtle left bar in blue/cyan (used by minimal + full modes)
   vim.api.nvim_set_hl(0, "SageFsCellBar", { default = true, fg = "#5f87af" })
-  -- Very subtle line background for normal mode
-  vim.api.nvim_set_hl(0, "SageFsCellLine", { default = true, bg = "#1a1d23" })
+  -- Tinted line numbers for in-scope lines
+  vim.api.nvim_set_hl(0, "SageFsCellNumber", { default = true, fg = "#5f87af" })
+  -- Subtle undercurl glow for normal mode (transparency-safe, visible on blank lines)
+  vim.api.nvim_set_hl(0, "SageFsCellGlow", { default = true, sp = "#5f87af", undercurl = true })
   -- Stronger line background for full mode
   vim.api.nvim_set_hl(0, "SageFsCellLineFull", { default = true, bg = "#1e2430" })
   -- Boundary marker text
