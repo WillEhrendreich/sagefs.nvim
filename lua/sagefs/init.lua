@@ -18,6 +18,7 @@ local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
 local density = require("sagefs.density")
+local cell_highlight = require("sagefs.cell_highlight")
 
 local M = {}
 
@@ -440,7 +441,7 @@ local function handle_result(buf, cell_id, result)
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output, meta)
     vim.schedule(function()
       vim.diagnostic.set(ns.fsi_diagnostics, buf, {})
-      require("sagefs.cell_highlight").set_eval_hint("success")
+      cell_highlight.set_eval_hint(buf, "success")
     end)
     local shadows
     M.binding_tracker, shadows = format.update_bindings(M.binding_tracker, result.output)
@@ -450,7 +451,7 @@ local function handle_result(buf, cell_id, result)
   else
     M.state = model.set_cell_state(M.state, cell_id, "error", result.error, meta)
     vim.schedule(function()
-      require("sagefs.cell_highlight").set_eval_hint("error")
+      cell_highlight.set_eval_hint(buf, "error")
     end)
   end
   vim.schedule(function()
@@ -463,7 +464,7 @@ local function post_exec(code, buf, cell_id)
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
   vim.schedule(function()
     render.render_all(buf, M.state)
-    require("sagefs.cell_highlight").set_eval_hint("running")
+    cell_highlight.set_eval_hint(buf, "running")
   end)
   transport.http_json({
     method = "POST",
@@ -1038,11 +1039,16 @@ function M.setup(opts)
   render.setup_highlights(M.config.highlight)
 
   -- Apply cell_highlight config
-  local ch = require("sagefs.cell_highlight")
-  ch.setup_highlights()
+  cell_highlight.setup_highlights()
   if M.config.cell_highlight and M.config.cell_highlight.style then
-    ch.set_style(M.config.cell_highlight.style)
+    cell_highlight.set_style(M.config.cell_highlight.style)
   end
+
+  -- Clean up timer handles on exit
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    callback = function() cell_highlight.teardown() end,
+    once = true,
+  })
 
   -- Helper closures that commands/keymaps/autocmds need
   local helpers = {

@@ -1,137 +1,158 @@
 -- sagefs/cell_highlight.lua — Dynamic visual feedback for eval region
 -- Shows what region will be sent to SageFs when eval is triggered.
 -- Integrates with eval state to show running/success/error feedback.
+--
+-- Highlight groups (all `default = true`, user-overridable):
+--   SageFsCellBar         — sign column bar (neutral blue)
+--   SageFsCellBarRunning  — sign bar during eval (yellow)
+--   SageFsCellBarSuccess  — sign bar on success (green, fades after 1.5s)
+--   SageFsCellBarError    — sign bar on error (red, fades after 3s)
+--   SageFsCellNumber      — line number tint
+--   SageFsCellGlow        — undercurl line decoration (neutral)
+--   SageFsCellGlowRunning — undercurl during eval (yellow)
+--   SageFsCellGlowSuccess — undercurl on success (green)
+--   SageFsCellGlowError   — undercurl on error (red)
+--   SageFsCellBound       — boundary markers (╭/╰/◆) and line counts
+--   SageFsCellLineFull    — full-mode line background (adapts to transparency)
+--   SageFsFlashFade1      — flash fade stage 1 (dim gold)
+--   SageFsFlashFade2      — flash fade stage 2 (barely visible)
 
 local cells = require("sagefs.cells")
 
 local M = {}
 
-local ns = vim.api.nvim_create_namespace("sagefs_cell_highlight")
+M.ns = vim.api.nvim_create_namespace("sagefs_cell_highlight")
 
 -- Style: "off" | "minimal" | "normal" | "full"
 M.style = "normal"
 
 -- Persistent debounce timer (one allocation, reused per CursorMoved)
 local timer = vim.uv.new_timer()
+local timer_open = true
 local DEBOUNCE_MS = 50
 
 -- Last rendered range (avoid redundant redraws)
-local last_buf = nil
-local last_start = nil
-local last_end = nil
-local last_hint = nil
+local last = { buf = nil, start_line = nil, end_line = nil, hint = nil }
 
 -- Eval state hint: bar/glow color reflects running/success/error
 local hint_status = nil  -- nil | "running" | "success" | "error"
+local hint_buf = nil     -- buffer the hint applies to
 local hint_timer = vim.uv.new_timer()
+local hint_timer_open = true
+
+-- Hint-aware highlight lookup (eliminates parallel if-chains)
+local HINT_HL = {
+  running = { bar = "SageFsCellBarRunning", glow = "SageFsCellGlowRunning" },
+  success = { bar = "SageFsCellBarSuccess", glow = "SageFsCellGlowSuccess" },
+  error   = { bar = "SageFsCellBarError",   glow = "SageFsCellGlowError" },
+}
+local DEFAULT_HL = { bar = "SageFsCellBar", glow = "SageFsCellGlow" }
+
+--- Resolve bar/glow highlights for current buffer
+local function resolve_hl(buf)
+  if hint_status and buf == hint_buf then
+    return HINT_HL[hint_status] or DEFAULT_HL
+  end
+  return DEFAULT_HL
+end
+
+--- Safe extmark setter — silent in production, logs in debug mode
+local function set_extmark(buf, line, col, opts)
+  local ok, err = pcall(vim.api.nvim_buf_set_extmark, buf, M.ns, line, col, opts)
+  if not ok and vim.g.sagefs_debug then
+    vim.notify("[SageFs debug] extmark failed: " .. tostring(err), vim.log.levels.WARN)
+  end
+end
 
 --- Clear all cell highlight extmarks from a buffer
 ---@param buf number
 local function clear(buf)
-  pcall(vim.api.nvim_buf_clear_namespace, buf, ns, 0, -1)
-  last_buf = nil
-  last_start = nil
-  last_end = nil
-  last_hint = nil
+  pcall(vim.api.nvim_buf_clear_namespace, buf, M.ns, 0, -1)
+  last = { buf = nil, start_line = nil, end_line = nil, hint = nil }
 end
 
--- Public alias so BufLeave can route through cache invalidation
 M.clear = clear
 
---- Pick the bar highlight group based on eval hint
-local function bar_hl()
-  if hint_status == "running" then return "SageFsCellBarRunning" end
-  if hint_status == "success" then return "SageFsCellBarSuccess" end
-  if hint_status == "error" then return "SageFsCellBarError" end
-  return "SageFsCellBar"
+--- Build virt_text for a line based on style and position
+local function build_virt_text(style, i, start_line, end_line, cell_lines)
+  if style == "minimal" then return nil end
+
+  local is_single = (start_line == end_line)
+  local is_top = (i == start_line)
+  local is_bottom = (i == end_line)
+
+  if style == "normal" then
+    if is_single then
+      return { { " ◆ " .. cell_lines, "SageFsCellBound" } }
+    elseif is_top then
+      return { { " ╭", "SageFsCellBound" } }
+    elseif is_bottom then
+      return { { " ╰ " .. cell_lines, "SageFsCellBound" } }
+    end
+  elseif style == "full" then
+    if is_top then
+      return { { "┄ " .. cell_lines .. " lines", "SageFsCellBound" } }
+    elseif is_bottom then
+      return { { "┄ cell end", "SageFsCellBound" } }
+    end
+  end
+  return nil
 end
 
---- Pick the glow highlight group based on eval hint
-local function glow_hl()
-  if hint_status == "running" then return "SageFsCellGlowRunning" end
-  if hint_status == "success" then return "SageFsCellGlowSuccess" end
-  if hint_status == "error" then return "SageFsCellGlowError" end
-  return "SageFsCellGlow"
-end
+--- Line highlight group per style
+local STYLE_LINE_HL = {
+  minimal = nil,
+  normal = "glow",  -- resolved dynamically from hint
+  full = "SageFsCellLineFull",
+}
 
 --- Render cell boundary indicators
 ---@param buf number
 ---@param start_line number 1-indexed
 ---@param end_line number 1-indexed
 local function render(buf, start_line, end_line)
-  -- Skip if identical to last render (including hint state)
-  if buf == last_buf and start_line == last_start
-    and end_line == last_end and hint_status == last_hint then
+  local cur_hint = (buf == hint_buf) and hint_status or nil
+
+  -- Skip if identical to last render
+  if buf == last.buf and start_line == last.start_line
+    and end_line == last.end_line and cur_hint == last.hint then
     return
   end
 
   clear(buf)
-  last_buf = buf
-  last_start = start_line
-  last_end = end_line
-  last_hint = hint_status
+  last = { buf = buf, start_line = start_line, end_line = end_line, hint = cur_hint }
 
   local style = M.style
   if style == "off" then return end
 
   local line_count = vim.api.nvim_buf_line_count(buf)
   local cell_lines = end_line - start_line + 1
-  local cur_bar = bar_hl()
-  local cur_glow = glow_hl()
+  local hl = resolve_hl(buf)
 
-  if style == "minimal" then
-    for i = start_line, math.min(end_line, line_count) do
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, i - 1, 0, {
-        sign_text = "▎",
-        sign_hl_group = cur_bar,
-        number_hl_group = "SageFsCellNumber",
-        priority = 5,
-      })
+  local line_hl
+  local style_line = STYLE_LINE_HL[style]
+  if style_line == "glow" then
+    line_hl = hl.glow
+  else
+    line_hl = style_line  -- nil for minimal, literal group for full
+  end
+
+  for i = start_line, math.min(end_line, line_count) do
+    local opts = {
+      sign_text = "▎",
+      sign_hl_group = hl.bar,
+      number_hl_group = "SageFsCellNumber",
+      priority = 5,
+    }
+    if line_hl then opts.line_hl_group = line_hl end
+
+    local vt = build_virt_text(style, i, start_line, end_line, cell_lines)
+    if vt then
+      opts.virt_text = vt
+      opts.virt_text_pos = "eol"
     end
 
-  elseif style == "normal" then
-    for i = start_line, math.min(end_line, line_count) do
-      local opts = {
-        sign_text = "▎",
-        sign_hl_group = cur_bar,
-        line_hl_group = cur_glow,
-        number_hl_group = "SageFsCellNumber",
-        priority = 5,
-      }
-      -- Merge boundary virt_text into the per-line extmark
-      if start_line == end_line and i == start_line then
-        opts.virt_text = { { " ◆ " .. cell_lines, "SageFsCellBound" } }
-        opts.virt_text_pos = "eol"
-      elseif i == start_line then
-        opts.virt_text = { { " ╭", "SageFsCellBound" } }
-        opts.virt_text_pos = "eol"
-      elseif i == end_line then
-        opts.virt_text = { { " ╰ " .. cell_lines, "SageFsCellBound" } }
-        opts.virt_text_pos = "eol"
-      end
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, i - 1, 0, opts)
-    end
-
-  elseif style == "full" then
-    for i = start_line, math.min(end_line, line_count) do
-      local opts = {
-        sign_text = "▎",
-        sign_hl_group = cur_bar,
-        line_hl_group = "SageFsCellLineFull",
-        number_hl_group = "SageFsCellNumber",
-        priority = 5,
-      }
-      if i == start_line then
-        opts.virt_text = {
-          { "┄ " .. cell_lines .. " lines", "SageFsCellBound" },
-        }
-        opts.virt_text_pos = "eol"
-      elseif i == end_line then
-        opts.virt_text = { { "┄ cell end", "SageFsCellBound" } }
-        opts.virt_text_pos = "eol"
-      end
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, i - 1, 0, opts)
-    end
+    set_extmark(buf, i - 1, 0, opts)
   end
 end
 
@@ -160,12 +181,14 @@ end
 --- Update cell highlight at cursor position (debounced, with fast-path)
 function M.update()
   if M.style == "off" then return end
+  if not timer_open then return end
 
   -- Fast path: cursor still within cached cell, hint unchanged → skip
   local buf = vim.api.nvim_get_current_buf()
-  if buf == last_buf and last_start and hint_status == last_hint then
+  local cur_hint = (buf == hint_buf) and hint_status or nil
+  if buf == last.buf and last.start_line and cur_hint == last.hint then
     local ok, cursor = pcall(vim.api.nvim_win_get_cursor, 0)
-    if ok and cursor[1] >= last_start and cursor[1] <= last_end then
+    if ok and cursor[1] >= last.start_line and cursor[1] <= last.end_line then
       return
     end
   end
@@ -176,20 +199,19 @@ end
 
 --- Set eval state hint — changes bar/glow color for running/success/error
 --- Called by init.lua after eval fires and when results return.
+---@param buf number Buffer the hint applies to
 ---@param status string|nil "running"|"success"|"error"|nil
-function M.set_eval_hint(status)
-  hint_timer:stop()
+function M.set_eval_hint(buf, status)
+  if hint_timer_open then hint_timer:stop() end
   hint_status = status
+  hint_buf = buf
 
   -- Auto-clear success/error hints after a delay
-  if status == "success" then
-    hint_timer:start(1500, 0, vim.schedule_wrap(function()
+  local fade_ms = status == "success" and 1500 or status == "error" and 3000 or nil
+  if fade_ms and hint_timer_open then
+    hint_timer:start(fade_ms, 0, vim.schedule_wrap(function()
       hint_status = nil
-      update_now()
-    end))
-  elseif status == "error" then
-    hint_timer:start(3000, 0, vim.schedule_wrap(function()
-      hint_status = nil
+      hint_buf = nil
       update_now()
     end))
   end
@@ -262,12 +284,18 @@ function M.setup_highlights()
   end
 end
 
---- Release persistent timer handles
+--- Release persistent timer handles (wire to VimLeavePre)
 function M.teardown()
-  timer:stop()
-  timer:close()
-  hint_timer:stop()
-  hint_timer:close()
+  if timer_open then
+    timer:stop()
+    timer:close()
+    timer_open = false
+  end
+  if hint_timer_open then
+    hint_timer:stop()
+    hint_timer:close()
+    hint_timer_open = false
+  end
 end
 
 return M
