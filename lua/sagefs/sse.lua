@@ -124,6 +124,8 @@ function M.classify_event(event)
     -- File watching
     HotReloadTriggered = "hot_reload_triggered",
     FileChanged = "file_changed",
+    -- Session events (typed envelope from SageFs daemon)
+    session = "session_event",
   }
 
   local action = type_to_action[event.type] or "unknown"

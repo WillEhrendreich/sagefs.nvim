@@ -375,3 +375,31 @@ describe("sse.connection_status", function()
     assert.are.equal("connected", sse.connection_status(0))
   end)
 end)
+
+-- ─── session event classification ────────────────────────────────────────────
+
+describe("sse.classify_event session events", function()
+  it("classifies session event type", function()
+    local result = sse.classify_event({ type = "session", data = '{"type":"warmup_context_snapshot"}' })
+    assert.are.equal("session_event", result.action)
+  end)
+
+  it("full round-trip: parse + classify session event", function()
+    local chunk = 'event: session\ndata: {"type":"hotreload_snapshot","watchedFiles":["a.fs"]}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("session_event", classified.action)
+    assert.truthy(classified.data:find("hotreload_snapshot"))
+  end)
+
+  it("parses warmup_context_snapshot session event", function()
+    local chunk = 'event: session\ndata: {"type":"warmup_context_snapshot","context":{"assemblies":["A.dll"]}}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    assert.are.equal("session", events[1].type)
+    local data = vim.json.decode(events[1].data)
+    assert.are.equal("warmup_context_snapshot", data.type)
+    assert.are.equal("A.dll", data.context.assemblies[1])
+  end)
+end)

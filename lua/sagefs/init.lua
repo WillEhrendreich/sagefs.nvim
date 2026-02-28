@@ -48,6 +48,8 @@ M.annotations_state = annotations.new()
 M.density_state = density.new()
 M.daemon_state = daemon.new()
 M.active_session = nil
+M.warmup_context = nil
+M.hotreload_files = {}
 M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
 
@@ -217,6 +219,20 @@ local function build_handlers()
         M.apply_diagnostics(data.diagnostics)
       end
     end,
+
+    -- Session events (typed envelope: warmup_context_snapshot, hotreload_snapshot)
+    session_event = function(raw)
+      local data = decode_event_data(raw)
+      if not data then return end
+      local event_type = data.type
+      if event_type == "warmup_context_snapshot" then
+        M.warmup_context = data.context
+        fire_user_event("warmup_context", data)
+      elseif event_type == "hotreload_snapshot" then
+        M.hotreload_files = data.watchedFiles or {}
+        fire_user_event("hotreload_snapshot", data)
+      end
+    end,
   })
 end
 
@@ -327,6 +343,8 @@ local function start_sse()
       M.testing_state = testing.new()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
+      M.warmup_context = nil
+      M.hotreload_files = {}
       fire_user_event("connected")
       vim.schedule(function()
         fire_user_event("test_recovery_needed")

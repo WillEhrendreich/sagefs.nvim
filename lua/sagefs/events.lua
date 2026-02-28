@@ -19,6 +19,8 @@ M.EVENT_NAMES = {
   "SageFsDisconnected",
   "SageFsCoverageUpdated",
   "SageFsHotReloadTriggered",
+  "SageFsWarmupContext",
+  "SageFsHotReloadSnapshot",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -36,6 +38,8 @@ local EVENT_MAP = {
   disconnected = "SageFsDisconnected",
   coverage_updated = "SageFsCoverageUpdated",
   hot_reload_triggered = "SageFsHotReloadTriggered",
+  warmup_context = "SageFsWarmupContext",
+  hotreload_snapshot = "SageFsHotReloadSnapshot",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────
