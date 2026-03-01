@@ -338,22 +338,43 @@ end
 
 -- ─── Type Signature Extraction ──────────────────────────────────────────────
 
---- Extract type signatures from FSI output for inline type hints.
---- Parses "val <name> : <type>" and "val <name> : <type> = <value>" lines.
----@param output string|nil FSI result text
----@return table[] list of {name: string, type_sig: string}
-function M.extract_type_signatures(output)
-  if not output then return {} end
-  local sigs = {}
-  for line in output:gmatch("[^\n]+") do
-    local name, type_sig = line:match("^val%s+(%S+)%s*:%s*(.+)")
-    if name and name ~= "mutable" and name ~= "it" and not name:match("^%(") then
-      local ts = type_sig:match("^(.-)%s*=") or type_sig
-      table.insert(sigs, { name = name, type_sig = ts:match("^%s*(.-)%s*$") })
+--- Validate SSE handler definition table entries.
+--- Checks: target requires fn, fn requires target, at least one of fn or event.
+---@param defs table[] SSE_HANDLER_DEFS-style entries
+function M.validate_handler_defs(defs)
+  for _, def in ipairs(defs) do
+    if def.target and not def.fn then
+      error("SSE_HANDLER_DEF: target without fn: " .. (def.action or "?"))
+    end
+    if def.fn and not def.target then
+      error("SSE_HANDLER_DEF: fn without target: " .. (def.action or "?"))
+    end
+    if not def.fn and not def.event then
+      error("SSE_HANDLER_DEF: no fn and no event: " .. (def.action or "?"))
     end
   end
-  return sigs
 end
+
+--- Format model stats as display lines for :SageFsStats float.
+---@param m table model state
+---@return string[] lines
+function M.format_stats_lines(m)
+  local model = require("sagefs.model")
+  local avg = model.eval_latency_avg(m)
+  return {
+    "═══ SageFs Stats ═══",
+    "",
+    string.format("Evals:         %d", m.stats.eval_count),
+    string.format("Avg latency:   %s", avg and string.format("%.0fms", avg) or "n/a"),
+    string.format("SSE events:    %d", m.stats.sse_events_total),
+    string.format("Reconnects:    %d", m.stats.reconnect_count),
+    string.format("Cells tracked: %d", model.cell_count(m)),
+  }
+end
+
+--- Extract type signatures from FSI output for inline type hints.
+--- Alias for parse_bindings — same FSI output format, same parsing logic (DRY).
+M.extract_type_signatures = M.parse_bindings
 
 -- ─── Path Exclusion Filter ──────────────────────────────────────────────────
 

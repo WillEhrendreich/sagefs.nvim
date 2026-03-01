@@ -1,0 +1,326 @@
+*sagefs.txt*                                        SageFs for Neovim
+
+Author: Will Ehrendreich
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *sagefs-contents*
+
+  1. Introduction ................................ |sagefs-introduction|
+  2. Quickstart .................................. |sagefs-quickstart|
+  3. Cell Evaluation ............................. |sagefs-cells|
+  4. Commands .................................... |sagefs-commands|
+  5. Keymaps ..................................... |sagefs-keymaps|
+  6. Configuration ............................... |sagefs-config|
+  7. Live Testing ................................ |sagefs-testing|
+  8. Coverage .................................... |sagefs-coverage|
+  9. Sessions .................................... |sagefs-sessions|
+  10. Hot Reload ................................. |sagefs-hotreload|
+  11. Type Explorer .............................. |sagefs-type-explorer|
+  12. Diagnostics ................................ |sagefs-diagnostics|
+  13. Health Check ............................... |sagefs-health|
+  14. FAQ ........................................ |sagefs-faq|
+
+==============================================================================
+1. INTRODUCTION                                         *sagefs-introduction*
+
+sagefs.nvim is the Neovim frontend for SageFs, a live F# development server
+that eliminates the edit-build-run cycle. SageFs provides sub-second hot
+reload, live unit testing, code coverage, and an MCP server for AI agents.
+
+This plugin connects Neovim to the running SageFs daemon, providing:
+- Cell evaluation with inline results
+- Live test state with gutter signs
+- Code coverage with gutter annotations
+- Session management (multi-project)
+- Hot reload controls
+- SSE live updates from the daemon
+
+Architecture: 28 pure Lua modules with zero vim API dependencies (fully
+testable under busted), plus an integration layer in init.lua that wires
+pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
+
+==============================================================================
+2. QUICKSTART                                            *sagefs-quickstart*
+
+1. Install SageFs: >
+     dotnet tool install -g sagefs
+<
+2. Add the plugin (lazy.nvim): >lua
+     { "WillEhrendreich/sagefs.nvim", config = true }
+<
+3. Open your F# project: >
+     cd ~/myproject
+     nvim MyScript.fsx
+<
+4. Start the daemon (auto-discovers .sln/.fsproj): >vim
+     :SageFsStart
+<
+5. Write F# code with `;;` cell boundaries: >fsharp
+     let x = 42;;
+
+     let greet name =
+       sprintf "Hello, %s!" name;;
+<
+6. Press `<Alt-Enter>` with cursor in a cell to evaluate it.
+
+7. See inline results appear next to your code.
+
+Run `:checkhealth sagefs` to verify your setup.
+
+==============================================================================
+3. CELL EVALUATION                                           *sagefs-cells*
+
+Cells are delimited by `;;` at the end of a line. The `;;` marker must
+appear at the end of a line (not inside strings or comments).
+
+Example buffer: >fsharp
+  let x = 42;;           ← Cell 1
+
+  let y = x + 1;;        ← Cell 2
+
+  printfn "%d" y;;       ← Cell 3
+<
+When you evaluate a cell (|:SageFsEval| or `<A-CR>`), the plugin:
+
+1. Finds the cell boundaries around your cursor
+2. Sends the code to the SageFs daemon via HTTP POST
+3. Shows inline results as virtual text (success → green, error → red)
+4. Tracks cell state: idle → running → success/error
+5. Marks results as stale when you edit the cell
+
+Cell highlight styles (configurable via density presets):
+- `sp` (undercurl): colored underline, default style
+- `glow`: left-margin indicator
+- `flash`: brief highlight on eval completion
+- `bar`: status bar at cell boundary
+
+==============================================================================
+4. COMMANDS                                              *sagefs-commands*
+
+Connection ~
+
+:SageFsConnect                                          *:SageFsConnect*
+    Connect to a running SageFs daemon on the configured port.
+
+:SageFsStart                                            *:SageFsStart*
+    Auto-discover .sln/.fsproj in the working directory and start
+    the SageFs daemon if not already running.
+
+:SageFsDisconnect                                       *:SageFsDisconnect*
+    Disconnect from the SageFs daemon.
+
+Evaluation ~
+
+:SageFsEval                                             *:SageFsEval*
+    Evaluate the cell under the cursor. Results appear as inline
+    virtual text.
+
+:SageFsEvalAndAdvance                                   *:SageFsEvalAndAdvance*
+    Evaluate the current cell and move the cursor to the next cell.
+
+:SageFsClear                                            *:SageFsClear*
+    Clear all inline results and cell state for the current buffer.
+
+Testing ~
+
+:SageFsTestPanel                                        *:SageFsTestPanel*
+    Open the live test panel showing pass/fail state.
+
+:SageFsRunTests                                         *:SageFsRunTests*
+    Trigger a test run for the current session.
+
+:SageFsEnableTesting                                    *:SageFsEnableTesting*
+    Enable live testing (tests run automatically on hot reload).
+
+:SageFsDisableTesting                                   *:SageFsDisableTesting*
+    Disable live testing.
+
+Sessions ~
+
+:SageFsSessions                                         *:SageFsSessions*
+    List active SageFs sessions.
+
+:SageFsSwitchSession                                    *:SageFsSwitchSession*
+    Switch to a different SageFs session.
+
+:SageFsCreateSession                                    *:SageFsCreateSession*
+    Create a new SageFs session for a project.
+
+Utilities ~
+
+:SageFsStats                                            *:SageFsStats*
+    Show runtime statistics: eval count, latency, SSE events,
+    reconnects, cells tracked.
+
+:SageFsPlayground                                       *:SageFsPlayground*
+    Open a fresh F# scratch buffer with auto-session. Zero-config
+    way to start experimenting.
+
+:SageFsExport                                           *:SageFsExport*
+    Export the current session as an .fsx file.
+
+:SageFsDensity                                          *:SageFsDensity*
+    Cycle through density presets (minimal, normal, full) which
+    control how much inline information is shown.
+
+:SageFsTypeExplorer                                     *:SageFsTypeExplorer*
+    Browse types in referenced assemblies.
+
+:SageFsTypeExplorerFlat                                 *:SageFsTypeExplorerFlat*
+    Search all types across assemblies in a flat list.
+
+:SageFsPipelineTrace                                    *:SageFsPipelineTrace*
+    Show the current pipeline trace state.
+
+:SageFsStatus                                           *:SageFsStatus*
+    Show connection status and session information.
+
+==============================================================================
+5. KEYMAPS                                               *sagefs-keymaps*
+
+Default keymaps (configured in setup): >
+
+  <A-CR>       Evaluate cell under cursor
+  <S-A-CR>     Evaluate cell and advance to next cell
+  <C-A-CR>     Evaluate treesitter scope under cursor
+<
+All keymaps are buffer-local to F# filetypes (.fs, .fsx, .fsi).
+
+The `<leader>s` namespace is recommended for additional bindings: >lua
+
+  vim.keymap.set("n", "<leader>se", "<cmd>SageFsEval<CR>")
+  vim.keymap.set("n", "<leader>sr", "<cmd>SageFsRunTests<CR>")
+  vim.keymap.set("n", "<leader>st", "<cmd>SageFsTestPanel<CR>")
+  vim.keymap.set("n", "<leader>sd", "<cmd>SageFsDensity<CR>")
+  vim.keymap.set("n", "<leader>sc", "<cmd>SageFsClear<CR>")
+  vim.keymap.set("n", "<leader>ss", "<cmd>SageFsStats<CR>")
+  vim.keymap.set("n", "<leader>sp", "<cmd>SageFsPlayground<CR>")
+<
+==============================================================================
+6. CONFIGURATION                                          *sagefs-config*
+
+Pass configuration to setup(): >lua
+
+  require("sagefs").setup({
+    port = 37849,                -- SageFs daemon port
+    auto_connect = true,         -- Connect on F# file open
+    check_on_save = false,       -- Run type check on save
+    density = "normal",          -- "minimal", "normal", "full"
+    cell_highlight = {
+      style = "sp",              -- "sp", "glow", "flash", "bar"
+      flash_duration_ms = 300,   -- Flash fade duration
+    },
+  })
+<
+Density presets control information density: ~
+
+  minimal:  Results only, no type hints, no timing
+  normal:   Results + timing + type hints for top-level bindings
+  full:     Everything — all type hints, shadows, diagnostics
+
+==============================================================================
+7. LIVE TESTING                                          *sagefs-testing*
+
+SageFs provides a three-speed live testing pipeline:
+
+1. Tree-sitter detects tests in ~50ms (even in broken code)
+2. F# Compiler Service builds dependency graph in ~350ms
+3. Affected tests execute in ~500ms total
+
+The plugin shows test results as gutter signs: >
+
+  ✓  Test passed (green)
+  ✗  Test failed (red)
+  ●  Test running (yellow)
+  ◌  Test discovered but not yet run
+<
+Commands: |:SageFsTestPanel|, |:SageFsRunTests|, |:SageFsEnableTesting|
+
+==============================================================================
+8. COVERAGE                                              *sagefs-coverage*
+
+Code coverage is computed from F# Compiler Service typed AST analysis.
+Coverage gutters appear automatically when live testing is enabled: >
+
+  ┃  Line covered (green)
+  ┃  Line not covered (red)
+  ┃  Line partially covered (yellow)
+<
+==============================================================================
+9. SESSIONS                                              *sagefs-sessions*
+
+SageFs supports multiple simultaneous sessions across different projects.
+Each session runs in an isolated FSI worker process.
+
+Use |:SageFsSessions| to list sessions, |:SageFsSwitchSession| to change
+the active session, and |:SageFsCreateSession| to start a new one.
+
+==============================================================================
+10. HOT RELOAD                                           *sagefs-hotreload*
+
+When you save an .fs file, SageFs hot-reloads the change in ~100ms using
+Harmony runtime patching. The plugin shows hot reload status and can
+trigger manual reloads.
+
+==============================================================================
+11. TYPE EXPLORER                                      *sagefs-type-explorer*
+
+Browse and search types from referenced assemblies: >vim
+
+  :SageFsTypeExplorer           " Browse by assembly → namespace → type
+  :SageFsTypeExplorerFlat       " Search all types in a flat picker
+<
+Results are cached per-session. The flat explorer searches across all
+assemblies simultaneously.
+
+==============================================================================
+12. DIAGNOSTICS                                        *sagefs-diagnostics*
+
+FSI diagnostics (errors, warnings) from evaluation are shown via
+|vim.diagnostic|. They appear as inline virtual text and in the
+diagnostics list (|:lua vim.diagnostic.setqflist()|).
+
+SSE-streamed diagnostics from the daemon (hot reload errors, test
+compilation failures) are also displayed.
+
+==============================================================================
+13. HEALTH CHECK                                          *sagefs-health*
+
+Run `:checkhealth sagefs` to verify your setup. Checks: >
+
+  ✓ SageFs CLI found
+  ✓ sagefs.nvim loaded
+  ✓ Connected to SageFs daemon
+  ✓ Tree-sitter F# parser installed
+  ✓ curl available
+<
+==============================================================================
+14. FAQ                                                      *sagefs-faq*
+
+Q: How do I install SageFs?
+A: `dotnet tool install -g sagefs`. See the SageFs README for details.
+
+Q: How do I start the daemon?
+A: Run `sagefs --proj YourApp.fsproj` in a terminal, or use |:SageFsStart|
+   which auto-discovers projects in the working directory.
+
+Q: Can I use this with multiple projects?
+A: Yes. SageFs supports multiple sessions. Use |:SageFsCreateSession|
+   for each project and |:SageFsSwitchSession| to change between them.
+
+Q: What's the `;;` for?
+A: `;;` at the end of a line marks a cell boundary. This is standard F#
+   Interactive syntax. Cells are the unit of evaluation — press `<A-CR>`
+   to evaluate the cell your cursor is in.
+
+Q: Results are stale after I edit — how do I refresh?
+A: Press `<A-CR>` again to re-evaluate. Results automatically go stale
+   (dimmed) when you edit the cell they belong to.
+
+Q: How do I see test results?
+A: Use |:SageFsEnableTesting| to turn on live testing, then
+   |:SageFsTestPanel| to see the results panel.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

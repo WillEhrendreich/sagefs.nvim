@@ -1119,6 +1119,31 @@ function M.register_commands(plugin, helpers)
       end,
     })
   end, { desc = "Show callees of a symbol", nargs = 1 })
+
+  vim.api.nvim_create_user_command("SageFsStats", function()
+    local lines = format.format_stats_lines(plugin.state)
+    render.show_float(lines, { title = "SageFs Stats" })
+  end, { desc = "Show SageFs runtime statistics" })
+
+  vim.api.nvim_create_user_command("SageFsPlayground", function()
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, "SageFs Playground.fsx")
+    vim.api.nvim_buf_set_option(buf, "filetype", "fsharp")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "// SageFs Playground — experiment with F# here",
+      "// Press <Alt-Enter> to evaluate a cell",
+      "",
+      "let greeting = \"Hello from SageFs!\";;",
+      "",
+      "printfn \"%s\" greeting;;",
+      "",
+      "// Try defining types and functions:",
+      "// type Person = { Name: string; Age: int };;",
+      "// let alice = { Name = \"Alice\"; Age = 30 };;",
+    })
+    vim.api.nvim_set_current_buf(buf)
+    helpers.notify("Playground ready — evaluate cells with <Alt-Enter>", vim.log.levels.INFO)
+  end, { desc = "Open F# scratch playground" })
 end
 
 --- Register keymaps

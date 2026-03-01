@@ -167,6 +167,13 @@ function M.set_reconnect_gen(m, gen)
   return m
 end
 
+--- Check if this is the first connect (reconnect_gen still 0)
+---@param m table
+---@return boolean
+function M.is_first_connect(m)
+  return (m.reconnect_gen or 0) == 0
+end
+
 -- ─── Stats / Observability ──────────────────────────────────────────────────
 
 --- Record an eval completion with latency
@@ -175,7 +182,7 @@ end
 ---@return table
 function M.record_eval(m, latency_ms)
   m.stats.eval_count = m.stats.eval_count + 1
-  m.stats.eval_latency_sum_ms = m.stats.eval_latency_sum_ms + latency_ms
+  m.stats.eval_latency_sum_ms = m.stats.eval_latency_sum_ms + (latency_ms or 0)
   return m
 end
 
@@ -202,6 +209,15 @@ end
 function M.eval_latency_avg(m)
   if m.stats.eval_count == 0 then return nil end
   return m.stats.eval_latency_sum_ms / m.stats.eval_count
+end
+
+--- Count tracked cells
+---@param m table
+---@return number
+function M.cell_count(m)
+  local count = 0
+  for _ in pairs(m.cells) do count = count + 1 end
+  return count
 end
 
 return M

@@ -147,6 +147,9 @@ local TARGET_MAP = {
 local function build_handlers()
   local handlers = {}
 
+  -- Validate definitions at build time (Wlaschin: cheap defense in depth)
+  format.validate_handler_defs(SSE_HANDLER_DEFS)
+
   -- Generate handlers from data-driven definitions
   for _, def in ipairs(SSE_HANDLER_DEFS) do
     handlers[def.action] = function(raw)
@@ -318,12 +321,14 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
-      -- Stats: track reconnect
-      M.state = model.record_reconnect(M.state)
       -- Two-phase reconnect (R10): increment generation counter.
       -- Clear testing/coverage/annotations since daemon replays them via SSE.
       -- Preserve warmup_context and hotreload_files (not session-scoped,
       -- expensive to re-acquire, and stale data is better than no data).
+      -- Stats: only count reconnects, not the initial connect (R11)
+      if not model.is_first_connect(M.state) then
+        M.state = model.record_reconnect(M.state)
+      end
       local gen = (M.state.reconnect_gen or 0) + 1
       M.state = model.set_reconnect_gen(M.state, gen)
       M.testing_state = testing.new()
