@@ -179,6 +179,22 @@ Analysis ~
     so the file is valid `dotnet fsi` input. Defaults to
     `session_notebook.fsx`.
 
+:SageFsArrows                                           *:SageFsArrows*
+    Visualize cross-cell dependency arrows showing which bindings
+    flow between cells. Uses the depgraph engine to compute
+    producer→consumer edges and displays them in a float.
+
+:SageFsHistory                                          *:SageFsHistory*
+    Show the full evaluation history for the cell under cursor.
+    Displays all previous outputs with timestamps and durations,
+    enabling time-travel through REPL state. Navigate with the
+    float window to see how values evolved over evaluations.
+
+:SageFsTypeFlow                                         *:SageFsTypeFlow*
+    Trace type information across cell boundaries. Shows how
+    bindings produced in one cell are consumed by downstream
+    cells, with type signatures and flow paths.
+
 :SageFsExport                                           *:SageFsExport*
     Export the current session as an .fsx file.
 

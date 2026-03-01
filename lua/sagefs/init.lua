@@ -58,6 +58,7 @@ M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
 M.pipeline_trace = nil
 M.timeline_state = require("sagefs.timeline").new()
+M.time_travel_state = require("sagefs.time_travel").new()
 
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
@@ -417,6 +418,13 @@ local function handle_result(buf, cell_id, result, end_line)
       start_ms = start_ms,
       duration_ms = result.duration_ms,
       status = result.ok and "success" or "error",
+    })
+    -- Time-travel: record output history
+    local time_travel = require("sagefs.time_travel")
+    local output = result.ok and result.output or result.error
+    time_travel.record(M.time_travel_state, cell_id, output or "", {
+      duration_ms = result.duration_ms,
+      timestamp_ms = vim.uv.hrtime() / 1e6,
     })
   end
   if result.ok then

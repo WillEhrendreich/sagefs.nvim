@@ -1201,6 +1201,93 @@ function M.register_commands(plugin, helpers)
     end
   end, { desc = "Show binding scope map" })
 
+  vim.api.nvim_create_user_command("SageFsArrows", function()
+    local depgraph = require("sagefs.depgraph")
+    local depgraph_viz = require("sagefs.depgraph_viz")
+    local cells_mod = require("sagefs.cells")
+    local buf = vim.api.nvim_get_current_buf()
+    local lines_arr = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local all_cells = cells_mod.find_all_cells(lines_arr)
+    local cells_data, cells_layout = {}, {}
+    for _, c in ipairs(all_cells) do
+      local cd = plugin.state.cells[c.start_line]
+      cells_data[#cells_data + 1] = {
+        id = c.start_line,
+        source = table.concat(c.lines or {}, "\n"),
+        output = cd and cd.output or "",
+      }
+      cells_layout[c.start_line] = { start_line = c.start_line, end_line = c.end_line }
+    end
+    local graph = depgraph.build_graph(cells_data)
+    local arrows = depgraph_viz.compute_arrows(graph, cells_layout)
+    local panel_lines = depgraph_viz.format_panel(arrows, cells_layout)
+    render.show_float(panel_lines, { title = "Dependency Arrows" })
+  end, { desc = "Visualize cross-cell dependency arrows" })
+
+  vim.api.nvim_create_user_command("SageFsHistory", function()
+    local time_travel = require("sagefs.time_travel")
+    local cells_mod = require("sagefs.cells")
+    local buf = vim.api.nvim_get_current_buf()
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local lines_arr = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local cell = cells_mod.find_cell(lines_arr, row)
+    if not cell then
+      helpers.notify("No cell under cursor", vim.log.levels.WARN)
+      return
+    end
+    if not plugin.time_travel_state then
+      helpers.notify("No eval history yet", vim.log.levels.INFO)
+      return
+    end
+    local cell_id = cell.start_line
+    local count = time_travel.history_count(plugin.time_travel_state, cell_id)
+    if count == 0 then
+      helpers.notify("No history for this cell", vim.log.levels.INFO)
+      return
+    end
+    local display = { string.format("═══ Cell History (%d evals) ═══", count), "" }
+    for i = count, 1, -1 do
+      local nav = time_travel.navigate(plugin.time_travel_state, cell_id, i - count)
+      local marker = i == count and " ◀ current" or ""
+      display[#display + 1] = string.format("─── eval %d/%d (%dms)%s ───",
+        nav.index, nav.total, nav.duration_ms, marker)
+      for line in (nav.output or ""):gmatch("[^\n]+") do
+        display[#display + 1] = "  " .. line
+      end
+    end
+    render.show_float(display, { title = "Eval History" })
+  end, { desc = "Show eval history for cell under cursor" })
+
+  vim.api.nvim_create_user_command("SageFsTypeFlow", function()
+    local depgraph = require("sagefs.depgraph")
+    local type_flow = require("sagefs.type_flow")
+    local cells_mod = require("sagefs.cells")
+    local buf = vim.api.nvim_get_current_buf()
+    local lines_arr = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local all_cells = cells_mod.find_all_cells(lines_arr)
+    local cells_data, cell_outputs = {}, {}
+    for _, c in ipairs(all_cells) do
+      local cd = plugin.state.cells[c.start_line]
+      cells_data[#cells_data + 1] = {
+        id = c.start_line,
+        source = table.concat(c.lines or {}, "\n"),
+        output = cd and cd.output or "",
+      }
+      if cd then cell_outputs[c.start_line] = cd.output end
+    end
+    local graph = depgraph.build_graph(cells_data)
+    local flows = type_flow.all_flows(graph, cell_outputs)
+    if #flows == 0 then
+      helpers.notify("No cross-cell type flows detected", vim.log.levels.INFO)
+      return
+    end
+    local display = { string.format("═══ Type Flow (%d bindings) ═══", #flows), "" }
+    for _, flow in ipairs(flows) do
+      display[#display + 1] = type_flow.format_flow_path(flow)
+    end
+    render.show_float(display, { title = "Type Flow" })
+  end, { desc = "Show cross-cell type flow" })
+
   vim.api.nvim_create_user_command("SageFsNotebook", function(opts)
     local notebook = require("sagefs.notebook")
     local cells_mod = require("sagefs.cells")
