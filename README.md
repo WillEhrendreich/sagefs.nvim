@@ -2,6 +2,225 @@
 
 Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs) — a live F# development server that eliminates the edit-build-run cycle. SageFs provides sub-second hot reload, live unit testing with a three-speed pipeline, FCS-based code coverage, an affordance-driven MCP server for AI agents, multi-session management, file watching, and more. This plugin connects Neovim to the running daemon, giving you cell evaluation with inline results, session management, hot reload controls, live test state, coverage gutter signs, and SSE live updates from your editor.
 
+## Feature Tour
+
+### ① Cell Evaluation — the core loop
+
+Press <kbd>Alt-Enter</kbd> to evaluate the cell under your cursor. Results appear as inline virtual text. <kbd>Shift-Alt-Enter</kbd> evaluates and advances. <kbd>Ctrl-Alt-Enter</kbd> evaluates the treesitter scope.
+
+```
+ ┌─ Idle ──────────────────────────────────────────────────────┐
+ │                                                             │
+ │  1 ╭ let x = 42;;                    ▷ eval cell            │
+ │  2                                                          │
+ │  3 ╭ let add a b =                   ▷ eval cell            │
+ │  4 │   a + b                                                │
+ │  5 ╰ add 1 2;;                                              │
+ │                                                             │
+ │  CodeLens virtual text says "▷ eval cell" above idle cells  │
+ └─────────────────────────────────────────────────────────────┘
+
+ ┌─ Running ───────────────────────────────────────────────────┐
+ │                                                             │
+ │  1 ◆ let x = 42;;  ⟳          bracket turns yellow         │
+ │  2                                                          │
+ │  3 ╭ let add a b =                                          │
+ │  4 │   a + b                                                │
+ │  5 ╰ add 1 2;;                                              │
+ └─────────────────────────────────────────────────────────────┘
+
+ ┌─ Success ───────────────────────────────────────────────────┐
+ │                                                             │
+ │  1 ◆ let x = 42;;  val x: int = 42   bracket turns green   │
+ │  2                                                          │
+ │  3 ╭ let add a b =                                          │
+ │  4 │   a + b                                                │
+ │  5 ╰ add 1 2;;     val it: int = 3                          │
+ └─────────────────────────────────────────────────────────────┘
+
+ ┌─ Error ─────────────────────────────────────────────────────┐
+ │                                                             │
+ │  3 ╭ let add a b =                    bracket turns red     │
+ │  4 │   a +. b                                               │
+ │  5 ╰ add 1 2;;     FS0001: type mismatch                   │
+ └─────────────────────────────────────────────────────────────┘
+
+ ┌─ Stale ─────────────────────────────────────────────────────┐
+ │                                                             │
+ │  1 ◆ let x = 99;;  val x: int = 42 ⟲ stale                │
+ │                     (you changed 42→99, needs re-eval)      │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+### ② Cell Highlight Styles
+
+Cycle with `:SageFsCellStyle` or set directly: `:SageFsCellStyle minimal`. All styles work on transparent terminals — no opaque backgrounds.
+
+```
+ normal (default)        minimal               full                    single-line
+ ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+ │ 12 ╭ let init () │   │ 12 ▎ let init () │   │ 12 ╭ let init () │   │ 19 ◆ let ballColor│
+ │ 13 │   { BallX   │   │ 13 ▎   { BallX   │   │ 13 │   { BallX   │   │ 20   let paddle   │
+ │ 14 │     BallVX  │   │ 14 ▎     BallVX  │   │ 14 │     BallVX  │   └──────────────────┘
+ │ 15 │     LeftY   │   │ 15 ▎     LeftY   │   │ 15 │     LeftY   │    ◆ = single-line cell
+ │ 16 │     LeftScr │   │ 16 ▎     LeftScr │   │ 16 │     LeftScr │
+ │ 17 ╰     Trail } │   │ 17 ▎     Trail } │   │ 17 ╰     Trail } │
+ └──────────────────┘   └──────────────────┘   └──────────────────┘
+  ╭│╰ bracket             ▎ thin bar             bracket + bg tint
+  in sign column          least intrusive         + ⟨6 lines⟩ EOL
+```
+
+### ③ Two-Mode Cell Detection
+
+| Mode | Trigger | How it works |
+|------|---------|-------------|
+| **Manual** | File contains `;;` | Lexer finds `;;` boundaries (respects strings/comments) |
+| **Inferred** | No `;;` in file | Tree-sitter walks AST for `declaration_expression` and `type_definition` nodes |
+
+```
+ Inferred (Pong.fs — no ;; anywhere)       Manual (.fsx script)
+ ┌───────────────────────────────────┐     ┌──────────────────────┐
+ │  5 ╭ type State =     ← cell 1   │     │  1 ◆ let x = 42;;   │
+ │  6 │   { BallX: float …          │     │  2                   │
+ │ 10 ╰     Trail: … }              │     │  3 ╭ let add a b =   │
+ │ 12 ╭ let init () =    ← cell 2   │     │  4 │   a + b         │
+ │ 13 │   { BallX = 0.5 …           │     │  5 ╰ add 1 2;;       │
+ │ 17 ╰     Trail = [] }            │     │  6                   │
+ │ 19 ◆ let ballColor …  ← cell 3   │     │  7 ╭ let msg = "hi"  │
+ │ 29 ╭ let update dt =  ← cell 4   │     │  8 ╰ printfn "%s";;  │
+ │ .. │   (56 lines!)               │     └──────────────────────┘
+ │ 84 ╰     Trail = trail }         │
+ └───────────────────────────────────┘
+  12 cells auto-detected from AST
+```
+
+### ④ Live Testing Pipeline
+
+Tests run automatically: tree-sitter detects tests (~50ms) → type-check + dependency graph (~350ms) → execute affected (~500ms). Results as gutter signs + CodeLens.
+
+```
+ Gutter signs                              :SageFsTestPanel
+ ┌────────────────────────────────┐       ┌──────────────────────────────────────┐
+ │    ✓ passed 2ms                │       │ ═══ Test Results ═══                 │
+ │ 12 ✓ [<Test>]                  │       │ Filter: all   b=binding f=file Tab=↻ │
+ │ 13   let ``add returns sum`` = │       │                                      │
+ │ 14     add 1 2 |> shouldEqual 3│       │  ✓ add returns sum              2ms  │
+ │                                │       │  ✗ multiply works               1ms  │
+ │    ✗ failed — Expected 5 got 4 │       │    Expected 5 but got 4              │
+ │ 16 ✗ [<Test>]                  │       │  ✓ subtract works               0ms  │
+ │ 17   let ``multiply works`` =  │       │  ✓ divide handles zero          1ms  │
+ │ 18     multiply 2 2 |> …       │       │  ⟳ integration test        running…  │
+ │                                │       │                                      │
+ │    ✓ passed 0ms                │       │ 4 passed · 1 failed · 1 running      │
+ │ 20 ✓ [<Test>]                  │       │ Press <CR> to jump to test source    │
+ └────────────────────────────────┘       └──────────────────────────────────────┘
+```
+
+### ⑤ Code Coverage
+
+FCS symbol graph for line-level, IL instrumentation for branch-level. Three gutter states: `▐` covered (green), `◐` partial (yellow), `▌` uncovered (red).
+
+```
+ Coverage gutters                         :SageFsCoverage
+ ┌──────────────────────────────┐        ┌──────────────────────────────────┐
+ │ 29 ▐ let update dt state =  │        │ ═══ Coverage ═══                 │
+ │ 30 ▐   let aiSpeed = 1.0    │        │                                  │
+ │ 31 ▐   let moveToward cur = │        │ ██████████ Pong.fs      84/120 70%│
+ │ 32 ▐     let diff = tgt-cur │        │ ███████░░░ MathLib.fs   42/60  70%│
+ │ 33 ◐     if abs diff < max  │  1/2   │ ██████████ Types.fs     30/30 100%│
+ │ 34 ▐     then tgt           │        │ ██░░░░░░░░ Network.fs   12/55  22%│
+ │ 35 ▌     else cur + …       │        │ ─────────────────────────────────│
+ │ 36 ▐                        │        │ Total:                168/265 63% │
+ └──────────────────────────────┘        └──────────────────────────────────┘
+  ▐ = covered  ◐ = partial  ▌ = uncov     Per-file breakdown + visual bars
+```
+
+### ⑥ Session Management & Status
+
+```
+ :SageFsStatus                     :SageFsStats                    :checkhealth sagefs
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────┐
+ │ ═══ SageFs Status ═══       │  │ ═══ SageFs Stats ═══        │  │ sagefs               ✅ │
+ │ Status:    ✓ Connected      │  │                             │  │                         │
+ │                             │  │ Evals:         47           │  │ ✅ SageFs CLI found     │
+ │ Daemon:    idle             │  │ Avg latency:   142ms        │  │ ✅ sagefs.nvim loaded   │
+ │ MCP port:  37749            │  │ SSE events:    2,680        │  │ ✅ Connected to daemon   │
+ │ Dashboard: 37750            │  │ Reconnects:    3            │  │ ✅ Tree-sitter F# parser│
+ │ Session:   HotReloadDemo    │  │ Cells tracked: 12           │  │ ✅ curl available       │
+ │                             │  └─────────────────────────────┘  └─────────────────────────┘
+ │ Flags:     auto_connect     │
+ └─────────────────────────────┘
+```
+
+### ⑦ Analysis & Visualization Tools
+
+All open in floating windows:
+
+```
+ :SageFsTimeline                   :SageFsArrows                   :SageFsScopeMap
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌──────────────────────────┐
+ │ ═══ Eval Timeline ═══       │  │ ═══ Cross-Cell Deps ═══     │  │ ═══ Scope Map ═══        │
+ │                             │  │                             │  │                          │
+ │ 14:02:31 ■ let x = 42  23ms│  │ Cell 1  type State          │  │ Cell 1 (L5-L10)          │
+ │ 14:02:34 ■ let add …   45ms│  │   ╰──→ Cell 2  let init     │  │   State : type            │
+ │ 14:02:38 ■ let mul …   12ms│  │   ╰──→ Cell 4  let update   │  │                          │
+ │ 14:02:41 ■ let mul …   31ms│  │   ╰──→ Cell 5  let toHtml   │  │ Cell 2 (L12-L17)         │
+ │ 14:02:55 ■ update … 187ms  │  │                             │  │   init : unit → State     │
+ │ 14:03:02 ⟳ toHtml  running │  │ Cell 3  let ballColor       │  │                          │
+ └─────────────────────────────┘  │   ╰──→ Cell 5  let toHtml   │  │ Cell 4 (L29-L84)         │
+  Chronological with latency      └─────────────────────────────┘  │   update : float → …     │
+                                   Which cells depend on which     └──────────────────────────┘
+                                                                    What each cell defines
+```
+
+### ⑧ Hot Reload & Statusline
+
+Save a file → SageFs patches running code in ~100ms via Harmony. No restart, no rebuild.
+
+```
+ Statusline component (add to your statusline config):
+ ┌──────────────────────────────────────────────────────────┐
+ │  ⚡ HotReloadDemo │ ✓ 4/5 │ 63% │ ● idle               │
+ │  ╰─ session ──────╯ tests  cov    daemon                │
+ └──────────────────────────────────────────────────────────┘
+  require("sagefs").statusline()
+
+ :SageFsHotReload                   Display density (<leader>sD)
+ ┌──────────────────────────────┐  ┌──────────────────────────────┐
+ │ ═══ Hot Reload ═══           │  │ minimal → signs only         │
+ │                              │  │ normal  → signs + CodeLens   │
+ │ ● watching  Pong.fs          │  │            + inline results  │
+ │ ● watching  MathLib.fs       │  │ full    → everything         │
+ │ ○ paused    Network.fs       │  │            + branch EOL text │
+ │ ● watching  Types.fs         │  └──────────────────────────────┘
+ │                              │   Cycle information density
+ │ <CR>=toggle  a=all  u=unwatch│
+ └──────────────────────────────┘
+```
+
+### ⑨ Type Explorer, History & Export
+
+```
+ :SageFsTypeExplorer                :SageFsHistory                  :SageFsNotebook markdown
+ ┌──────────────────────────────┐  ┌──────────────────────────────┐ ┌──────────────────────────┐
+ │ ═══ Type Explorer ═══        │  │ ═══ Eval History ═══         │ │ # Session Notebook       │
+ │ Assembly → Namespace → Type  │  │                              │ │                          │
+ │                              │  │ ● 14:03:02 toHtml (init())  │ │ ## Cell 1                │
+ │ FSharp.Core                  │  │ ● 14:02:55 update 0.016 … │ │ ```fsharp                │
+ │   Microsoft.FSharp.Collections│  │ ● 14:02:41 let mul a b=a*b │ │ let x = 42               │
+ │     List                     │  │ ● 14:02:38 let mul a b=a+.b │ │ ```                      │
+ │       map  : ('a→'b)→…→…    │  │ ● 14:02:34 let add a b=a+b │ │ > val x: int = 42        │
+ │       filter : ('a→bool)→…  │  │ ● 14:02:31 let x = 42      │ │                          │
+ │       fold : ('s→'a→'s)→…   │  │                              │ │ ## Cell 2                │
+ │       head : 'a list → 'a   │  │ Press <CR> to re-evaluate    │ │ ```fsharp                │
+ └──────────────────────────────┘  └──────────────────────────────┘ │ let add a b = a + b      │
+  Drill-down assembly browser       Browse + replay past evals     │ add 1 2                  │
+                                                                    │ ```                      │
+                                                                    │ > val it: int = 3        │
+                                                                    └──────────────────────────┘
+                                                                     Export as Markdown or .fsx
+```
+
 ## What is SageFs?
 
 SageFs is a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/tools/global-tools) that turns F# Interactive into a full development environment. Start the daemon once (`sagefs --proj YourApp.fsproj`), then connect from VS Code, Neovim, the terminal, a GPU-rendered GUI, a web dashboard, or all of them at once — they all share the same live session state.
@@ -87,22 +306,6 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1107 tests,
 | **Notebook export** | `:SageFsNotebook [markdown\|fsx]` → export session as literate notebook. |
 | **Playground** | `:SageFsPlayground` → open scratch F# buffer for quick experiments. |
 | **Health module** | `:checkhealth sagefs` validates CLI, plugin, daemon, treesitter, curl. |
-
-### Feature Overview
-
-![Feature overview — eval loop, cell styles, testing, coverage, sessions, analysis, type explorer](docs/screenshots/features-overview.png)
-
-The screenshot above shows all major feature areas:
-
-1. **Cell evaluation** — `Alt-Enter` evaluates, results appear inline, bracket color shows state (blue→yellow→green/red)
-2. **Cell highlight styles** — `╭│╰` bracket (normal), `▎` bar (minimal), bg tint (full), `◆` diamond (single-line). Transparent-terminal safe.
-3. **Two-mode detection** — files with `;;` use manual boundaries; files without use tree-sitter AST inference
-4. **Live testing** — gutter signs (✓/✗), CodeLens timing, filterable test panel with jump-to-source
-5. **Code coverage** — three-state gutters (▐ covered, ◐ partial, ▌ uncovered), per-file breakdown panel
-6. **Session & status** — `:SageFsStatus` dashboard, `:SageFsStats` runtime metrics, `:checkhealth sagefs`
-7. **Analysis tools** — `:SageFsTimeline`, `:SageFsArrows` (cross-cell deps), `:SageFsScopeMap` (binding map)
-8. **Hot reload & statusline** — per-file watch toggles, combined statusline (session │ tests │ coverage │ daemon), density presets
-9. **Type explorer & export** — assembly→namespace→type drill-down, notebook export (markdown/fsx), eval history browser
 
 ## Requirements
 
