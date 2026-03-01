@@ -88,6 +88,14 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1107 tests,
 | **Playground** | `:SageFsPlayground` → open scratch F# buffer for quick experiments. |
 | **Health module** | `:checkhealth sagefs` validates CLI, plugin, daemon, treesitter, curl. |
 
+### Cell Highlight
+
+The plugin highlights the tree-sitter-detected (or `;;`-delimited) cell under your cursor. Four styles are available — cycle with `:SageFsCellStyle`:
+
+![Cell highlight styles, eval-state feedback, and two-mode detection](docs/screenshots/cell-highlights.png)
+
+The bracket color changes in real time as you evaluate: **blue** (idle) → **yellow** (running) → **green** (success) / **red** (error), then fades back to idle. Works cleanly on transparent terminals — no opaque background blocks.
+
 ## Requirements
 
 - [SageFs](https://github.com/WillEhrendreich/SageFs) running (`sagefs --proj YourApp.fsproj`)
