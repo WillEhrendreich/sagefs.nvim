@@ -86,7 +86,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | 24 event types fired via `User` autocmds for scripting integration. |
+| **User autocmd events** | 28 event types fired via `User` autocmds for scripting integration. |
 | **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
@@ -230,7 +230,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `type_explorer_cache.lua` | ~65 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | ~60 | FSI event history formatting for picker and preview |
 | `export.lua` | ~20 | Session export to .fsx format |
-| `events.lua` | ~70 | User autocmd event definitions (24 event types) |
+| `events.lua` | ~80 | User autocmd event definitions (28 event types) |
 | `completions.lua` | ~25 | Omnifunc completion parsing and formatting |
 | `util.lua` | ~50 | Shared utilities (json_decode) |
 | `hotreload_model.lua` | ~55 | Pure hot reload URL builder, state, picker formatting |

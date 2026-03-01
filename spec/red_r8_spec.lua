@@ -53,9 +53,9 @@ describe("events.build_autocmd_data — completeness", function()
 end)
 
 describe("events.EVENT_NAMES — completeness", function()
-  it("contains entries for all 24 event types", function()
-    -- 14 original + 10 new = 24
-    assert.are.equal(24, #events.EVENT_NAMES)
+  it("contains entries for all 28 event types", function()
+    -- 14 original + 10 new + 4 hooks = 28
+    assert.are.equal(28, #events.EVENT_NAMES)
   end)
 end)
 

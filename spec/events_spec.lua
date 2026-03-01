@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 24 event names", function()
-      assert.are.equal(24, #events.EVENT_NAMES)
+    it("contains 28 event names", function()
+      assert.are.equal(28, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -53,7 +53,7 @@ describe("events", function()
       assert.is_nil(result)
     end)
 
-    it("maps all 24 event types correctly", function()
+    it("maps all 28 event types correctly", function()
       local mappings = {
         { "eval_completed", "SageFsEvalCompleted" },
         { "test_passed", "SageFsTestPassed" },
@@ -79,6 +79,10 @@ describe("events", function()
         { "pipeline_trace", "SageFsPipelineTrace" },
         { "reconnecting", "SageFsReconnecting" },
         { "test_recovery_needed", "SageFsTestRecoveryNeeded" },
+        { "eval_diff", "SageFsEvalDiff" },
+        { "cell_dependencies", "SageFsCellDependencies" },
+        { "binding_scope_map", "SageFsBindingScopeMap" },
+        { "eval_timeline", "SageFsEvalTimeline" },
       }
       for _, pair in ipairs(mappings) do
         local result = events.build_autocmd_data(pair[1], {})

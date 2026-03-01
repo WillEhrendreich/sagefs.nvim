@@ -137,6 +137,11 @@ local SSE_HANDLER_DEFS = {
   { action = "run_tests_requested", event = "run_tests_requested" },
   { action = "eval_completed", event = "eval_completed" },
   { action = "hot_reload_triggered", event = "hot_reload_triggered" },
+  -- Feature hooks (server-computed, push-only)
+  { action = "eval_diff", event = "eval_diff" },
+  { action = "cell_dependencies", event = "cell_dependencies" },
+  { action = "binding_scope_map", event = "binding_scope_map" },
+  { action = "eval_timeline", event = "eval_timeline" },
 }
 
 -- State target → { state_key, module }

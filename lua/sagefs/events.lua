@@ -31,6 +31,10 @@ M.EVENT_NAMES = {
   "SageFsPipelineTrace",
   "SageFsReconnecting",
   "SageFsTestRecoveryNeeded",
+  "SageFsEvalDiff",
+  "SageFsCellDependencies",
+  "SageFsBindingScopeMap",
+  "SageFsEvalTimeline",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -60,6 +64,10 @@ local EVENT_MAP = {
   pipeline_trace = "SageFsPipelineTrace",
   reconnecting = "SageFsReconnecting",
   test_recovery_needed = "SageFsTestRecoveryNeeded",
+  eval_diff = "SageFsEvalDiff",
+  cell_dependencies = "SageFsCellDependencies",
+  binding_scope_map = "SageFsBindingScopeMap",
+  eval_timeline = "SageFsEvalTimeline",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────

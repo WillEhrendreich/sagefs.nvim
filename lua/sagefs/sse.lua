@@ -129,6 +129,11 @@ function M.classify_event(event)
     -- CQRS: server-pushed bindings and pipeline state
     bindings_snapshot = "bindings_snapshot",
     pipeline_trace = "pipeline_trace",
+    -- Feature hooks (server-computed, push-only)
+    eval_diff = "eval_diff",
+    cell_dependencies = "cell_dependencies",
+    binding_scope_map = "binding_scope_map",
+    eval_timeline = "eval_timeline",
   }
 
   local action = type_to_action[event.type] or "unknown"
