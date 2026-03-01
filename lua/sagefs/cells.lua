@@ -243,8 +243,7 @@ function M.find_cell_auto(buf, lines, cursor_line)
   local cell_info = ts_cells.find_enclosing_cell(buf, cursor_line)
   if not cell_info then
     -- Cursor on a non-cell line (comment, blank, module declaration)
-    -- Fallback: whole file
-    return M.find_cell(lines, cursor_line)
+    return nil
   end
 
   -- Build text from the detected range
