@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **25 Lua modules, 900+ tests, zero failures.**
+This plugin provides the Neovim integration layer. **28 Lua modules, 1000+ tests, zero failures.**
 
 ### Fully Implemented & Tested
 

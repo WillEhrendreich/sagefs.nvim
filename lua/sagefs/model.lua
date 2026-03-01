@@ -37,6 +37,13 @@ function M.new()
   return {
     cells = {},
     status = "disconnected",
+    reconnect_gen = 0,
+    stats = {
+      eval_count = 0,
+      eval_latency_sum_ms = 0,
+      sse_events_total = 0,
+      reconnect_count = 0,
+    },
   }
 end
 
@@ -79,8 +86,18 @@ function M.set_cell_state(m, cell_id, status, output, metadata)
     status = status,
     output = output,
     duration_ms = metadata and metadata.duration_ms or nil,
+    end_line = metadata and metadata.end_line or nil,
   }
   return m
+end
+
+--- Check if a cell is currently running (guard for concurrent eval)
+---@param m table
+---@param cell_id number
+---@return boolean
+function M.is_cell_running(m, cell_id)
+  local cell = m.cells[cell_id]
+  return cell ~= nil and cell.status == "running"
 end
 
 --- Get cell state (returns idle for unknown cells)
@@ -137,6 +154,54 @@ function M.set_status(m, status)
   end
   m.status = status
   return m
+end
+
+-- ─── Reconnect Generation Tracking ──────────────────────────────────────────
+
+--- Set reconnect generation counter (for two-phase reconnect)
+---@param m table
+---@param gen number
+---@return table
+function M.set_reconnect_gen(m, gen)
+  m.reconnect_gen = gen
+  return m
+end
+
+-- ─── Stats / Observability ──────────────────────────────────────────────────
+
+--- Record an eval completion with latency
+---@param m table
+---@param latency_ms number
+---@return table
+function M.record_eval(m, latency_ms)
+  m.stats.eval_count = m.stats.eval_count + 1
+  m.stats.eval_latency_sum_ms = m.stats.eval_latency_sum_ms + latency_ms
+  return m
+end
+
+--- Record SSE events received (batch count)
+---@param m table
+---@param count number
+---@return table
+function M.record_sse_events(m, count)
+  m.stats.sse_events_total = m.stats.sse_events_total + count
+  return m
+end
+
+--- Record a reconnect event
+---@param m table
+---@return table
+function M.record_reconnect(m)
+  m.stats.reconnect_count = m.stats.reconnect_count + 1
+  return m
+end
+
+--- Get average eval latency (or nil if no evals)
+---@param m table
+---@return number|nil
+function M.eval_latency_avg(m)
+  if m.stats.eval_count == 0 then return nil end
+  return m.stats.eval_latency_sum_ms / m.stats.eval_count
 end
 
 return M

@@ -112,152 +112,104 @@ end
 -- Each handler receives the raw SSE event and decodes data as needed.
 local dispatch_table
 
+-- Data-driven SSE handler definitions (Muratori semantic compression, R10).
+-- Each entry: { action, handler_fn, target ("testing"|"coverage"|"annotations"), session_scoped, event_name }
+-- Custom handlers are closures that don't fit the pattern.
+local SSE_HANDLER_DEFS = {
+  -- Testing pipeline (decode + state update ± session check ± event)
+  { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing" },
+  { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
+  { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
+  { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed" },
+  { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing" },
+  { action = "test_locations_detected", fn = "handle_test_locations", target = "testing" },
+  { action = "providers_detected", fn = "handle_providers_detected", target = "testing", event = "providers_detected" },
+  { action = "test_summary", fn = "handle_test_summary", target = "testing", session_scoped = true, event = "test_summary" },
+  -- Coverage
+  { action = "coverage_updated", fn = "apply_coverage_response", target = "coverage", event = "coverage_updated" },
+  -- Annotations
+  { action = "file_annotations", fn = "handle_file_annotations", target = "annotations", session_scoped = true, event = "file_annotations" },
+  -- Fire-event-only (decode + fire, no state update)
+  { action = "affected_tests_computed", event = "affected_tests_computed" },
+  { action = "pipeline_timing_recorded", event = "pipeline_timing_recorded" },
+  { action = "run_tests_requested", event = "run_tests_requested" },
+  { action = "eval_completed", event = "eval_completed" },
+  { action = "hot_reload_triggered", event = "hot_reload_triggered" },
+}
+
+-- State target → { state_key, module }
+local TARGET_MAP = {
+  testing = { key = "testing_state", mod = function() return testing end },
+  coverage = { key = "coverage_state", mod = function() return coverage end },
+  annotations = { key = "annotations_state", mod = function() return annotations end },
+}
+
 local function build_handlers()
-  return sse_parser.build_dispatch_table({
-    state_update = function(raw)
-      M.state = model.set_status(M.state, "connected")
-    end,
+  local handlers = {}
 
-    -- Testing pipeline
-    tests_discovered = function(raw)
-      local data = decode_event_data(raw)
-      if data then M.testing_state = testing.handle_tests_discovered(M.testing_state, data) end
-    end,
-    test_results_batch = function(raw)
-      local data = decode_event_data(raw)
-      if not data or not session_matches(data) then return end
-      M.testing_state = testing.handle_results_batch(M.testing_state, data)
-      -- Fire one batch event instead of per-test events to avoid vim.schedule explosion
-      -- (500+ scheduled autocmds can OOM Neovim)
-      fire_user_event("test_results_batch", data)
-    end,
-    test_run_started = function(raw)
-      local data = decode_event_data(raw)
-      if data and session_matches(data) then
-        M.testing_state = testing.handle_test_run_started(M.testing_state, data)
-        fire_user_event("test_run_started", data)
-      end
-    end,
-    test_run_completed = function(raw)
-      local data = decode_event_data(raw)
-      if data and session_matches(data) then
-        M.testing_state = testing.handle_test_run_completed(M.testing_state, data)
-        fire_user_event("test_run_completed", data)
-      end
-    end,
-    live_testing_enabled = function(raw)
-      local data = decode_event_data(raw)
-      if data then M.testing_state = testing.set_enabled(M.testing_state, true) end
-    end,
-    live_testing_disabled = function(raw)
-      local data = decode_event_data(raw)
-      if data then M.testing_state = testing.set_enabled(M.testing_state, false) end
-    end,
-    run_policy_changed = function(raw)
-      local data = decode_event_data(raw)
-      if data then M.testing_state = testing.handle_run_policy_changed(M.testing_state, data) end
-    end,
-    test_locations_detected = function(raw)
-      local data = decode_event_data(raw)
-      if data then M.testing_state = testing.handle_test_locations(M.testing_state, data) end
-    end,
-    providers_detected = function(raw)
-      local data = decode_event_data(raw)
-      if data then
-        M.testing_state = testing.handle_providers_detected(M.testing_state, data)
-        fire_user_event("providers_detected", data)
-      end
-    end,
-    affected_tests_computed = function(raw)
-      local data = decode_event_data(raw)
-      if data then fire_user_event("affected_tests_computed", data) end
-    end,
-    pipeline_timing_recorded = function(raw)
-      local data = decode_event_data(raw)
-      if data then fire_user_event("pipeline_timing_recorded", data) end
-    end,
-    run_tests_requested = function(raw)
-      local data = decode_event_data(raw)
-      if data then fire_user_event("run_tests_requested", data) end
-    end,
-    test_summary = function(raw)
-      local data = decode_event_data(raw)
-      if data and session_matches(data) then
-        M.testing_state = testing.handle_test_summary(M.testing_state, data)
-        fire_user_event("test_summary", data)
-      end
-    end,
-
-    -- Coverage
-    coverage_updated = function(raw)
+  -- Generate handlers from data-driven definitions
+  for _, def in ipairs(SSE_HANDLER_DEFS) do
+    handlers[def.action] = function(raw)
       local data = decode_event_data(raw)
       if not data then return end
-      M.coverage_state = coverage.apply_coverage_response(M.coverage_state, data)
-      fire_user_event("coverage_updated", data)
-    end,
-    coverage_cleared = function(raw)
-      M.coverage_state = coverage.clear(M.coverage_state)
-    end,
-
-    -- File annotations (CodeLens, inline failures, coverage detail)
-    file_annotations = function(raw)
-      local data = decode_event_data(raw)
-      if data and session_matches(data) then
-        M.annotations_state = annotations.handle_file_annotations(M.annotations_state, data)
-        fire_user_event("file_annotations", data)
+      if def.session_scoped and not session_matches(data) then return end
+      if def.fn and def.target then
+        local t = TARGET_MAP[def.target]
+        M[t.key] = t.mod()[def.fn](M[t.key], data)
       end
-    end,
+      if def.event then fire_user_event(def.event, data) end
+    end
+  end
 
-    -- Session lifecycle
-    eval_completed = function(raw)
-      local data = decode_event_data(raw)
-      fire_user_event("eval_completed", data)
-    end,
-    hot_reload_triggered = function(raw)
-      local data = decode_event_data(raw)
-      fire_user_event("hot_reload_triggered", data)
-    end,
+  -- Custom handlers that don't fit the pattern
+  handlers.state_update = function(_raw)
+    M.state = model.set_status(M.state, "connected")
+  end
+  handlers.live_testing_enabled = function(raw)
+    local data = decode_event_data(raw)
+    if data then M.testing_state = testing.set_enabled(M.testing_state, true) end
+  end
+  handlers.live_testing_disabled = function(raw)
+    local data = decode_event_data(raw)
+    if data then M.testing_state = testing.set_enabled(M.testing_state, false) end
+  end
+  handlers.coverage_cleared = function(_raw)
+    M.coverage_state = coverage.clear(M.coverage_state)
+  end
+  handlers.diagnostics_updated = function(raw)
+    local data = decode_event_data(raw)
+    if data and data.diagnostics then
+      M.apply_diagnostics(data.diagnostics)
+    end
+  end
+  handlers.session_event = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local event_type = data.type
+    if event_type == "warmup_context_snapshot" then
+      M.warmup_context = data.context
+      fire_user_event("warmup_context", data)
+    elseif event_type == "hotreload_snapshot" then
+      M.hotreload_files = data.watchedFiles or {}
+      fire_user_event("hotreload_snapshot", data)
+    end
+  end
+  handlers.bindings_snapshot = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local bindings = data.Bindings or data.bindings
+    if not bindings then return end
+    M.binding_tracker = format.tracker_from_snapshot(bindings)
+    fire_user_event("bindings_snapshot", data)
+  end
+  handlers.pipeline_trace = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.pipeline_trace = data
+    fire_user_event("pipeline_trace", data)
+  end
 
-    -- Diagnostics (from main SSE stream)
-    diagnostics_updated = function(raw)
-      local data = decode_event_data(raw)
-      if data and data.diagnostics then
-        M.apply_diagnostics(data.diagnostics)
-      end
-    end,
-
-    -- Session events (typed envelope: warmup_context_snapshot, hotreload_snapshot)
-    session_event = function(raw)
-      local data = decode_event_data(raw)
-      if not data then return end
-      local event_type = data.type
-      if event_type == "warmup_context_snapshot" then
-        M.warmup_context = data.context
-        fire_user_event("warmup_context", data)
-      elseif event_type == "hotreload_snapshot" then
-        M.hotreload_files = data.watchedFiles or {}
-        fire_user_event("hotreload_snapshot", data)
-      end
-    end,
-
-    -- CQRS: server-pushed bindings snapshot (replaces client-side parsing as source of truth)
-    bindings_snapshot = function(raw)
-      local data = decode_event_data(raw)
-      if not data then return end
-      local bindings = data.Bindings or data.bindings
-      if not bindings then return end
-      M.binding_tracker = format.tracker_from_snapshot(bindings)
-      fire_user_event("bindings_snapshot", data)
-    end,
-
-    -- CQRS: server-pushed pipeline trace state
-    pipeline_trace = function(raw)
-      local data = decode_event_data(raw)
-      if not data then return end
-      M.pipeline_trace = data
-      fire_user_event("pipeline_trace", data)
-    end,
-  })
+  return sse_parser.build_dispatch_table(handlers)
 end
 
 -- Debounce timer for gutter sign rendering (SSE can flood events)
@@ -333,6 +285,9 @@ local function on_sse_events(raw_events)
     dispatch_table = build_handlers()
   end
 
+  -- Stats: track SSE event throughput
+  M.state = model.record_sse_events(M.state, #raw_events)
+
   local classified = {}
   for _, event in ipairs(raw_events) do
     local c = sse_parser.classify_event(event)
@@ -363,12 +318,17 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
-      -- Clear stale state before daemon replays session-scoped data
+      -- Stats: track reconnect
+      M.state = model.record_reconnect(M.state)
+      -- Two-phase reconnect (R10): increment generation counter.
+      -- Clear testing/coverage/annotations since daemon replays them via SSE.
+      -- Preserve warmup_context and hotreload_files (not session-scoped,
+      -- expensive to re-acquire, and stale data is better than no data).
+      local gen = (M.state.reconnect_gen or 0) + 1
+      M.state = model.set_reconnect_gen(M.state, gen)
       M.testing_state = testing.new()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
-      M.warmup_context = nil
-      M.hotreload_files = {}
       fire_user_event("connected")
       vim.schedule(function()
         fire_user_event("test_recovery_needed")
@@ -415,10 +375,6 @@ end
 --- Show shadow warning virtual text at cell end, auto-clears after 5s.
 ---@param buf number buffer handle
 ---@param cell_id string
--- TODO: cell.end_line does not exist in model.set_cell_state — the model only
--- stores {status, output, duration_ms}. This function silently exits because
--- cell.end_line is always nil → line is always 0 → early return. To fix,
--- thread cell.end_line from the parsed cell through post_exec/handle_result.
 ---@param shadows table[] list of {name, old_type, new_type}
 local function show_shadow_warnings(buf, cell_id, shadows)
   vim.schedule(function()
@@ -442,8 +398,12 @@ local function show_shadow_warnings(buf, cell_id, shadows)
   end)
 end
 
-local function handle_result(buf, cell_id, result)
-  local meta = { duration_ms = result.duration_ms }
+local function handle_result(buf, cell_id, result, end_line)
+  local meta = { duration_ms = result.duration_ms, end_line = end_line }
+  -- Stats: track eval completion
+  if result.duration_ms then
+    M.state = model.record_eval(M.state, result.duration_ms)
+  end
   if result.ok then
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output, meta)
     vim.schedule(function()
@@ -466,7 +426,12 @@ local function handle_result(buf, cell_id, result)
   end)
 end
 
-local function post_exec(code, buf, cell_id)
+local function post_exec(code, buf, cell_id, end_line)
+  -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
+  if model.is_cell_running(M.state, cell_id) then
+    notify("Cell already evaluating", vim.log.levels.WARN)
+    return
+  end
   local start_time = vim.uv.hrtime()
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
   vim.schedule(function()
@@ -504,9 +469,9 @@ local function post_exec(code, buf, cell_id)
             vim.diagnostic.set(ns.fsi_diagnostics, buf, vim_diags)
           end)
         end
-        handle_result(buf, cell_id, result)
+        handle_result(buf, cell_id, result, end_line)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms })
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line)
       end
     end,
   })
@@ -570,14 +535,14 @@ function M.eval_cell()
   local ctx = prepare_cell_eval()
   if not ctx then return end
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line)
 end
 
 function M.eval_cell_and_advance()
   local ctx = prepare_cell_eval()
   if not ctx then return end
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line)
 
   local next_start = cells.find_next_cell_start(ctx.lines, ctx.cursor_line)
   if next_start then
@@ -893,14 +858,16 @@ function M.discover_and_create(working_dir)
   working_dir = working_dir or vim.fn.getcwd()
   local fsproj_files = vim.fn.glob(working_dir .. "/**/*.fsproj", false, true)
 
-  if #fsproj_files == 0 then
-    notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
-    return
-  end
-
+  -- Bug #4 fix: make paths relative and filter excluded dirs
   local items = {}
   for _, path in ipairs(fsproj_files) do
     table.insert(items, path:sub(#working_dir + 2))
+  end
+  items = format.filter_excluded_paths(items)
+
+  if #items == 0 then
+    notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    return
   end
 
   vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)

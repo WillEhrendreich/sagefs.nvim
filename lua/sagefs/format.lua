@@ -336,4 +336,57 @@ function M.tracker_from_snapshot(snapshot)
   return tracker
 end
 
+-- ─── Type Signature Extraction ──────────────────────────────────────────────
+
+--- Extract type signatures from FSI output for inline type hints.
+--- Parses "val <name> : <type>" and "val <name> : <type> = <value>" lines.
+---@param output string|nil FSI result text
+---@return table[] list of {name: string, type_sig: string}
+function M.extract_type_signatures(output)
+  if not output then return {} end
+  local sigs = {}
+  for line in output:gmatch("[^\n]+") do
+    local name, type_sig = line:match("^val%s+(%S+)%s*:%s*(.+)")
+    if name and name ~= "mutable" and name ~= "it" and not name:match("^%(") then
+      local ts = type_sig:match("^(.-)%s*=") or type_sig
+      table.insert(sigs, { name = name, type_sig = ts:match("^%s*(.-)%s*$") })
+    end
+  end
+  return sigs
+end
+
+-- ─── Path Exclusion Filter ──────────────────────────────────────────────────
+
+local EXCLUDED_PATTERNS = {
+  "node_modules",
+  "[/\\]bin[/\\]",
+  "[/\\]obj[/\\]",
+  "^bin[/\\]",
+  "^obj[/\\]",
+  "^%.git[/\\]",
+  "[/\\]%.git[/\\]",
+  "^%.nuget[/\\]",
+  "[/\\]%.nuget[/\\]",
+}
+
+--- Filter out paths matching common exclusion patterns (node_modules, bin, obj, .git, .nuget).
+---@param paths string[] list of relative paths
+---@return string[] filtered paths
+function M.filter_excluded_paths(paths)
+  local result = {}
+  for _, p in ipairs(paths) do
+    local excluded = false
+    for _, pattern in ipairs(EXCLUDED_PATTERNS) do
+      if p:match(pattern) then
+        excluded = true
+        break
+      end
+    end
+    if not excluded then
+      table.insert(result, p)
+    end
+  end
+  return result
+end
+
 return M
