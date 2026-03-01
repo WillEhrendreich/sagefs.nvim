@@ -88,13 +88,21 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1107 tests,
 | **Playground** | `:SageFsPlayground` → open scratch F# buffer for quick experiments. |
 | **Health module** | `:checkhealth sagefs` validates CLI, plugin, daemon, treesitter, curl. |
 
-### Cell Highlight
+### Feature Overview
 
-The plugin highlights the tree-sitter-detected (or `;;`-delimited) cell under your cursor. Four styles are available — cycle with `:SageFsCellStyle`:
+![Feature overview — eval loop, cell styles, testing, coverage, sessions, analysis, type explorer](docs/screenshots/features-overview.png)
 
-![Cell highlight styles, eval-state feedback, and two-mode detection](docs/screenshots/cell-highlights.png)
+The screenshot above shows all major feature areas:
 
-The bracket color changes in real time as you evaluate: **blue** (idle) → **yellow** (running) → **green** (success) / **red** (error), then fades back to idle. Works cleanly on transparent terminals — no opaque background blocks.
+1. **Cell evaluation** — `Alt-Enter` evaluates, results appear inline, bracket color shows state (blue→yellow→green/red)
+2. **Cell highlight styles** — `╭│╰` bracket (normal), `▎` bar (minimal), bg tint (full), `◆` diamond (single-line). Transparent-terminal safe.
+3. **Two-mode detection** — files with `;;` use manual boundaries; files without use tree-sitter AST inference
+4. **Live testing** — gutter signs (✓/✗), CodeLens timing, filterable test panel with jump-to-source
+5. **Code coverage** — three-state gutters (▐ covered, ◐ partial, ▌ uncovered), per-file breakdown panel
+6. **Session & status** — `:SageFsStatus` dashboard, `:SageFsStats` runtime metrics, `:checkhealth sagefs`
+7. **Analysis tools** — `:SageFsTimeline`, `:SageFsArrows` (cross-cell deps), `:SageFsScopeMap` (binding map)
+8. **Hot reload & statusline** — per-file watch toggles, combined statusline (session │ tests │ coverage │ daemon), density presets
+9. **Type explorer & export** — assembly→namespace→type drill-down, notebook export (markdown/fsx), eval history browser
 
 ## Requirements
 
