@@ -21,7 +21,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **28 Lua modules, 1000+ tests, zero failures.**
+This plugin provides the Neovim integration layer. **37 Lua modules, 1107 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -76,6 +76,17 @@ This plugin provides the Neovim integration layer. **28 Lua modules, 1000+ tests
 | **Branch EOL text** | Optional `n/m` branches annotation at end of line for partial coverage. Behind density preset. |
 | **Filterable test panel** | Test panel filters by scope: `b` = binding (treesitter), `f` = current file, `m` = module, `a` = all, `Tab` = cycle. Failures sorted first. |
 | **Display density presets** | `<leader>sD` cycles minimal (signs only) → normal (signs+codelens+inline) → full (everything+branch EOL). |
+| **Cell highlight styles** | `╭│╰` bracket in sign column (normal), `▎` bar (minimal), line highlight (full). No opaque backgrounds on transparent terminals. |
+| **Treesitter scope inference** | Files without `;;` use treesitter to find the top-level declaration under cursor. Two-mode: explicit (`;;`) or inferred (cursor context). |
+| **Runtime statistics** | `:SageFsStats` → eval count, average latency, SSE events, reconnects, cells tracked. |
+| **Eval timeline** | `:SageFsTimeline` → flame-chart visualization of eval history with latency breakdown. |
+| **Diff viewer** | `:SageFsDiff` → side-by-side diff of last two evaluations of the current cell. |
+| **Dependency arrows** | `:SageFsArrows` → cross-cell dependency visualization in floating window. |
+| **Scope map** | `:SageFsScopeMap` → binding scope map showing what's defined in each cell. |
+| **Type flow** | `:SageFsTypeFlow` → cross-cell type flow visualization showing how types propagate. |
+| **Notebook export** | `:SageFsNotebook [markdown\|fsx]` → export session as literate notebook. |
+| **Playground** | `:SageFsPlayground` → open scratch F# buffer for quick experiments. |
+| **Health module** | `:checkhealth sagefs` validates CLI, plugin, daemon, treesitter, curl. |
 
 ## Requirements
 
@@ -167,6 +178,19 @@ This plugin provides the Neovim integration layer. **28 Lua modules, 1000+ tests
 | `:SageFsExport` | Export session history as `.fsx` file |
 | `:SageFsCallers <symbol>` | Show callers of a symbol |
 | `:SageFsCallees <symbol>` | Show callees of a symbol |
+| `:SageFsStats` | Runtime statistics (eval count, latency, SSE events) |
+| `:SageFsTimeline` | Eval timeline flame chart |
+| `:SageFsDiff` | Diff between last two evals of current cell |
+| `:SageFsArrows` | Cross-cell dependency arrows |
+| `:SageFsScopeMap` | Binding scope map for all evaluated cells |
+| `:SageFsTypeFlow` | Cross-cell type propagation flow |
+| `:SageFsHistory` | Eval history for cell under cursor |
+| `:SageFsNotebook [format]` | Export session as literate notebook (markdown or fsx) |
+| `:SageFsPlayground` | Open F# scratch buffer for experiments |
+| `:SageFsExportFile` | Export session history as .fsx file to disk |
+| `:SageFsCellStyle [style]` | Set or cycle cell highlight style (off/minimal/normal/full) |
+| `:SageFsBindings` | Show FSI binding state |
+| `:SageFsEvalLine` | Evaluate current line only |
 
 ## Architecture
 
@@ -194,11 +218,23 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `pipeline.lua` | ~75 | Pipeline trace parsing and formatting |
 | `annotations.lua` | ~260 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | ~65 | Display density presets (minimal/normal/full), layer visibility control |
+| `cell_highlight.lua` | ~310 | Dynamic eval region visuals — `╭│╰` bracket, 4 styles, eval-state color hints |
+| `diff.lua` | ~70 | Semantic diff between cell evaluation results |
+| `depgraph.lua` | ~90 | Cross-cell dependency graph with reactive staleness tracking |
+| `depgraph_viz.lua` | ~75 | ASCII arrow rendering for dependency visualization |
+| `timeline.lua` | ~80 | Eval timeline recording and flame-chart formatting |
+| `time_travel.lua` | ~85 | Cell history recording with snapshot management |
+| `scope_map.lua` | ~75 | Binding scope map — tracks what each cell defines |
+| `notebook.lua` | ~90 | Literate notebook export (markdown + fsx formats) |
+| `type_flow.lua` | ~80 | Cross-cell type propagation analysis and visualization |
+| `health.lua` | ~85 | Health check module for `:checkhealth sagefs` |
+| `treesitter_cells.lua` | ~215 | Tree-sitter based cell detection for F# (inferred mode) |
+| `version.lua` | ~5 | Plugin version string |
 | **Integration layer** | | |
 | `init.lua` | ~900 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | ~115 | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | ~220 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | ~935 | All 33 commands, keymaps, autocmds |
+| `commands.lua` | ~1330 | All 47 commands, keymaps, autocmds |
 | `hotreload.lua` | ~130 | Hot reload file toggle API |
 
 All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
@@ -241,10 +277,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 774 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — plugin setup, 33 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **Busted (pure)** | `busted` via LuaRocks | 1054 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — plugin setup, 47 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
 | **E2E** | Headless Neovim + real SageFs | 31 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **858** | 827 unit+integration (all passing), 31 E2E (requires running SageFs) |
+| **Total** | | **1107** | 1076 unit+integration (all passing), 31 E2E (requires running SageFs) |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 

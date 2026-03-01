@@ -19,7 +19,8 @@ CONTENTS                                                    *sagefs-contents*
   11. Type Explorer .............................. |sagefs-type-explorer|
   12. Diagnostics ................................ |sagefs-diagnostics|
   13. Health Check ............................... |sagefs-health|
-  14. FAQ ........................................ |sagefs-faq|
+  14. Cell Highlight ............................. |sagefs-cell-style|
+  15. FAQ ........................................ |sagefs-faq|
 
 ==============================================================================
 1. INTRODUCTION                                         *sagefs-introduction*
@@ -36,9 +37,10 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 - Hot reload controls
 - SSE live updates from the daemon
 
-Architecture: 28 pure Lua modules with zero vim API dependencies (fully
+Architecture: 37 pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
+1107 tests, zero failures.
 
 ==============================================================================
 2. QUICKSTART                                            *sagefs-quickstart*
@@ -89,11 +91,26 @@ When you evaluate a cell (|:SageFsEval| or `<A-CR>`), the plugin:
 4. Tracks cell state: idle → running → success/error
 5. Marks results as stale when you edit the cell
 
-Cell highlight styles (configurable via density presets):
-- `sp` (undercurl): colored underline, default style
-- `glow`: left-margin indicator
-- `flash`: brief highlight on eval completion
-- `bar`: status bar at cell boundary
+Cell highlight styles (`:SageFsCellStyle` to set or cycle):        *sagefs-cell-style*
+
+- `off`:     No cell highlighting
+- `minimal`: Thin `▎` bar in sign column only
+- `normal`:  `╭│╰` bracket in sign column (default). Single-line: `◆`
+- `full`:    Bracket + EOL line count text + subtle line background
+
+Eval-state feedback: bar color changes during evaluation:
+- Blue (idle) → Yellow (running) → Green (success) / Red (error)
+- Success fades after 1.5s, error after 3s
+
+Two-mode cell detection:                                *sagefs-cell-modes*
+
+1. **Explicit mode**: `;;` at end of line defines cell boundaries (standard
+   F# Interactive syntax). The plugin lexes boundaries, respecting strings
+   and comments.
+
+2. **Inferred mode**: Files without `;;` use tree-sitter to detect the
+   top-level declaration under the cursor (let bindings, type definitions).
+   Each declaration is a separate cell.
 
 ==============================================================================
 4. COMMANDS                                              *sagefs-commands*
@@ -213,6 +230,61 @@ Analysis ~
 
 :SageFsStatus                                           *:SageFsStatus*
     Show connection status and session information.
+
+:SageFsCellStyle [style]                                *:SageFsCellStyle*
+    Set cell highlight style, or cycle if no argument given.
+    Styles: off, minimal, normal, full. See |sagefs-cell-style|.
+
+:SageFsEvalFile                                         *:SageFsEvalFile*
+    Evaluate the entire file.
+
+:SageFsEvalLine                                         *:SageFsEvalLine*
+    Evaluate only the current line (not the enclosing cell).
+
+:SageFsBindings                                         *:SageFsBindings*
+    Show FSI binding state for the current session.
+
+:SageFsExportFile                                       *:SageFsExportFile*
+    Export session history as an .fsx file to disk.
+
+:SageFsCallers {symbol}                                 *:SageFsCallers*
+    Show callers of a symbol in a floating window.
+
+:SageFsCallees {symbol}                                 *:SageFsCallees*
+    Show callees of a symbol in a floating window.
+
+:SageFsStop                                             *:SageFsStop*
+    Stop the managed SageFs daemon.
+
+:SageFsReset                                            *:SageFsReset*
+    Soft reset active FSI session.
+
+:SageFsHardReset                                        *:SageFsHardReset*
+    Hard reset (rebuild) active FSI session.
+
+:SageFsContext                                          *:SageFsContext*
+    Show session context (assemblies, namespaces, warmup).
+
+:SageFsLoadScript {file}                                *:SageFsLoadScript*
+    Load an `.fsx` script file via `#load`.
+
+:SageFsCoverage                                         *:SageFsCoverage*
+    Show coverage summary with per-file breakdown.
+
+:SageFsTestPolicy                                       *:SageFsTestPolicy*
+    Configure test run policies per category.
+
+:SageFsTestsHere                                        *:SageFsTestsHere*
+    Show tests for the current file.
+
+:SageFsHotReload                                        *:SageFsHotReload*
+    Hot reload file picker.
+
+:SageFsWatchAll                                         *:SageFsWatchAll*
+    Watch all files for hot reload.
+
+:SageFsUnwatchAll                                       *:SageFsUnwatchAll*
+    Unwatch all files for hot reload.
 
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
@@ -334,7 +406,47 @@ Run `:checkhealth sagefs` to verify your setup. Checks: >
   ✓ curl available
 <
 ==============================================================================
-14. FAQ                                                      *sagefs-faq*
+14. CELL HIGHLIGHT                                       *sagefs-cell-highlight*
+
+The cell highlight system shows which region of code will be sent to SageFs
+when you press `<A-CR>`. It adapts to transparent terminals.
+
+Styles ~
+
+  `off`       No cell highlighting
+  `minimal`   Thin `▎` bar in the sign column
+  `normal`    `╭│╰` bracket in the sign column (default)
+  `full`      Bracket + EOL line count + subtle line background
+
+Use |:SageFsCellStyle| to set or cycle styles.
+
+Eval-state feedback ~
+
+The sign column bracket changes color during evaluation:
+
+  Blue    Idle/neutral
+  Yellow  Evaluation running
+  Green   Success (fades after 1.5s)
+  Red     Error (fades after 3s)
+
+Highlight groups (all overridable): >
+
+  SageFsCellBar          Sign column bar (neutral)
+  SageFsCellBarRunning   Sign bar during eval
+  SageFsCellBarSuccess   Sign bar on success
+  SageFsCellBarError     Sign bar on error
+  SageFsCellBound        Boundary markers and line counts
+  SageFsCellLineFull     Full-mode line background
+  SageFsCellNumber       Line number tint
+<
+Transparency support ~
+
+On transparent terminals (no `Normal` bg), the `full` mode uses
+`underdouble` instead of a background color. The `normal` mode uses
+zero background by design — just sign column characters.
+
+==============================================================================
+15. FAQ                                                      *sagefs-faq*
 
 Q: How do I install SageFs?
 A: `dotnet tool install -g sagefs`. See the SageFs README for details.
