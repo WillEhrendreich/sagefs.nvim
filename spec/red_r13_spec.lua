@@ -270,3 +270,139 @@ describe("R13: type_flow", function()
     assert.are.equal(0, #flow.consumers)
   end)
 end)
+
+-- ─── Edge Case Tests ─────────────────────────────────────────────────────────
+
+describe("R13 edge: depgraph_viz diamond dependency", function()
+  local viz = require("sagefs.depgraph_viz")
+  local depgraph = require("sagefs.depgraph")
+
+  it("handles diamond: A→B, A→C, B→D, C→D", function()
+    local cells = {
+      { id = 1, source = "let a = 1;;", output = "val a: int = 1" },
+      { id = 2, source = "let b = a + 1;;", output = "val b: int = 2" },
+      { id = 3, source = "let c = a + 2;;", output = "val c: int = 3" },
+      { id = 4, source = "let d = b + c;;", output = "val d: int = 5" },
+    }
+    local layout = {
+      [1] = { start_line = 1, end_line = 1 },
+      [2] = { start_line = 3, end_line = 3 },
+      [3] = { start_line = 5, end_line = 5 },
+      [4] = { start_line = 7, end_line = 7 },
+    }
+    local graph = depgraph.build_graph(cells)
+    local arrows = viz.compute_arrows(graph, layout)
+    assert.is_true(#arrows >= 4)
+    -- Stale cascade from cell 1 should reach 2, 3, 4
+    local cascade = viz.format_stale_cascade(graph, 1, layout)
+    assert.are.equal(3, #cascade)
+  end)
+
+  it("inline annotations include binding names", function()
+    local cells = {
+      { id = 1, source = "let x = 1;;", output = "val x: int = 1" },
+      { id = 2, source = "let y = x;;", output = "val y: int = 1" },
+    }
+    local layout = {
+      [1] = { start_line = 1, end_line = 1 },
+      [2] = { start_line = 3, end_line = 3 },
+    }
+    local graph = depgraph.build_graph(cells)
+    local arrows = viz.compute_arrows(graph, layout)
+    local annots = viz.format_inline_annotations(arrows)
+    assert.is_true(#annots > 0)
+    assert.truthy(annots[1].text:find("x"))
+  end)
+end)
+
+describe("R13 edge: time_travel advanced", function()
+  local tt = require("sagefs.time_travel")
+
+  it("oldest entries evicted at max_history boundary", function()
+    local state = tt.new(2)
+    tt.record(state, 1, "a", { duration_ms = 1, timestamp_ms = 100 })
+    tt.record(state, 1, "b", { duration_ms = 2, timestamp_ms = 200 })
+    tt.record(state, 1, "c", { duration_ms = 3, timestamp_ms = 300 })
+    assert.are.equal(2, tt.history_count(state, 1))
+    local oldest = tt.navigate(state, 1, -1)
+    assert.are.equal("b", oldest.output) -- "a" was evicted
+  end)
+
+  it("diff_with_current shows no changes for same output", function()
+    local state = tt.new()
+    tt.record(state, 1, "same", { duration_ms = 10, timestamp_ms = 1000 })
+    tt.record(state, 1, "same", { duration_ms = 10, timestamp_ms = 2000 })
+    local d = tt.diff_with_current(state, 1, 1)
+    assert.are.equal("unchanged", d[1].kind)
+  end)
+
+  it("diff_with_current returns nil for unknown cell", function()
+    local state = tt.new()
+    assert.is_nil(tt.diff_with_current(state, 99, 1))
+  end)
+
+  it("navigate returns nil for unknown cell", function()
+    local state = tt.new()
+    assert.is_nil(tt.navigate(state, 99, 0))
+  end)
+
+  it("format_nav_status handles nil gracefully", function()
+    local tt = require("sagefs.time_travel")
+    local status = tt.format_nav_status(nil)
+    assert.are.equal("no history", status)
+  end)
+end)
+
+describe("R13 edge: type_flow complex chains", function()
+  local tf = require("sagefs.type_flow")
+  local depgraph = require("sagefs.depgraph")
+
+  it("traces through a 4-cell chain: a→b→c→d", function()
+    local cells = {
+      { id = 1, source = "let a = 1;;", output = "val a: int = 1" },
+      { id = 2, source = "let b = a;;", output = "val b: int = 1" },
+      { id = 3, source = "let c = b;;", output = "val c: int = 1" },
+      { id = 4, source = "let d = c;;", output = "val d: int = 1" },
+    }
+    local outputs = {
+      [1] = "val a: int = 1",
+      [2] = "val b: int = 1",
+      [3] = "val c: int = 1",
+      [4] = "val d: int = 1",
+    }
+    local graph = depgraph.build_graph(cells)
+    local flow_a = tf.trace_binding("a", graph, outputs)
+    assert.are.equal(1, #flow_a.consumers) -- a consumed by cell 2 only
+    local flow_b = tf.trace_binding("b", graph, outputs)
+    assert.are.equal(1, #flow_b.consumers) -- b consumed by cell 3
+  end)
+
+  it("all_flows excludes bindings with no consumers", function()
+    local cells = {
+      { id = 1, source = "let a = 1;;", output = "val a: int = 1" },
+      { id = 2, source = "let b = 2;;", output = "val b: int = 2" }, -- no one consumes b
+    }
+    local outputs = { [1] = "val a: int = 1", [2] = "val b: int = 2" }
+    local graph = depgraph.build_graph(cells)
+    local flows = tf.all_flows(graph, outputs)
+    assert.are.equal(0, #flows) -- neither is consumed by another
+  end)
+
+  it("format_flow_path shows arrow chain", function()
+    local cells = {
+      { id = 1, source = "let x = 1;;", output = "val x: int = 1" },
+      { id = 2, source = "let y = x;;", output = "val y: int = 1" },
+      { id = 3, source = "let z = x;;", output = "val z: int = 1" },
+    }
+    local outputs = { [1] = "val x: int = 1", [2] = "val y: int = 1", [3] = "val z: int = 1" }
+    local graph = depgraph.build_graph(cells)
+    local flow = tf.trace_binding("x", graph, outputs)
+    local path = tf.format_flow_path(flow)
+    assert.truthy(path:find("→"))
+    assert.truthy(path:find("cell 2") or path:find("cell 3"))
+  end)
+
+  it("format_flow_path returns empty for nil", function()
+    assert.are.equal("", tf.format_flow_path(nil))
+  end)
+end)
