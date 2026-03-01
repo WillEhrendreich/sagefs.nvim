@@ -82,9 +82,18 @@ function M.set_cell_state(m, cell_id, status, output, metadata)
     error(string.format("invalid transition: %s → %s", from, status))
   end
 
+  -- Preserve previous output for diff on re-eval
+  local prev_output = nil
+  if status == "running" and current and current.output then
+    prev_output = current.output
+  elseif current then
+    prev_output = current.prev_output
+  end
+
   m.cells[cell_id] = {
     status = status,
     output = output,
+    prev_output = prev_output,
     duration_ms = metadata and metadata.duration_ms or nil,
     end_line = metadata and metadata.end_line or nil,
   }
