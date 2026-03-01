@@ -73,28 +73,30 @@ end
 
 M.clear = clear
 
+--- Resolve sign_text character based on style and position in cell
+local function sign_char(style, i, start_line, end_line)
+  if style ~= "normal" and style ~= "full" then return "▎" end
+  local is_single = (start_line == end_line)
+  if is_single then return "◆" end
+  if i == start_line then return "╭" end
+  if i == end_line then return "╰" end
+  return "│"
+end
+
 --- Build virt_text for a line based on style and position
 local function build_virt_text(style, i, start_line, end_line, cell_lines)
   if style == "minimal" then return nil end
 
-  local is_single = (start_line == end_line)
   local is_top = (i == start_line)
   local is_bottom = (i == end_line)
 
-  if style == "normal" then
-    if is_single then
-      return { { " ◆ " .. cell_lines, "SageFsCellBound" } }
-    elseif is_top then
-      return { { " ╭", "SageFsCellBound" } }
-    elseif is_bottom then
-      return { { " ╰ " .. cell_lines, "SageFsCellBound" } }
-    end
-  elseif style == "full" then
+  -- Full mode: show line count at top, "cell end" at bottom
+  if style == "full" then
     local line_word = cell_lines == 1 and "line" or "lines"
     if is_top then
-      return { { " ╭ " .. cell_lines .. " " .. line_word, "SageFsCellBound" } }
+      return { { " " .. cell_lines .. " " .. line_word, "SageFsCellBound" } }
     elseif is_bottom then
-      return { { " ╰ cell end", "SageFsCellBound" } }
+      return { { " cell end", "SageFsCellBound" } }
     end
   end
   return nil
@@ -141,7 +143,7 @@ local function render(buf, start_line, end_line)
 
   for i = start_line, math.min(end_line, line_count) do
     local opts = {
-      sign_text = "▎",
+      sign_text = sign_char(style, i, start_line, end_line),
       sign_hl_group = hl.bar,
       number_hl_group = "SageFsCellNumber",
       priority = 5,
