@@ -148,11 +148,6 @@ local function render(buf, start_line, end_line)
     }
     if line_hl then opts.line_hl_group = line_hl end
 
-    -- Normal mode: subtle glow only on boundary lines (first + last)
-    if style == "normal" and (i == start_line or i == end_line) then
-      opts.line_hl_group = hl.glow
-    end
-
     local vt = build_virt_text(style, i, start_line, end_line, cell_lines)
     if vt then
       opts.virt_text = vt
