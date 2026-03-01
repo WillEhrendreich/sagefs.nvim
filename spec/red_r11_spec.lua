@@ -223,3 +223,59 @@ describe("format.format_stats_lines", function()
     assert.truthy(text:match("200"), "should show avg latency 200ms")
   end)
 end)
+
+-- ─── Type hint placement (pure) ───────────────────────────────────────────
+describe("format.type_hint_placements", function()
+  it("matches let bindings to parsed type signatures", function()
+    local buffer_lines = {
+      "let x = 42;;",
+      "",
+      "let greet name =",
+      '  sprintf "Hi %s" name;;',
+    }
+    local bindings = {
+      { name = "x", type_sig = "int" },
+      { name = "greet", type_sig = "name: string -> string" },
+    }
+    local placements = format.type_hint_placements(buffer_lines, 1, 4, bindings)
+    assert.are.equal(2, #placements)
+    assert.are.equal(1, placements[1].line)
+    assert.are.equal(": int", placements[1].text)
+    assert.are.equal(3, placements[2].line)
+    assert.are.equal(": name: string -> string", placements[2].text)
+  end)
+
+  it("returns empty when no let bindings found", function()
+    local buffer_lines = { 'printfn "hello";;' }
+    local bindings = {}
+    local placements = format.type_hint_placements(buffer_lines, 1, 1, bindings)
+    assert.are.equal(0, #placements)
+  end)
+
+  it("handles let with pattern matching (no match)", function()
+    local buffer_lines = { "let (a, b) = (1, 2);;" }
+    local bindings = {
+      { name = "a", type_sig = "int" },
+      { name = "b", type_sig = "int" },
+    }
+    local placements = format.type_hint_placements(buffer_lines, 1, 1, bindings)
+    assert.are.equal(0, #placements)
+  end)
+
+  it("only scans within the given line range", function()
+    local buffer_lines = {
+      "let outside = 1;;",
+      "let inside = 2;;",
+      "let after = 3;;",
+    }
+    local bindings = {
+      { name = "outside", type_sig = "int" },
+      { name = "inside", type_sig = "int" },
+      { name = "after", type_sig = "int" },
+    }
+    local placements = format.type_hint_placements(buffer_lines, 2, 2, bindings)
+    assert.are.equal(1, #placements)
+    assert.are.equal(2, placements[1].line)
+    assert.are.equal(": int", placements[1].text)
+  end)
+end)

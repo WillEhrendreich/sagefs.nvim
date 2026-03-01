@@ -376,6 +376,32 @@ end
 --- Alias for parse_bindings — same FSI output format, same parsing logic (DRY).
 M.extract_type_signatures = M.parse_bindings
 
+--- Compute type hint placements for virtual text rendering.
+--- Matches parsed bindings to `let <name>` lines within a cell range.
+---@param buffer_lines string[] full buffer lines (1-indexed array)
+---@param start_line number 1-indexed start line of cell
+---@param end_line number 1-indexed end line of cell
+---@param bindings table[] {name, type_sig} from parse_bindings
+---@return table[] placements {line, text} for virtual text
+function M.type_hint_placements(buffer_lines, start_line, end_line, bindings)
+  local placements = {}
+  if not bindings or #bindings == 0 then return placements end
+  -- Build name→type_sig lookup
+  local sig_map = {}
+  for _, b in ipairs(bindings) do
+    sig_map[b.name] = b.type_sig
+  end
+  for i = start_line, math.min(end_line, #buffer_lines) do
+    local line = buffer_lines[i]
+    -- Match simple `let name` patterns (not tuple/pattern destructuring)
+    local name = line:match("^%s*let%s+(%a[%w_']*)")
+    if name and sig_map[name] then
+      table.insert(placements, { line = i, text = ": " .. sig_map[name] })
+    end
+  end
+  return placements
+end
+
 -- ─── Path Exclusion Filter ──────────────────────────────────────────────────
 
 local EXCLUDED_PATTERNS = {
