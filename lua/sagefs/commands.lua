@@ -1322,6 +1322,7 @@ function M.register_keymaps(plugin, helpers)
   local smart_eval_sel = helpers.smart_eval(function() plugin.eval_selection() end)
   local hotreload = require("sagefs.hotreload")
 
+  -- Alt-Enter keymaps (no prefix, always available)
   vim.keymap.set("n", "<A-CR>", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })
   vim.keymap.set("v", "<A-CR>", smart_eval_sel,
@@ -1329,27 +1330,90 @@ function M.register_keymaps(plugin, helpers)
   vim.keymap.set("n", "<S-A-CR>", function() plugin.eval_cell_and_advance() end,
     { desc = "SageFs: Evaluate cell and advance", silent = true })
 
-  vim.keymap.set("n", "<leader>se", smart_eval,
+  -- Core eval
+  vim.keymap.set("n", "<leader>re", smart_eval,
     { desc = "SageFs: Evaluate cell", silent = true })
-  vim.keymap.set("n", "<leader>sl", function() plugin.eval_current_line() end,
+  vim.keymap.set("n", "<leader>rl", function() plugin.eval_current_line() end,
     { desc = "SageFs: Evaluate current line", silent = true })
-  vim.keymap.set("n", "<leader>sc", function()
+  vim.keymap.set("n", "<leader>rf", "<cmd>SageFsEvalFile<CR>",
+    { desc = "SageFs: Evaluate file", silent = true })
+  vim.keymap.set("n", "<leader>rc", function()
     helpers.clear_and_render()
   end, { desc = "SageFs: Clear results", silent = true })
-  vim.keymap.set("n", "<leader>ss", function() plugin.session_picker() end,
+  vim.keymap.set("n", "<leader>rx", "<cmd>SageFsCancel<CR>",
+    { desc = "SageFs: Cancel eval", silent = true })
+
+  -- Sessions & connection
+  vim.keymap.set("n", "<leader>rs", function() plugin.session_picker() end,
     { desc = "SageFs: Sessions", silent = true })
-  vim.keymap.set("n", "<leader>sb", "<cmd>SageFsBindings<CR>",
+  vim.keymap.set("n", "<leader>rC", "<cmd>SageFsConnect<CR>",
+    { desc = "SageFs: Connect", silent = true })
+  vim.keymap.set("n", "<leader>rX", "<cmd>SageFsDisconnect<CR>",
+    { desc = "SageFs: Disconnect", silent = true })
+  vim.keymap.set("n", "<leader>ri", "<cmd>SageFsStatus<CR>",
+    { desc = "SageFs: Status info", silent = true })
+
+  -- Testing
+  vim.keymap.set("n", "<leader>rt", "<cmd>SageFsTestPanel<CR>",
+    { desc = "SageFs: Test panel", silent = true })
+  vim.keymap.set("n", "<leader>rT", "<cmd>SageFsRunTests<CR>",
+    { desc = "SageFs: Run tests", silent = true })
+  vim.keymap.set("n", "<leader>rth", "<cmd>SageFsTestsHere<CR>",
+    { desc = "SageFs: Tests here (file)", silent = true })
+  vim.keymap.set("n", "<leader>rtf", "<cmd>SageFsFailures<CR>",
+    { desc = "SageFs: Test failures", silent = true })
+  vim.keymap.set("n", "<leader>rtp", "<cmd>SageFsPipelineTrace<CR>",
+    { desc = "SageFs: Pipeline trace", silent = true })
+  vim.keymap.set("n", "<leader>rte", "<cmd>SageFsEnableTesting<CR>",
+    { desc = "SageFs: Enable testing", silent = true })
+  vim.keymap.set("n", "<leader>rtd", "<cmd>SageFsDisableTesting<CR>",
+    { desc = "SageFs: Disable testing", silent = true })
+
+  -- Browse & explore
+  vim.keymap.set("n", "<leader>rb", "<cmd>SageFsBindings<CR>",
     { desc = "SageFs: Show bindings", silent = true })
-  vim.keymap.set("n", "<leader>sh", function()
+  vim.keymap.set("n", "<leader>rd", "<cmd>SageFsDiff<CR>",
+    { desc = "SageFs: Eval diff", silent = true })
+  vim.keymap.set("n", "<leader>rg", "<cmd>SageFsScopeMap<CR>",
+    { desc = "SageFs: Scope map", silent = true })
+  vim.keymap.set("n", "<leader>rm", "<cmd>SageFsTimeline<CR>",
+    { desc = "SageFs: Timeline", silent = true })
+  vim.keymap.set("n", "<leader>ry", "<cmd>SageFsTypeExplorer<CR>",
+    { desc = "SageFs: Type explorer", silent = true })
+  vim.keymap.set("n", "<leader>ra", "<cmd>SageFsCallers<CR>",
+    { desc = "SageFs: Callers", silent = true })
+  vim.keymap.set("n", "<leader>ro", "<cmd>SageFsCallees<CR>",
+    { desc = "SageFs: Callees", silent = true })
+
+  -- Server & reload
+  vim.keymap.set("n", "<leader>rh", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     hotreload.picker(sid)
-  end, { desc = "SageFs: Hot Reload Files", silent = true })
-  vim.keymap.set("n", "<leader>sD", function()
+  end, { desc = "SageFs: Hot reload files", silent = true })
+  vim.keymap.set("n", "<leader>rr", "<cmd>SageFsReset<CR>",
+    { desc = "SageFs: Soft reset", silent = true })
+  vim.keymap.set("n", "<leader>rR", "<cmd>SageFsHardReset<CR>",
+    { desc = "SageFs: Hard reset", silent = true })
+  vim.keymap.set("n", "<leader>rS", "<cmd>SageFsStart<CR>",
+    { desc = "SageFs: Start server", silent = true })
+  vim.keymap.set("n", "<leader>rQ", "<cmd>SageFsStop<CR>",
+    { desc = "SageFs: Stop server", silent = true })
+  vim.keymap.set("n", "<leader>rD", function()
     local dens = require("sagefs.density")
     plugin.density_state = dens.cycle(plugin.density_state)
     vim.notify("[SageFs] Density: " .. plugin.density_state.preset, vim.log.levels.INFO)
     helpers.render_signs(vim.api.nvim_get_current_buf())
   end, { desc = "SageFs: Cycle density (minimal/normal/full)", silent = true })
+
+  -- Misc
+  vim.keymap.set("n", "<leader>rp", "<cmd>SageFsPlayground<CR>",
+    { desc = "SageFs: Playground", silent = true })
+  vim.keymap.set("n", "<leader>rn", "<cmd>SageFsNotebook<CR>",
+    { desc = "SageFs: Notebook export", silent = true })
+  vim.keymap.set("n", "<leader>rw", "<cmd>SageFsWatchAll<CR>",
+    { desc = "SageFs: Watch all files", silent = true })
+  vim.keymap.set("n", "<leader>rW", "<cmd>SageFsUnwatchAll<CR>",
+    { desc = "SageFs: Unwatch all files", silent = true })
 end
 
 --- Register autocmds

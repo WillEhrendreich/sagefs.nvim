@@ -95,7 +95,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 | **Branch coverage gutters** | Three-state gutter signs from IL probe data: ▐ green (full), ◐ yellow (partial), ▌ red (uncovered). Color-blind accessible (shape+color pairing). |
 | **Branch EOL text** | Optional `n/m` branches annotation at end of line for partial coverage. Behind density preset. |
 | **Filterable test panel** | Test panel filters by scope: `b` = binding (treesitter), `f` = current file, `m` = module, `a` = all, `Tab` = cycle. Failures sorted first. |
-| **Display density presets** | `<leader>sD` cycles minimal (signs only) → normal (signs+codelens+inline) → full (everything+branch EOL). |
+| **Display density presets** | `<leader>rD` cycles minimal (signs only) → normal (signs+codelens+inline) → full (everything+branch EOL). |
 | **Cell highlight styles** | `╭│╰` bracket in sign column (normal), `▎` bar (minimal), line highlight (full). No opaque backgrounds on transparent terminals. |
 | **Treesitter scope inference** | Files without `;;` use treesitter to find the top-level declaration under cursor. Two-mode: explicit (`;;`) or inferred (cursor context). |
 | **Runtime statistics** | `:SageFsStats` → eval count, average latency, SSE events, reconnects, cells tracked. |
@@ -149,16 +149,52 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 
 ## Keymaps
 
+All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace.
+
 | Key | Mode | Description |
 |-----|------|-------------|
+| **Core eval** | | |
 | `<Alt-Enter>` | n | Evaluate cell under cursor (with smart session check) |
 | `<Shift-Alt-Enter>` | n | Evaluate cell and advance to next cell |
 | `<Alt-Enter>` | v | Evaluate selection |
-| `<leader>se` | n | Evaluate cell |
-| `<leader>sc` | n | Clear all results |
-| `<leader>ss` | n | Session picker |
-| `<leader>sh` | n | Hot reload file picker |
-| `<leader>sD` | n | Cycle display density (minimal/normal/full) |
+| `<leader>re` | n | Evaluate cell |
+| `<leader>rl` | n | Evaluate current line |
+| `<leader>rf` | n | Evaluate file |
+| `<leader>rc` | n | Clear all results |
+| `<leader>rx` | n | Cancel eval |
+| **Sessions & connection** | | |
+| `<leader>rs` | n | Session picker |
+| `<leader>rC` | n | Connect SSE stream |
+| `<leader>rX` | n | Disconnect SSE stream |
+| `<leader>ri` | n | Status info |
+| **Testing** | | |
+| `<leader>rt` | n | Test panel |
+| `<leader>rT` | n | Run tests |
+| `<leader>rth` | n | Tests here (current file) |
+| `<leader>rtf` | n | Test failures |
+| `<leader>rtp` | n | Pipeline trace |
+| `<leader>rte` | n | Enable live testing |
+| `<leader>rtd` | n | Disable live testing |
+| **Browse & explore** | | |
+| `<leader>rb` | n | Bindings |
+| `<leader>rd` | n | Eval diff |
+| `<leader>rg` | n | Scope map |
+| `<leader>rm` | n | Timeline |
+| `<leader>ry` | n | Type explorer |
+| `<leader>ra` | n | Callers |
+| `<leader>ro` | n | Callees |
+| **Server & reload** | | |
+| `<leader>rh` | n | Hot reload file picker |
+| `<leader>rr` | n | Soft reset |
+| `<leader>rR` | n | Hard reset |
+| `<leader>rS` | n | Start server |
+| `<leader>rQ` | n | Stop server |
+| `<leader>rD` | n | Cycle display density (minimal/normal/full) |
+| **Misc** | | |
+| `<leader>rp` | n | Playground |
+| `<leader>rn` | n | Notebook export |
+| `<leader>rw` | n | Watch all files |
+| `<leader>rW` | n | Unwatch all files |
 
 ## Commands
 
@@ -254,7 +290,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `init.lua` | ~970 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | ~215 | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | ~380 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | ~1360 | All 47 commands, keymaps, autocmds |
+| `commands.lua` | ~1420 | All 47 commands, keymaps, autocmds |
 | `hotreload.lua` | ~110 | Hot reload file toggle API |
 
 All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
