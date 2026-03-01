@@ -57,6 +57,7 @@ M.hotreload_files = {}
 M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
 M.pipeline_trace = nil
+M.timeline_state = require("sagefs.timeline").new()
 
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
@@ -408,6 +409,15 @@ local function handle_result(buf, cell_id, result, end_line)
   -- Stats: track eval completion
   if result.duration_ms then
     M.state = model.record_eval(M.state, result.duration_ms)
+    -- Timeline: record eval event
+    local timeline = require("sagefs.timeline")
+    local start_ms = (vim.uv.hrtime() / 1e6) - result.duration_ms
+    M.timeline_state = timeline.record(M.timeline_state, {
+      cell_id = cell_id,
+      start_ms = start_ms,
+      duration_ms = result.duration_ms,
+      status = result.ok and "success" or "error",
+    })
   end
   if result.ok then
     M.state = model.set_cell_state(M.state, cell_id, "success", result.output, meta)

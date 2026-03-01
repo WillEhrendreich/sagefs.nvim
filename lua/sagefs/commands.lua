@@ -1144,6 +1144,87 @@ function M.register_commands(plugin, helpers)
     vim.api.nvim_set_current_buf(buf)
     helpers.notify("Playground ready — evaluate cells with <Alt-Enter>", vim.log.levels.INFO)
   end, { desc = "Open F# scratch playground" })
+
+  vim.api.nvim_create_user_command("SageFsTimeline", function()
+    local timeline = require("sagefs.timeline")
+    if plugin.timeline_state then
+      local chart = timeline.flame_chart(plugin.timeline_state, 80)
+      render.show_float(chart, { title = "Eval Timeline" })
+    else
+      helpers.notify("No evaluations recorded yet", vim.log.levels.INFO)
+    end
+  end, { desc = "Show eval timeline flame chart" })
+
+  vim.api.nvim_create_user_command("SageFsDiff", function()
+    local diff = require("sagefs.diff")
+    local buf = vim.api.nvim_get_current_buf()
+    local cells_mod = require("sagefs.cells")
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local cell = cells_mod.find_cell(lines, row)
+    if not cell then
+      helpers.notify("No cell under cursor", vim.log.levels.WARN)
+      return
+    end
+    local cell_id = cell.start_line
+    local cell_data = plugin.state.cells[cell_id]
+    if not cell_data or not cell_data.prev_output then
+      helpers.notify("No previous output to diff", vim.log.levels.INFO)
+      return
+    end
+    local d = diff.diff_lines(cell_data.prev_output, cell_data.output)
+    local formatted = diff.format_diff(d)
+    local display = { diff.diff_summary(d), string.rep("-", 40) }
+    for _, f in ipairs(formatted) do
+      display[#display + 1] = f.text
+    end
+    render.show_float(display, { title = "Eval Diff" })
+  end, { desc = "Show diff between last two evals of cell" })
+
+  vim.api.nvim_create_user_command("SageFsScopeMap", function()
+    local scope_map = require("sagefs.scope_map")
+    if plugin.binding_tracker then
+      local cells_mod = require("sagefs.cells")
+      local buf = vim.api.nvim_get_current_buf()
+      local lines_arr = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      local all_cells = cells_mod.find_all_cells(lines_arr)
+      local cell_outputs = {}
+      for _, c in ipairs(all_cells) do
+        local cd = plugin.state.cells[c.start_line]
+        if cd then cell_outputs[c.start_line] = cd.output end
+      end
+      local map = scope_map.build_scope_map(plugin.binding_tracker, all_cells, cell_outputs)
+      local panel_lines = scope_map.format_panel(map)
+      render.show_float(panel_lines, { title = "Binding Scope Map" })
+    else
+      helpers.notify("No bindings tracked yet", vim.log.levels.INFO)
+    end
+  end, { desc = "Show binding scope map" })
+
+  vim.api.nvim_create_user_command("SageFsNotebook", function(opts)
+    local notebook = require("sagefs.notebook")
+    local cells_mod = require("sagefs.cells")
+    local buf = vim.api.nvim_get_current_buf()
+    local lines_arr = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local all_cells = cells_mod.find_all_cells(lines_arr)
+    local nb_cells = {}
+    for _, c in ipairs(all_cells) do
+      local cd = plugin.state.cells[c.start_line]
+      local source = table.concat(c.lines or {}, "\n")
+      nb_cells[#nb_cells + 1] = {
+        source = source,
+        output = cd and cd.output or nil,
+        duration_ms = cd and cd.duration_ms or nil,
+        status = cd and cd.status or nil,
+      }
+    end
+    local content = notebook.export_notebook(nb_cells, {
+      project = plugin.active_session and plugin.active_session.name or "",
+    })
+    local fname = opts.args ~= "" and opts.args or "session_notebook.fsx"
+    vim.fn.writefile(vim.split(content, "\n"), fname)
+    helpers.notify("Exported notebook: " .. fname, vim.log.levels.INFO)
+  end, { desc = "Export session as literate .fsx notebook", nargs = "?" })
 end
 
 --- Register keymaps
