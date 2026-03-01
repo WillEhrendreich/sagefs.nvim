@@ -92,18 +92,19 @@ local function build_virt_text(style, i, start_line, end_line, cell_lines)
   elseif style == "full" then
     local line_word = cell_lines == 1 and "line" or "lines"
     if is_top then
-      return { { "┄ " .. cell_lines .. " " .. line_word, "SageFsCellBound" } }
+      return { { " ╭ " .. cell_lines .. " " .. line_word, "SageFsCellBound" } }
     elseif is_bottom then
-      return { { "┄ cell end", "SageFsCellBound" } }
+      return { { " ╰ cell end", "SageFsCellBound" } }
     end
   end
   return nil
 end
 
 --- Line highlight group per style
+--- "normal" uses NO line_hl — just bar + boundaries. Glow only on boundary lines.
 local STYLE_LINE_HL = {
   minimal = nil,
-  normal = "glow",  -- resolved dynamically from hint
+  normal = nil,
   full = "SageFsCellLineFull",
 }
 
@@ -146,6 +147,11 @@ local function render(buf, start_line, end_line)
       priority = 5,
     }
     if line_hl then opts.line_hl_group = line_hl end
+
+    -- Normal mode: subtle glow only on boundary lines (first + last)
+    if style == "normal" and (i == start_line or i == end_line) then
+      opts.line_hl_group = hl.glow
+    end
 
     local vt = build_virt_text(style, i, start_line, end_line, cell_lines)
     if vt then
