@@ -157,6 +157,28 @@ Utilities ~
     Open a fresh F# scratch buffer with auto-session. Zero-config
     way to start experimenting.
 
+Analysis ~
+
+:SageFsTimeline                                         *:SageFsTimeline*
+    Show eval timeline as an ASCII flame chart in a float window.
+    Each bar represents an evaluation, with width proportional to
+    duration. Error evals use a different marker.
+
+:SageFsDiff                                             *:SageFsDiff*
+    Show the diff between the last two evaluations of the cell
+    under the cursor. Highlights changed, added, and removed lines.
+
+:SageFsScopeMap                                         *:SageFsScopeMap*
+    Show a binding scope map — which F# bindings are live at each
+    point in the file, which cells defined them, and whether
+    they've been shadowed.
+
+:SageFsNotebook [file]                                  *:SageFsNotebook*
+    Export the full session as a literate .fsx notebook. Metadata
+    (timing, bindings, status) is stored in F# block comments,
+    so the file is valid `dotnet fsi` input. Defaults to
+    `session_notebook.fsx`.
+
 :SageFsExport                                           *:SageFsExport*
     Export the current session as an .fsx file.
 

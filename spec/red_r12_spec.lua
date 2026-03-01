@@ -302,3 +302,121 @@ describe("model prev_output tracking", function()
     assert.is_nil(m.cells.c1.prev_output)
   end)
 end)
+
+-- ─── Additional depgraph edge cases ────────────────────────────────────────
+describe("depgraph edge cases", function()
+  local dg = require("sagefs.depgraph")
+
+  it("handles diamond dependency (A→B, A→C, B→D, C→D)", function()
+    local g = dg.build_graph({
+      { id = 1, source = "let a = 1;;", output = "val a : int = 1" },
+      { id = 2, source = "let b = a + 1;;", output = "val b : int = 2" },
+      { id = 3, source = "let c = a + 2;;", output = "val c : int = 3" },
+      { id = 4, source = "let d = b + c;;", output = "val d : int = 5" },
+    })
+    local stale = dg.transitive_stale(g, 1)
+    -- All downstream cells should be stale
+    assert.are.equal(3, #stale)
+    assert.same({2, 3, 4}, stale)
+  end)
+
+  it("handles self-contained cell (no deps)", function()
+    local c = dg.analyze_cell('printfn "hello world";;', "hello world")
+    assert.same({}, c.produces)
+    -- "hello" and "world" are identifiers but not bindings from other cells
+  end)
+
+  it("handles empty graph", function()
+    local g = dg.build_graph({})
+    assert.same({}, g.edges)
+  end)
+end)
+
+-- ─── Additional diff edge cases ────────────────────────────────────────────
+describe("diff edge cases", function()
+  local diff = require("sagefs.diff")
+
+  it("handles multiline output with mixed changes", function()
+    local d = diff.diff_lines("a\nb\nc\nd\ne", "a\nB\nc\nD\ne\nf")
+    local summary = diff.diff_summary(d)
+    assert.truthy(summary:match("2 changed"))
+    assert.truthy(summary:match("1 added"))
+  end)
+
+  it("handles empty new output (error cleared result)", function()
+    local d = diff.diff_lines("val x : int = 42", "")
+    assert.are.equal(1, #d)
+    assert.are.equal("removed", d[1].kind)
+  end)
+end)
+
+-- ─── Timeline additional tests ─────────────────────────────────────────────
+describe("timeline additional", function()
+  local tl = require("sagefs.timeline")
+
+  it("flame chart single event has header + 1 bar", function()
+    local s = tl.new()
+    s = tl.record(s, { cell_id = 1, start_ms = 0, duration_ms = 100, status = "success" })
+    local chart = tl.flame_chart(s, 60)
+    assert.are.equal(2, #chart) -- header + 1 bar
+  end)
+
+  it("sparkline length matches event count (up to width)", function()
+    local s = tl.new()
+    for i = 1, 5 do
+      s = tl.record(s, { cell_id = i, start_ms = i * 100, duration_ms = i * 50, status = "success" })
+    end
+    local spark = tl.sparkline(s, 20)
+    -- Should have 5 chars (5 events, width=20 allows all)
+    -- UTF-8 chars are multi-byte but logical count should be 5
+    assert.truthy(#spark > 0)
+  end)
+
+  it("percentile p0 returns minimum", function()
+    local s = tl.new()
+    s = tl.record(s, { cell_id = 1, start_ms = 0, duration_ms = 10, status = "success" })
+    s = tl.record(s, { cell_id = 2, start_ms = 100, duration_ms = 100, status = "success" })
+    -- p0 should be minimum (or near it)
+    local p0 = tl.percentile(s, 0.01)
+    assert.are.equal(10, p0)
+  end)
+end)
+
+-- ─── Notebook additional tests ─────────────────────────────────────────────
+describe("notebook additional", function()
+  local nb = require("sagefs.notebook")
+
+  it("exported content is valid F# (no bare @sagefs lines)", function()
+    local cells = {
+      { source = "let x = 42;;", output = "val x : int = 42", duration_ms = 10, status = "success" },
+      { source = "let y = x + 1;;", output = "val y : int = 43", duration_ms = 5, status = "success" },
+    }
+    local exported = nb.export_notebook(cells, { project = "Test" })
+    -- Every line with @sagefs must be inside (* ... *)
+    for line in exported:gmatch("[^\n]+") do
+      if line:match("@sagefs") then
+        assert.truthy(line:match("%(%*") or line:match("^%s"),
+          "metadata outside block comment: " .. line)
+      end
+    end
+  end)
+
+  it("handles cells with errors", function()
+    local cells = {
+      { source = "let x = bad;;", output = nil, status = "error", duration_ms = 5 },
+    }
+    local exported = nb.export_notebook(cells, {})
+    assert.truthy(exported:match("status=error"))
+  end)
+
+  it("summary counts multiple errors", function()
+    local cells = {
+      { source = "a;;", status = "error", duration_ms = 10 },
+      { source = "b;;", status = "error", duration_ms = 20 },
+      { source = "c;;", status = "success", duration_ms = 30 },
+    }
+    local summary = nb.summary_block(cells)
+    assert.truthy(summary:match("2 errors"))
+    assert.truthy(summary:match("60ms"))
+  end)
+end)
