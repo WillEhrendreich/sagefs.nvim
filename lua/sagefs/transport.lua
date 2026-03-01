@@ -156,7 +156,7 @@ function M.connect_sse(url, opts)
     handle._connected = false
     handle._attempt = handle._attempt + 1
     handle.job_id = vim.fn.jobstart(
-      { "curl", "--no-buffer", "-N", url, "--silent", "--show-error" },
+      { "curl", "--no-buffer", "-N", "--compressed", url, "--silent", "--show-error" },
       {
         on_stdout = function(_, data)
           if not data then return end
