@@ -11,8 +11,10 @@ local json_decode = require("sagefs.util").json_decode
 function M.normalize_path(p)
   if not p or p == "" then return "" end
   local s = p:lower()
-  -- strip trailing slash/backslash
-  s = s:gsub("[/\\]$", "")
+  -- canonical separator: always use forward slashes
+  s = s:gsub("\\", "/")
+  -- strip trailing slash
+  s = s:gsub("/$", "")
   return s
 end
 

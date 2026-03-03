@@ -250,6 +250,22 @@ describe("sagefs.sessions", function()
       local s = sessions.find_session_for_dir({}, "C:\\Code\\SageFs")
       assert.is_nil(s)
     end)
+
+    it("matches forward-slash server path against backslash cwd", function()
+      local mixed_list = {
+        {
+          id = "s1",
+          status = "Ready",
+          projects = { "App.fsproj" },
+          working_directory = "C:/Code/SageFs",
+          eval_count = 0,
+          avg_duration_ms = 0,
+        },
+      }
+      local s = sessions.find_session_for_dir(mixed_list, "C:\\Code\\SageFs")
+      assert.is_not_nil(s)
+      assert.equals("s1", s.id)
+    end)
   end)
 
   -- ─── session_actions ─────────────────────────────────────────────────────
@@ -281,12 +297,18 @@ describe("sagefs.sessions", function()
   -- ─── normalize_path ──────────────────────────────────────────────────────
 
   describe("normalize_path", function()
-    it("lowercases drive letter on Windows paths", function()
-      assert.equals("c:\\code\\sagefs", sessions.normalize_path("C:\\Code\\SageFs"))
+    it("lowercases and normalizes backslashes to forward slashes", function()
+      assert.equals("c:/code/sagefs", sessions.normalize_path("C:\\Code\\SageFs"))
     end)
 
-    it("normalizes forward slashes to backslashes", function()
+    it("preserves forward slashes and lowercases", function()
       assert.equals("c:/code/sagefs", sessions.normalize_path("C:/Code/SageFs"))
+    end)
+
+    it("makes mixed separators equivalent", function()
+      local a = sessions.normalize_path("C:\\Code\\SageFs")
+      local b = sessions.normalize_path("C:/Code/SageFs")
+      assert.equals(a, b)
     end)
 
     it("strips trailing separator", function()

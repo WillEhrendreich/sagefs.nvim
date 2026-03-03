@@ -937,8 +937,15 @@ function M.register_commands(plugin, helpers)
   end, { desc = "Show SageFs runtime statistics" })
 
   vim.api.nvim_create_user_command("SageFsPlayground", function()
+    local name = "SageFs Playground.fsx"
+    local existing = vim.fn.bufnr(name)
+    if existing ~= -1 then
+      vim.api.nvim_set_current_buf(existing)
+      helpers.notify("Switched to existing playground", vim.log.levels.INFO)
+      return
+    end
     local buf = vim.api.nvim_create_buf(true, false)
-    vim.api.nvim_buf_set_name(buf, "SageFs Playground.fsx")
+    vim.api.nvim_buf_set_name(buf, name)
     vim.api.nvim_buf_set_option(buf, "filetype", "fsharp")
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
       "// SageFs Playground — experiment with F# here",

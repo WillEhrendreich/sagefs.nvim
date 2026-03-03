@@ -469,7 +469,7 @@ local function post_exec(code, buf, cell_id, end_line)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
-    body = { code = code, working_directory = vim.fn.getcwd(), format = "json" },
+    body = { code = code, working_directory = vim.fn.getcwd(), sessionId = M.active_session and M.active_session.id or nil, format = "json" },
     timeout = 60,
     callback = function(ok, raw)
       local elapsed_ms = math.floor((vim.uv.hrtime() - start_time) / 1e6)
