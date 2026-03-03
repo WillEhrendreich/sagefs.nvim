@@ -1,116 +1,93 @@
 -- sagefs/type_explorer.lua — Pure type exploration formatting
--- Formats assemblies, namespaces, types, and members for picker/float display
+-- Formats completions-based exploration results for picker/float display
 -- Zero vim dependencies
 
 local M = {}
 
--- ─── Assembly Picker ──────────────────────────────────────────────────────────
+-- Kind icons for type/member completions
+local KIND_ICONS = {
+  Class = "◆", Struct = "◇", Interface = "◈",
+  Enum = "▣", Union = "▤", Module = "▥",
+  Namespace = "▷", Method = "ƒ", Property = "●",
+  Field = "○", Event = "⚡", Constant = "π",
+  Variable = "𝑥", Keyword = "⌘", ExtensionMethod = "ƒ+",
+  EnumMember = "▪", Delegate = "◈", Exception = "⚠",
+  OverriddenMethod = "ƒ↑", TypeParameter = "T", Typedef = "≡",
+}
 
-function M.format_assemblies(assemblies)
+-- Kinds that represent drillable items (can explore further with ".")
+local DRILLABLE_KINDS = {
+  Namespace = true, Module = true, Class = true, Struct = true,
+  Interface = true, Enum = true, Union = true, Type = true,
+}
+
+--- Format completions into picker items for exploration.
+---@param completions table[] { label, kind, insertText }
+---@return table[] { label, insertText, kind, drillable }
+function M.format_completions(completions)
   local items = {}
-  for _, asm in ipairs(assemblies) do
-    table.insert(items, {
-      label = asm.name,
-      name = asm.name,
-      path = asm.path or "",
-    })
+  for _, c in ipairs(completions) do
+    local icon = KIND_ICONS[c.kind] or "·"
+    local drillable = DRILLABLE_KINDS[c.kind] or false
+    items[#items + 1] = {
+      label = string.format("%s %s  (%s)%s", icon, c.label, c.kind or "?", drillable and " →" or ""),
+      insertText = c.insertText or c.label,
+      kind = c.kind or "",
+      drillable = drillable,
+    }
   end
+  table.sort(items, function(a, b)
+    if a.drillable ~= b.drillable then return a.drillable end
+    if a.kind ~= b.kind then return a.kind < b.kind end
+    return a.label < b.label
+  end)
   return items
 end
 
--- ─── Namespace Picker ─────────────────────────────────────────────────────────
+--- Format completions as a floating window panel (for non-drillable leaf views).
+---@param qualified_name string
+---@param completions table[] { label, kind, insertText }
+---@return string[]
+function M.format_members_panel(qualified_name, completions)
+  local lines = { string.format("═══ %s ═══", qualified_name), "" }
 
-function M.format_namespaces(namespaces)
-  local items = {}
-  for _, ns in ipairs(namespaces) do
-    table.insert(items, {
-      label = ns,
-      namespace = ns,
-    })
-  end
-  return items
-end
-
--- ─── Type Picker ──────────────────────────────────────────────────────────────
-
-function M.format_types(types)
-  local items = {}
-  for _, t in ipairs(types) do
-    local kind_icon = ({
-      class = "◆",
-      struct = "◇",
-      interface = "◈",
-      enum = "▣",
-      union = "▤",
-      module = "▥",
-    })[t.kind] or "●"
-    table.insert(items, {
-      label = string.format("%s %s", kind_icon, t.name),
-      fullName = t.fullName,
-      kind = t.kind,
-    })
-  end
-  return items
-end
-
--- ─── Member Display ───────────────────────────────────────────────────────────
-
-function M.format_members(type_name, members)
-  local lines = {}
-  table.insert(lines, string.format("── %s ──", type_name))
-  table.insert(lines, "")
-
-  local grouped = { constructor = {}, property = {}, method = {}, field = {}, event = {} }
-  for _, m in ipairs(members) do
-    local kind = m.kind or "method"
-    if not grouped[kind] then grouped[kind] = {} end
-    table.insert(grouped[kind], m)
-  end
-
-  local sections = {
-    { key = "constructor", title = "Constructors" },
-    { key = "property", title = "Properties" },
-    { key = "field", title = "Fields" },
-    { key = "method", title = "Methods" },
-    { key = "event", title = "Events" },
-  }
-
-  for _, section in ipairs(sections) do
-    local items = grouped[section.key]
-    if items and #items > 0 then
-      table.insert(lines, string.format("  %s:", section.title))
-      for _, m in ipairs(items) do
-        local sig = m.name
-        if m.parameters then
-          sig = sig .. "(" .. m.parameters .. ")"
-        end
-        if m.returnType then
-          sig = sig .. " : " .. m.returnType
-        end
-        table.insert(lines, "    " .. sig)
-      end
-      table.insert(lines, "")
+  -- Group by kind
+  local grouped = {}
+  local kind_order = {}
+  for _, c in ipairs(completions) do
+    local kind = c.kind or "Other"
+    if not grouped[kind] then
+      grouped[kind] = {}
+      kind_order[#kind_order + 1] = kind
     end
+    grouped[kind][#grouped[kind] + 1] = c
+  end
+  table.sort(kind_order)
+
+  for _, kind in ipairs(kind_order) do
+    local icon = KIND_ICONS[kind] or "·"
+    lines[#lines + 1] = string.format("  %s %s:", icon, kind)
+    for _, c in ipairs(grouped[kind]) do
+      lines[#lines + 1] = "    " .. (c.label or c.insertText or "?")
+    end
+    lines[#lines + 1] = ""
   end
 
   return lines
 end
 
---- Format a flat list entry for the unified type picker
----@param assembly string
----@param namespace string
----@param type_entry table { name, fullName, kind }
----@return table { label: string, fullName: string, assembly: string, namespace: string }
-function M.format_flat_entry(assembly, namespace, type_entry)
-  local kind_icon = ({
-    class = "◆", struct = "◇", interface = "◈",
-    enum = "▣", union = "▤", module = "▥",
-  })[type_entry.kind] or "●"
+--- Common starting namespaces for initial exploration prompt.
+---@return string[]
+function M.common_roots()
   return {
-    label = string.format("%s %s  (%s)", kind_icon, type_entry.fullName or type_entry.name, assembly),
-    fullName = type_entry.fullName or type_entry.name,
-    assembly = assembly,
-    namespace = namespace,
+    "System",
+    "System.Collections.Generic",
+    "System.IO",
+    "System.Linq",
+    "System.Text",
+    "System.Threading.Tasks",
+    "Microsoft.FSharp.Collections",
+    "Microsoft.FSharp.Core",
   }
 end
 

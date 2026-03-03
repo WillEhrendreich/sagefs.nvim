@@ -19,11 +19,11 @@ function M.parse_response(raw)
   return items
 end
 
-function M.build_request_body(code, cursor_position, working_directory)
+function M.build_request_body(code, cursor_position, session_id)
   return {
     code = code,
-    cursor_position = cursor_position,
-    working_directory = working_directory,
+    cursorPos = cursor_position,
+    sessionId = session_id or "",
   }
 end
 

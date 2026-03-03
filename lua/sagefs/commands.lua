@@ -763,237 +763,85 @@ function M.register_commands(plugin, helpers)
   -- ─── Type Explorer Command ───────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsTypeExplorer", function()
-    local show_ns, show_types
+    local sid = plugin.active_session and plugin.active_session.id or ""
 
-    local function show_assemblies(items)
-      local labels = {}
-      for _, item in ipairs(items) do table.insert(labels, item.label) end
-      vim.ui.select(labels, { prompt = "Assemblies:" }, function(choice)
-        if not choice then return end
-        local asm = choice:match("^(%S+)")
-        local cached_ns = te_cache.get_namespaces(asm)
-        if cached_ns then
-          show_ns(asm, type_explorer.format_namespaces(cached_ns))
-        else
-          transport.http_json({
-            method = "GET",
-            url = helpers.dashboard_url() .. "/api/namespaces?assembly=" .. vim.uri_encode(asm),
-            timeout = 5,
-            callback = function(ns_ok, ns_raw)
-              if not ns_ok then return end
-              local ns_parse_ok, ns_data = pcall(vim.json.decode, ns_raw)
-              if not ns_parse_ok or not ns_data then return end
-              te_cache.set_namespaces(asm, ns_data)
-              show_ns(asm, type_explorer.format_namespaces(ns_data))
-            end,
-          })
-        end
-      end)
-    end
-
-    show_ns = function(asm, ns_items)
-      local ns_labels = {}
-      for _, item in ipairs(ns_items) do table.insert(ns_labels, item.label or item) end
-      vim.ui.select(ns_labels, { prompt = asm .. " namespaces:" }, function(ns_choice)
-        if not ns_choice then return end
-        local ns_name = ns_choice:match("^(%S+)")
-        local cached_types = te_cache.get_types(ns_name)
-        if cached_types then
-          show_types(ns_name, type_explorer.format_types(cached_types))
-        else
-          transport.http_json({
-            method = "GET",
-            url = helpers.dashboard_url() .. "/api/types?namespace=" .. vim.uri_encode(ns_name),
-            timeout = 5,
-            callback = function(t_ok, t_raw)
-              if not t_ok then return end
-              local t_parse_ok, t_data = pcall(vim.json.decode, t_raw)
-              if not t_parse_ok or not t_data then return end
-              te_cache.set_types(ns_name, t_data)
-              show_types(ns_name, type_explorer.format_types(t_data))
-            end,
-          })
-        end
-      end)
-    end
-
-    show_types = function(ns_name, type_items)
-      local type_labels = {}
-      for _, item in ipairs(type_items) do table.insert(type_labels, item.label) end
-      vim.ui.select(type_labels, { prompt = ns_name .. " types:" }, function(t_choice)
-        if not t_choice then return end
-        local type_name = t_choice:match("[◆◇◈▣▤▥●]%s+(.+)")
-        if not type_name then return end
-        local cached_members = te_cache.get_members(type_name)
-        if cached_members then
-          local lines = type_explorer.format_members(type_name, cached_members)
-          render.show_float(lines, { title = type_name })
-        else
-          transport.http_json({
-            method = "GET",
-            url = helpers.dashboard_url() .. "/api/members?type=" .. vim.uri_encode(type_name),
-            timeout = 5,
-            callback = function(m_ok, m_raw)
-              if not m_ok then return end
-              local m_parse_ok, m_data = pcall(vim.json.decode, m_raw)
-              if not m_parse_ok or not m_data then return end
-              te_cache.set_members(type_name, m_data)
-              local lines = type_explorer.format_members(type_name, m_data)
-              render.show_float(lines, { title = type_name })
-            end,
-          })
-        end
-      end)
-    end
-
-    local cached_asms = te_cache.get_assemblies()
-    if cached_asms then
-      show_assemblies(type_explorer.format_assemblies(cached_asms))
-    else
+    local function explore(qualified_name)
+      -- Check cache
+      local cached = te_cache.get(qualified_name)
+      if cached then
+        show_explorer_results(qualified_name, cached)
+        return
+      end
+      -- Send "QualifiedName." as code and get completions at cursor after the dot
+      local code = qualified_name .. "."
+      local body = { code = code, cursorPos = #code, sessionId = sid }
       transport.http_json({
-        method = "GET",
-        url = helpers.dashboard_url() .. "/api/assemblies",
-        timeout = 5,
+        method = "POST",
+        url = helpers.dashboard_url() .. "/dashboard/completions",
+        body = body,
+        timeout = 8,
         callback = function(ok, raw)
           if not ok then
-            helpers.notify("Failed to fetch assemblies" .. err_detail(raw), vim.log.levels.ERROR)
+            helpers.notify("Failed to explore " .. qualified_name .. err_detail(raw), vim.log.levels.ERROR)
             return
           end
           local parse_ok, data = pcall(vim.json.decode, raw)
-          if not parse_ok or not data then return end
-          te_cache.set_assemblies(data)
-          show_assemblies(type_explorer.format_assemblies(data))
+          if not parse_ok or not data or not data.completions then
+            helpers.notify("No completions for " .. qualified_name, vim.log.levels.WARN)
+            return
+          end
+          te_cache.set(qualified_name, data.completions)
+          show_explorer_results(qualified_name, data.completions)
         end,
       })
     end
-  end, { desc = "Browse assemblies → namespaces → types" })
 
-  vim.api.nvim_create_user_command("SageFsTypeExplorerFlat", function()
-    local function show_flat_picker(all_types)
-      if #all_types == 0 then
-        helpers.notify("No types found", vim.log.levels.WARN)
+    function show_explorer_results(qualified_name, completions)
+      if #completions == 0 then
+        helpers.notify("No members found for " .. qualified_name, vim.log.levels.WARN)
         return
       end
+      local items = type_explorer.format_completions(completions)
       local labels = {}
-      for _, item in ipairs(all_types) do table.insert(labels, item.label) end
-      vim.ui.select(labels, { prompt = "Types (" .. #all_types .. "):" }, function(choice)
+      for _, item in ipairs(items) do labels[#labels + 1] = item.label end
+      vim.ui.select(labels, { prompt = qualified_name .. ":" }, function(choice)
         if not choice then return end
         local idx
         for i, l in ipairs(labels) do
           if l == choice then idx = i; break end
         end
         if not idx then return end
-        local picked = all_types[idx]
-        local cached_members = te_cache.get_members(picked.fullName)
-        if cached_members then
-          local lines = type_explorer.format_members(picked.fullName, cached_members)
-          render.show_float(lines, { title = picked.fullName })
+        local picked = items[idx]
+        if picked.drillable then
+          explore(qualified_name .. "." .. picked.insertText)
         else
-          transport.http_json({
-            method = "GET",
-            url = helpers.dashboard_url() .. "/api/members?type=" .. vim.uri_encode(picked.fullName),
-            timeout = 5,
-            callback = function(m_ok, m_raw)
-              if not m_ok then return end
-              local m_ok2, m_data = pcall(vim.json.decode, m_raw)
-              if not m_ok2 or not m_data then return end
-              te_cache.set_members(picked.fullName, m_data)
-              local lines = type_explorer.format_members(picked.fullName, m_data)
-              render.show_float(lines, { title = picked.fullName })
-            end,
-          })
+          -- Show leaf member panel
+          local panel = type_explorer.format_members_panel(
+            qualified_name .. "." .. picked.insertText, completions)
+          render.show_float(panel, { title = qualified_name })
         end
       end)
     end
 
-    -- Check flat cache first
-    local cached_flat = te_cache.get_flat_types()
-    if cached_flat then
-      show_flat_picker(cached_flat)
-      return
-    end
+    -- Start: offer common roots or custom input
+    local roots = type_explorer.common_roots()
+    local root_labels = {}
+    for _, r in ipairs(roots) do root_labels[#root_labels + 1] = r end
+    root_labels[#root_labels + 1] = "⌨ Enter custom namespace…"
+    vim.ui.select(root_labels, { prompt = "Explore namespace:" }, function(choice)
+      if not choice then return end
+      if choice:find("^⌨") then
+        vim.ui.input({ prompt = "Namespace: " }, function(input)
+          if input and input ~= "" then explore(input) end
+        end)
+      else
+        explore(choice)
+      end
+    end)
+  end, { desc = "Browse namespaces → types → members via completions" })
 
-    helpers.notify("Loading types...")
-    transport.http_json({
-      method = "GET",
-      url = helpers.dashboard_url() .. "/api/assemblies",
-      timeout = 5,
-      callback = function(ok, raw)
-        if not ok then
-          helpers.notify("Failed to fetch assemblies" .. err_detail(raw), vim.log.levels.ERROR)
-          return
-        end
-        local parse_ok, data = pcall(vim.json.decode, raw)
-        if not parse_ok or not data then return end
-        te_cache.set_assemblies(data)
-        local assemblies = type_explorer.format_assemblies(data)
-        local all_types = {}
-        local pending = #assemblies
-        if pending == 0 then
-          helpers.notify("No assemblies found", vim.log.levels.WARN)
-          return
-        end
-        for _, asm in ipairs(assemblies) do
-          transport.http_json({
-            method = "GET",
-            url = helpers.dashboard_url() .. "/api/namespaces?assembly=" .. vim.uri_encode(asm.name),
-            timeout = 5,
-            callback = function(ns_ok, ns_raw)
-              if ns_ok then
-                local ns_ok2, ns_data = pcall(vim.json.decode, ns_raw)
-                if ns_ok2 and ns_data then
-                  te_cache.set_namespaces(asm.name, ns_data)
-                  local ns_pending = #ns_data
-                  if ns_pending == 0 then
-                    pending = pending - 1
-                  else
-                    for _, ns in ipairs(ns_data) do
-                      transport.http_json({
-                        method = "GET",
-                        url = helpers.dashboard_url() .. "/api/types?namespace=" .. vim.uri_encode(ns),
-                        timeout = 5,
-                        callback = function(t_ok, t_raw)
-                          if t_ok then
-                            local t_ok2, t_data = pcall(vim.json.decode, t_raw)
-                            if t_ok2 and t_data then
-                              te_cache.set_types(ns, t_data)
-                              for _, t in ipairs(t_data) do
-                                table.insert(all_types, type_explorer.format_flat_entry(asm.name, ns, t))
-                              end
-                            end
-                          end
-                          ns_pending = ns_pending - 1
-                          if ns_pending == 0 then
-                            pending = pending - 1
-                            if pending == 0 then
-                              vim.schedule(function()
-                                te_cache.set_flat_types(all_types)
-                                show_flat_picker(all_types)
-                              end)
-                            end
-                          end
-                        end,
-                      })
-                    end
-                  end
-                else
-                  pending = pending - 1
-                end
-              else
-                pending = pending - 1
-              end
-              if pending == 0 then
-                vim.schedule(function()
-                  te_cache.set_flat_types(all_types)
-                  show_flat_picker(all_types)
-                end)
-              end
-            end,
-          })
-        end
-      end,
-    })
-  end, { desc = "Flat type picker — single fuzzy search over all types" })
+  -- SageFsTypeExplorerFlat is removed — the drill-down approach replaces it.
+  -- The old flat explorer required non-existent /api/assemblies endpoint.
 
   -- ─── Export Command ──────────────────────────────────────────────────────
 

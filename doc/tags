@@ -24,7 +24,6 @@
 :SageFsHotReload	sagefs.txt	/*:SageFsHotReload*
 :SageFsLoadScript	sagefs.txt	/*:SageFsLoadScript*
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
-:SageFsPipelineTrace	sagefs.txt	/*:SageFsPipelineTrace*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
 :SageFsRunTests	sagefs.txt	/*:SageFsRunTests*
@@ -37,10 +36,10 @@
 :SageFsSwitchSession	sagefs.txt	/*:SageFsSwitchSession*
 :SageFsTestPanel	sagefs.txt	/*:SageFsTestPanel*
 :SageFsTestPolicy	sagefs.txt	/*:SageFsTestPolicy*
+:SageFsTestTrace	sagefs.txt	/*:SageFsTestTrace*
 :SageFsTestsHere	sagefs.txt	/*:SageFsTestsHere*
 :SageFsTimeline	sagefs.txt	/*:SageFsTimeline*
 :SageFsTypeExplorer	sagefs.txt	/*:SageFsTypeExplorer*
-:SageFsTypeExplorerFlat	sagefs.txt	/*:SageFsTypeExplorerFlat*
 :SageFsTypeFlow	sagefs.txt	/*:SageFsTypeFlow*
 :SageFsUnwatchAll	sagefs.txt	/*:SageFsUnwatchAll*
 :SageFsWatchAll	sagefs.txt	/*:SageFsWatchAll*

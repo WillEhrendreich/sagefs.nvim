@@ -660,7 +660,8 @@ function M.omnifunc(findstart, base)
   end
   offset = offset + cursor[2]
 
-  local body = completions.build_request_body(text, offset, vim.fn.getcwd())
+  local sid = M.active_session and M.active_session.id or ""
+  local body = completions.build_request_body(text, offset, sid)
   local col = (M._completion_col or 0) + 1
 
   transport.http_json({

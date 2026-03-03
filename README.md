@@ -78,8 +78,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
-| **Type explorer** | `:SageFsTypeExplorer` → assembly→namespace→type→members drill-down. |
-| **Flat type explorer** | `:SageFsTypeExplorerFlat` → single fuzzy pick over all types. |
+| **Type explorer** | `:SageFsTypeExplorer` → completions-based namespace/type drill-down. |
 | **History browser** | `:SageFsHistory` → eval history for the cell under cursor with snapshot preview. |
 | **Export to .fsx** | `:SageFsExport` → export session history as executable F# script. |
 | **Load script** | `:SageFsLoadScript` → load an `.fsx` file via `#load`. File completion support. |
@@ -230,8 +229,7 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsDisableTesting` | Disable live testing |
 | `:SageFsTestTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
-| `:SageFsTypeExplorer` | Browse assemblies → namespaces → types → members |
-| `:SageFsTypeExplorerFlat` | Single fuzzy pick over all types in all assemblies |
+| `:SageFsTypeExplorer` | Browse namespaces → types → members via completions |
 | `:SageFsHistory` | Eval history for cell under cursor |
 | `:SageFsExport` | Export session history as `.fsx` file |
 | `:SageFsCallers <symbol>` | Show callers of a symbol |

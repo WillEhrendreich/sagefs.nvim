@@ -220,13 +220,10 @@ Analysis ~
     control how much inline information is shown.
 
 :SageFsTypeExplorer                                     *:SageFsTypeExplorer*
-    Browse types in referenced assemblies.
+    Browse types via completions-based namespace drill-down.
 
-:SageFsTypeExplorerFlat                                 *:SageFsTypeExplorerFlat*
-    Search all types across assemblies in a flat list.
-
-:SageFsPipelineTrace                                    *:SageFsPipelineTrace*
-    Show the current pipeline trace state.
+:SageFsTestTrace                                        *:SageFsTestTrace*
+    Show the current test trace state.
 
 :SageFsStatus                                           *:SageFsStatus*
     Show connection status and session information.
@@ -376,13 +373,11 @@ trigger manual reloads.
 ==============================================================================
 11. TYPE EXPLORER                                      *sagefs-type-explorer*
 
-Browse and search types from referenced assemblies: >vim
+Browse and search types via completions: >vim
 
-  :SageFsTypeExplorer           " Browse by assembly → namespace → type
-  :SageFsTypeExplorerFlat       " Search all types in a flat picker
+  :SageFsTypeExplorer           " Drill down namespaces → types → members
 <
-Results are cached per-session. The flat explorer searches across all
-assemblies simultaneously.
+Results are cached per-session.
 
 ==============================================================================
 12. DIAGNOSTICS                                        *sagefs-diagnostics*

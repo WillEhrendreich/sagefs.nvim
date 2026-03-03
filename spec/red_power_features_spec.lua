@@ -13,73 +13,39 @@ require("spec.helper")
 local ok_te, type_explorer = pcall(require, "sagefs.type_explorer")
 if not ok_te then type_explorer = {} end
 
-describe("type_explorer.format_assemblies [RED T4]", function()
-  it("formats a list of assemblies for picker display", function()
-    assert.is_function(type_explorer.format_assemblies)
-    local assemblies = {
-      { name = "MyProject", path = "bin/Debug/MyProject.dll" },
-      { name = "System.Runtime", path = "" },
+describe("type_explorer.format_completions [GREEN T4]", function()
+  it("formats completions for picker display", function()
+    assert.is_function(type_explorer.format_completions)
+    local completions = {
+      { label = "IO", kind = "Namespace", insertText = "IO" },
+      { label = "String", kind = "Class", insertText = "String" },
     }
-    local items = type_explorer.format_assemblies(assemblies)
+    local items = type_explorer.format_completions(completions)
     assert.is_table(items)
     assert.are.equal(2, #items)
     assert.is_string(items[1].label)
   end)
 end)
 
-describe("type_explorer.format_namespaces [RED T4]", function()
-  it("formats namespaces for picker display", function()
-    assert.is_function(type_explorer.format_namespaces)
-    local namespaces = { "System.IO", "System.Collections.Generic", "MyApp.Domain" }
-    local items = type_explorer.format_namespaces(namespaces)
-    assert.is_table(items)
-    assert.are.equal(3, #items)
-    for _, item in ipairs(items) do
-      assert.is_string(item.label)
-      assert.is_string(item.namespace)
-    end
-  end)
-end)
-
-describe("type_explorer.format_types [RED T4]", function()
-  it("formats types for picker display", function()
-    assert.is_function(type_explorer.format_types)
-    local types = {
-      { name = "String", kind = "class", fullName = "System.String" },
-      { name = "Option", kind = "union", fullName = "Microsoft.FSharp.Core.FSharpOption`1" },
+describe("type_explorer.format_members_panel [GREEN T4]", function()
+  it("formats completions as member panel lines", function()
+    assert.is_function(type_explorer.format_members_panel)
+    local completions = {
+      { label = "Length", kind = "Property" },
+      { label = "Contains", kind = "Method" },
     }
-    local items = type_explorer.format_types(types)
-    assert.is_table(items)
-    assert.are.equal(2, #items)
-    for _, item in ipairs(items) do
-      assert.is_string(item.label)
-      assert.is_string(item.fullName)
-    end
-  end)
-end)
-
-describe("type_explorer.format_members [RED T4]", function()
-  it("formats type members for floating window display", function()
-    assert.is_function(type_explorer.format_members)
-    local members = {
-      { name = "Length", kind = "property", returnType = "int" },
-      { name = "Contains", kind = "method", returnType = "bool", parameters = "string value" },
-      { name = ".ctor", kind = "constructor", parameters = "string value" },
-    }
-    local lines = type_explorer.format_members("System.String", members)
+    local lines = type_explorer.format_members_panel("System.String", completions)
     assert.is_table(lines)
-    assert.is_true(#lines >= 3)
+    assert.is_true(#lines >= 2)
     for _, l in ipairs(lines) do assert.is_string(l) end
   end)
 
-  it("groups members by kind (properties, methods, constructors)", function()
-    local members = {
-      { name = "Length", kind = "property", returnType = "int" },
-      { name = "Contains", kind = "method", returnType = "bool" },
-      { name = ".ctor", kind = "constructor" },
+  it("groups members by kind", function()
+    local completions = {
+      { label = "Length", kind = "Property" },
+      { label = "Contains", kind = "Method" },
     }
-    local lines = type_explorer.format_members("Test", members)
-    -- Should have section headers
+    local lines = type_explorer.format_members_panel("Test", completions)
     local has_props = false
     local has_methods = false
     for _, l in ipairs(lines) do
@@ -88,6 +54,15 @@ describe("type_explorer.format_members [RED T4]", function()
     end
     assert.is_true(has_props)
     assert.is_true(has_methods)
+  end)
+end)
+
+describe("type_explorer.common_roots [GREEN T4]", function()
+  it("returns a table of common root namespaces", function()
+    assert.is_function(type_explorer.common_roots)
+    local roots = type_explorer.common_roots()
+    assert.is_table(roots)
+    assert.is_true(#roots > 0)
   end)
 end)
 
