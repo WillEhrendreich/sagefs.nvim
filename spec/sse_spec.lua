@@ -269,9 +269,9 @@ describe("sse.classify_event snake_case events", function()
     assert.are.equal("providers_detected", result.action)
   end)
 
-  it("classifies pipeline_timing_recorded (snake_case)", function()
-    local result = sse.classify_event({ type = "pipeline_timing_recorded", data = "{}" })
-    assert.are.equal("pipeline_timing_recorded", result.action)
+  it("classifies test_cycle_timing_recorded (snake_case)", function()
+    local result = sse.classify_event({ type = "test_cycle_timing_recorded", data = "{}" })
+    assert.are.equal("test_cycle_timing_recorded", result.action)
   end)
 
   it("still classifies PascalCase TestResultsBatch", function()

@@ -56,7 +56,7 @@ M.warmup_context = nil
 M.hotreload_files = {}
 M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
-M.pipeline_trace = nil
+M.test_trace = nil
 M.timeline_state = require("sagefs.timeline").new()
 M.time_travel_state = require("sagefs.time_travel").new()
 
@@ -118,7 +118,7 @@ local dispatch_table
 -- Each entry: { action, handler_fn, target ("testing"|"coverage"|"annotations"), session_scoped, event_name }
 -- Custom handlers are closures that don't fit the pattern.
 local SSE_HANDLER_DEFS = {
-  -- Testing pipeline (decode + state update ± session check ± event)
+  -- Testing cycle (decode + state update ± session check ± event)
   { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing" },
   { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
   { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
@@ -133,7 +133,7 @@ local SSE_HANDLER_DEFS = {
   { action = "file_annotations", fn = "handle_file_annotations", target = "annotations", session_scoped = true, event = "file_annotations" },
   -- Fire-event-only (decode + fire, no state update)
   { action = "affected_tests_computed", event = "affected_tests_computed" },
-  { action = "pipeline_timing_recorded", event = "pipeline_timing_recorded" },
+  { action = "test_cycle_timing_recorded", event = "test_cycle_timing_recorded" },
   { action = "run_tests_requested", event = "run_tests_requested" },
   { action = "eval_completed", event = "eval_completed" },
   { action = "hot_reload_triggered", event = "hot_reload_triggered" },
@@ -212,11 +212,11 @@ local function build_handlers()
     M.binding_tracker = format.tracker_from_snapshot(bindings)
     fire_user_event("bindings_snapshot", data)
   end
-  handlers.pipeline_trace = function(raw)
+  handlers.test_trace = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
-    M.pipeline_trace = data
-    fire_user_event("pipeline_trace", data)
+    M.test_trace = data
+    fire_user_event("test_trace", data)
   end
 
   return sse_parser.build_dispatch_table(handlers)
@@ -790,32 +790,43 @@ function M.show_session_context()
       end
       local lines = { "SageFs Session Context", string.rep("─", 40) }
       table.insert(lines, string.format("Session: %s", sid))
-      if ctx.WarmupDurationMs then
-        table.insert(lines, string.format("Warmup: %dms", ctx.WarmupDurationMs))
+      local pt = ctx.phaseTiming
+      if pt and pt.totalMs then
+        table.insert(lines, string.format("Warmup: %dms (scan=%dms, asm=%dms, open=%dms)",
+          pt.totalMs, pt.scanSourceFilesMs or 0, pt.scanAssembliesMs or 0, pt.openNamespacesMs or 0))
       end
-      if ctx.AssembliesLoaded then
+      if ctx.assembliesLoaded then
         table.insert(lines, "")
-        table.insert(lines, string.format("Assemblies (%d):", #ctx.AssembliesLoaded))
-        for _, a in ipairs(ctx.AssembliesLoaded) do
+        table.insert(lines, string.format("Assemblies (%d):", #ctx.assembliesLoaded))
+        for _, a in ipairs(ctx.assembliesLoaded) do
           table.insert(lines, string.format("  %s (%d ns, %d mod)",
-            a.Name or "?", a.NamespaceCount or 0, a.ModuleCount or 0))
+            a.name or "?", a.namespaceCount or 0, a.moduleCount or 0))
         end
       end
-      if ctx.NamespacesOpened then
+      if ctx.namespacesOpened then
         table.insert(lines, "")
-        table.insert(lines, string.format("Namespaces Opened (%d):", #ctx.NamespacesOpened))
-        for _, n in ipairs(ctx.NamespacesOpened) do
-          local kind = n.IsModule and "module" or "namespace"
-          table.insert(lines, string.format("  %s (%s, %s)",
-            n.Name or "?", kind, n.Source or "?"))
+        table.insert(lines, string.format("Namespaces Opened (%d):", #ctx.namespacesOpened))
+        for _, n in ipairs(ctx.namespacesOpened) do
+          local kind = n.isModule and "module" or "namespace"
+          local dur = n.durationMs and string.format(", %.1fms", n.durationMs) or ""
+          table.insert(lines, string.format("  %s (%s, %s%s)",
+            n.name or "?", kind, n.source or "?", dur))
         end
       end
-      if ctx.FailedOpens and #ctx.FailedOpens > 0 then
+      if ctx.failedOpens and #ctx.failedOpens > 0 then
         table.insert(lines, "")
-        table.insert(lines, string.format("Failed Opens (%d):", #ctx.FailedOpens))
-        for _, f in ipairs(ctx.FailedOpens) do
-          if type(f) == "table" then
-            table.insert(lines, "  " .. table.concat(f, " → "))
+        table.insert(lines, string.format("Failed Opens (%d):", #ctx.failedOpens))
+        for _, f in ipairs(ctx.failedOpens) do
+          if type(f) == "table" and f.name then
+            local kind = f.isModule and "module" or "namespace"
+            table.insert(lines, string.format("  ✖ %s (%s) — %s", f.name, kind, f.errorMessage or "?"))
+            if f.diagnostics then
+              for _, d in ipairs(f.diagnostics) do
+                local loc = d.fileName or "unknown"
+                table.insert(lines, string.format("    FS%04d %s:%d:%d — %s",
+                  d.errorNumber or 0, loc, d.startLine or 0, d.startColumn or 0, d.message or ""))
+              end
+            end
           else
             table.insert(lines, "  " .. tostring(f))
           end

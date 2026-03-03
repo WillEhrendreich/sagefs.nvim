@@ -1,10 +1,10 @@
--- sagefs/pipeline.lua — Pure pipeline trace parsing and formatting
+-- sagefs/test_trace.lua — Pure test trace parsing and formatting
 -- No vim APIs — fully testable under busted.
 local M = {}
 
 local json_decode = require("sagefs.util").json_decode
 
---- Parse a pipeline trace response from SageFs
+--- Parse a test trace response from SageFs
 ---@param raw string JSON string
 ---@return table|nil parsed trace data
 function M.parse_trace(raw)
@@ -19,7 +19,7 @@ function M.parse_trace(raw)
   }
 end
 
---- Format pipeline trace for floating window display
+--- Format test trace for floating window display
 ---@param trace table parsed trace data
 ---@return string[] lines
 function M.format_panel_content(trace)
@@ -28,12 +28,12 @@ function M.format_panel_content(trace)
   -- Status header
   if trace.enabled then
     if trace.running then
-      table.insert(lines, "Pipeline: ⏳ Running")
+      table.insert(lines, "Test Cycle: ⏳ Running")
     else
-      table.insert(lines, "Pipeline: ✓ Enabled")
+      table.insert(lines, "Test Cycle: ✓ Enabled")
     end
   else
-    table.insert(lines, "Pipeline: ⊘ Disabled")
+    table.insert(lines, "Test Cycle: ⊘ Disabled")
   end
   table.insert(lines, string.rep("─", 40))
 

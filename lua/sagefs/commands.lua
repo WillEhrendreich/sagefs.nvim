@@ -141,7 +141,7 @@ function M.register_commands(plugin, helpers)
     vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
   end, { desc = "Show FSI binding state" })
 
-  -- Note: SageFsPipelineTrace is registered later with HTTP fetch (richer than SSE state)
+  -- Note: SageFsTestTrace is registered later with HTTP fetch (richer than SSE state)
 
   vim.api.nvim_create_user_command("SageFsSessions", function()
     plugin.session_picker()
@@ -551,29 +551,29 @@ function M.register_commands(plugin, helpers)
     render.show_float(lines, { title = "Tests: " .. vim.fn.fnamemodify(filepath, ":t") })
   end, { desc = "Show tests for the current file" })
 
-  -- ─── Pipeline Trace ────────────────────────────────────────────────────────
+  -- ─── test trace ────────────────────────────────────────────────────────
 
-  vim.api.nvim_create_user_command("SageFsPipelineTrace", function()
-    local pipeline = require("sagefs.pipeline")
+  vim.api.nvim_create_user_command("SageFsTestTrace", function()
+    local test_trace_mod = require("sagefs.test_trace")
     transport.http_json({
       method = "GET",
       url = helpers.base_url() .. "/api/status",
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch pipeline trace" .. err_detail(raw), vim.log.levels.ERROR)
+          helpers.notify("Failed to fetch test trace" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
-        local trace = pipeline.parse_trace(raw)
+        local trace = test_trace_mod.parse_trace(raw)
         if not trace then
-          helpers.notify("Invalid pipeline trace response", vim.log.levels.WARN)
+          helpers.notify("Invalid test trace response", vim.log.levels.WARN)
           return
         end
-        local lines = pipeline.format_panel_content(trace)
-        render.show_float(lines, { title = "Pipeline Trace" })
+        local lines = test_trace_mod.format_panel_content(trace)
+        render.show_float(lines, { title = "test trace" })
       end,
     })
-  end, { desc = "Show pipeline trace in floating window" })
+  end, { desc = "Show test trace in floating window" })
 
   -- ─── Load Script ───────────────────────────────────────────────────────────
 
@@ -1362,8 +1362,8 @@ function M.register_keymaps(plugin, helpers)
     { desc = "SageFs: Tests here (file)", silent = true })
   vim.keymap.set("n", "<leader>rtf", "<cmd>SageFsFailures<CR>",
     { desc = "SageFs: Test failures", silent = true })
-  vim.keymap.set("n", "<leader>rtp", "<cmd>SageFsPipelineTrace<CR>",
-    { desc = "SageFs: Pipeline trace", silent = true })
+  vim.keymap.set("n", "<leader>rtp", "<cmd>SageFsTestTrace<CR>",
+    { desc = "SageFs: test trace", silent = true })
   vim.keymap.set("n", "<leader>rte", "<cmd>SageFsEnableTesting<CR>",
     { desc = "SageFs: Enable testing", silent = true })
   vim.keymap.set("n", "<leader>rtd", "<cmd>SageFsDisableTesting<CR>",

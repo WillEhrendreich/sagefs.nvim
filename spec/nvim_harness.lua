@@ -120,7 +120,7 @@ describe("plugin setup", function()
       "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel", "SageFsTestsHere",
       "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage", "SageFsTypeExplorer", "SageFsTypeExplorerFlat",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
-      "SageFsCancel", "SageFsPipelineTrace", "SageFsLoadScript",
+      "SageFsCancel", "SageFsTestTrace", "SageFsLoadScript",
       "SageFsStart", "SageFsStop",
     }
     for _, name in ipairs(expected) do
@@ -216,9 +216,9 @@ describe("cell detection in real buffer", function()
   end)
 end)
 
--- ─── Model + extmark rendering pipeline ──────────────────────────────────────
+-- ─── Model + extmark rendering cycle ──────────────────────────────────────
 
-describe("model to extmark pipeline", function()
+describe("model to extmark cycle", function()
   it("model state drives gutter sign selection", function()
     local m = model.new()
     m = model.set_cell_state(m, 1, "running")
@@ -314,9 +314,9 @@ describe("extmark creation", function()
   end)
 end)
 
--- ─── SSE event → model state pipeline ────────────────────────────────────────
+-- ─── SSE event → model state cycle ────────────────────────────────────────
 
-describe("SSE to model pipeline", function()
+describe("SSE to model cycle", function()
   it("parses SSE chunk and updates model", function()
     local chunk = 'event: eval_result\ndata: {"cellId": 1, "success": true, "result": "42"}\n\n'
     local events, _ = sse.parse_chunk(chunk)
@@ -446,9 +446,9 @@ describe("sessions with real vim.json", function()
   end)
 end)
 
--- ─── Buffer edit → stale detection pipeline ──────────────────────────────────
+-- ─── Buffer edit → stale detection cycle ──────────────────────────────────
 
-describe("edit detection pipeline", function()
+describe("edit detection cycle", function()
   it("editing a buffer should make cells stale", function()
     local buf = make_buffer({
       "let x = 42;;",
@@ -471,9 +471,9 @@ describe("edit detection pipeline", function()
   end)
 end)
 
--- ─── Full eval pipeline (without HTTP) ───────────────────────────────────────
+-- ─── Full eval cycle (without HTTP) ───────────────────────────────────────
 
-describe("eval pipeline (mock HTTP response)", function()
+describe("eval cycle (mock HTTP response)", function()
   it("success response flows through format to extmark-ready data", function()
     -- Simulated curl response
     local http_response = vim.json.encode({ success = true, result = "val it: int = 42" })
@@ -700,7 +700,7 @@ end)
 
 -- ─── Testing module: full pipeline from JSON to gutter signs ─────────────────
 
-describe("testing pipeline: JSON → state → signs", function()
+describe("testing cycle: JSON → state → signs", function()
   it("applies status response then generates correct gutter signs per line", function()
     local response = vim.json.encode({
       enabled = true,

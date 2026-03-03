@@ -150,7 +150,7 @@ describe("diagnostics", function()
       assert.truthy(err)
     end)
 
-    it("processes full pipeline", function()
+    it("processes full cycle", function()
       local json = '{"diagnostics":[' ..
         '{"file":"a.fs","message":"err1","startLine":1,"startColumn":1,"severity":"error"},' ..
         '{"file":"a.fs","message":"err2","startLine":5,"startColumn":1,"severity":"warning"},' ..

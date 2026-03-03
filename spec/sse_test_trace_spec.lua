@@ -1,5 +1,5 @@
--- sse_pipeline_spec.lua — End-to-end tests for SSE → testing state → UI
--- Tests the FULL pipeline: raw SSE text → parse → classify → handler → state → format
+-- sse_TestCycle_spec.lua — End-to-end tests for SSE → testing state → UI
+-- Tests the FULL TestCycle: raw SSE text → parse → classify → handler → state → format
 -- Uses realistic SageFs payloads (PascalCase, F# DU shapes) to catch mismatches
 
 require("spec.helper")
@@ -55,10 +55,10 @@ local function make_sse_chunk(event_type, data_table)
 end
 
 -- =============================================================================
--- Full pipeline: SSE text → parse → classify → testing state → format_test_list
+-- Full TestCycle: SSE text → parse → classify → testing state → format_test_list
 -- =============================================================================
 
-describe("SSE pipeline: test_results_batch → panel display", function()
+describe("SSE TestCycle: test_results_batch → panel display", function()
   it("populates state.tests from a realistic SageFs batch", function()
     local batch = make_sagefs_batch({
       make_sagefs_entry({ id = "t1", name = "should add", status = "Passed", line = 10 }),
@@ -152,10 +152,10 @@ describe("SSE pipeline: test_results_batch → panel display", function()
 end)
 
 -- =============================================================================
--- Full pipeline: raw SSE text → parse_chunk → classify → handler
+-- Full TestCycle: raw SSE text → parse_chunk → classify → handler
 -- =============================================================================
 
-describe("SSE pipeline: raw text → parsed events", function()
+describe("SSE TestCycle: raw text → parsed events", function()
   it("parse_chunk extracts typed SSE event from raw curl output", function()
     local batch = make_sagefs_batch({
       make_sagefs_entry({ id = "t1", name = "test one", status = "Passed" }),
@@ -228,7 +228,7 @@ end)
 -- Edge case: empty state → panel display
 -- =============================================================================
 
-describe("SSE pipeline: empty/missing data edge cases", function()
+describe("SSE TestCycle: empty/missing data edge cases", function()
   it("format_test_list returns empty list when no tests exist", function()
     local state = testing.new()
     local lines = testing.format_test_list(state)
@@ -276,7 +276,7 @@ end)
 -- Rapid burst: many batches in sequence (simulates SSE flood after save)
 -- =============================================================================
 
-describe("SSE pipeline: rapid burst does not corrupt state", function()
+describe("SSE TestCycle: rapid burst does not corrupt state", function()
   it("100 sequential batches produce correct final state", function()
     local state = testing.new()
     state = testing.set_enabled(state, true)
@@ -335,7 +335,7 @@ end)
 -- test_summary SSE event (standalone, not inside batch)
 -- =============================================================================
 
-describe("SSE pipeline: test_summary typed event", function()
+describe("SSE TestCycle: test_summary typed event", function()
   it("handle_test_summary parses PascalCase summary", function()
     local state = testing.new()
     local summary_data = {
@@ -387,7 +387,7 @@ end)
 -- Annotations: test signs for gutter
 -- =============================================================================
 
-describe("SSE pipeline: annotations from PascalCase batch", function()
+describe("SSE TestCycle: annotations from PascalCase batch", function()
   it("annotations_for_file works after PascalCase batch ingest", function()
     local batch = make_sagefs_batch({
       make_sagefs_entry({ id = "t1", name = "test 1", status = "Passed", line = 10 }),
@@ -430,7 +430,7 @@ end)
 -- Multiple SSE events in single chunk (realistic: SageFs sends batches)
 -- =============================================================================
 
-describe("SSE pipeline: multiple events in one chunk", function()
+describe("SSE TestCycle: multiple events in one chunk", function()
   it("parses multiple events from a single SSE chunk", function()
     local batch = make_sagefs_batch({
       make_sagefs_entry({ id = "t1", status = "Passed" }),
@@ -446,7 +446,7 @@ describe("SSE pipeline: multiple events in one chunk", function()
     assert.are.equal("test_summary", events[2].type)
   end)
 
-  it("processes both events through full pipeline", function()
+  it("processes both events through full TestCycle", function()
     local batch = make_sagefs_batch({
       make_sagefs_entry({ id = "t1", name = "first", status = "Passed", line = 5 }),
       make_sagefs_entry({ id = "t2", name = "second", status = "Failed", line = 15 }),
@@ -480,10 +480,10 @@ describe("SSE pipeline: multiple events in one chunk", function()
 end)
 
 -- =============================================================================
--- safe_dispatch_batch: handler errors don't crash pipeline
+-- safe_dispatch_batch: handler errors don't crash TestCycle
 -- =============================================================================
 
-describe("SSE pipeline: safe_dispatch_batch error isolation", function()
+describe("SSE TestCycle: safe_dispatch_batch error isolation", function()
   it("bad handler does not prevent other handlers from running", function()
     local good_called = false
     local dt = sse.build_dispatch_table({

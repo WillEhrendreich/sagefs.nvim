@@ -87,7 +87,7 @@ describe("diagnostics.to_vim_diagnostics [RED]", function()
 end)
 
 -- =============================================================================
--- Full pipeline: SSE data → grouped vim diagnostics per file
+-- Full cycle: SSE data → grouped vim diagnostics per file
 -- =============================================================================
 
 describe("diagnostics.process_sse_event [RED]", function()

@@ -92,7 +92,7 @@ function M.classify_event(event)
     SessionStopped = "session_stopped",
     DiagnosticsUpdated = "diagnostics_updated",
     state = "state_update",
-    -- Testing pipeline (PascalCase — internal Elm events)
+    -- Testing cycle (PascalCase — internal Elm events)
     TestLocationsDetected = "test_locations_detected",
     TestsDiscovered = "tests_discovered",
     TestRunStarted = "test_run_started",
@@ -103,9 +103,9 @@ function M.classify_event(event)
     AffectedTestsComputed = "affected_tests_computed",
     RunPolicyChanged = "run_policy_changed",
     ProvidersDetected = "providers_detected",
-    PipelineTimingRecorded = "pipeline_timing_recorded",
+    TestCycleTimingRecorded = "test_cycle_timing_recorded",
     RunTestsRequested = "run_tests_requested",
-    -- Testing pipeline (snake_case — typed SSE events from SageFs)
+    -- Testing cycle (snake_case — typed SSE events from SageFs)
     test_results_batch = "test_results_batch",
     test_summary = "test_summary",
     test_run_started = "test_run_started",
@@ -114,7 +114,7 @@ function M.classify_event(event)
     live_testing_enabled = "live_testing_enabled",
     live_testing_disabled = "live_testing_disabled",
     providers_detected = "providers_detected",
-    pipeline_timing_recorded = "pipeline_timing_recorded",
+    test_cycle_timing_recorded = "test_cycle_timing_recorded",
     -- Coverage
     CoverageUpdated = "coverage_updated",
     CoverageCleared = "coverage_cleared",
@@ -126,9 +126,9 @@ function M.classify_event(event)
     FileChanged = "file_changed",
     -- Session events (typed envelope from SageFs daemon)
     session = "session_event",
-    -- CQRS: server-pushed bindings and pipeline state
+    -- CQRS: server-pushed bindings and test trace state
     bindings_snapshot = "bindings_snapshot",
-    pipeline_trace = "pipeline_trace",
+    test_trace = "test_trace",
     -- Feature hooks (server-computed, push-only)
     eval_diff = "eval_diff",
     cell_dependencies = "cell_dependencies",

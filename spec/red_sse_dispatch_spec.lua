@@ -1,6 +1,6 @@
--- RED tests for Tier 1: SSE Dispatch Pipeline
+-- RED tests for Tier 1: SSE dispatch cycle
 -- Tests classify_event extension, dispatch table construction, and state recovery.
--- All tests here FAIL until the SSE dispatch pipeline is implemented.
+-- All tests here FAIL until the SSE dispatch cycle is implemented.
 
 require("spec.helper")
 local sse = require("sagefs.sse")
@@ -56,9 +56,9 @@ describe("sse.classify_event — testing events [RED]", function()
     assert.are.equal("providers_detected", result.action)
   end)
 
-  it("classifies PipelineTimingRecorded", function()
-    local result = sse.classify_event({ type = "PipelineTimingRecorded", data = "{}" })
-    assert.are.equal("pipeline_timing_recorded", result.action)
+  it("classifies TestCycleTimingRecorded", function()
+    local result = sse.classify_event({ type = "TestCycleTimingRecorded", data = "{}" })
+    assert.are.equal("test_cycle_timing_recorded", result.action)
   end)
 
   it("classifies RunTestsRequested", function()

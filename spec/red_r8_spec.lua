@@ -32,12 +32,12 @@ describe("events.build_autocmd_data — completeness", function()
     -- These 10 are fired by init.lua but MISSING from EVENT_MAP:
     "providers_detected",
     "affected_tests_computed",
-    "pipeline_timing_recorded",
+    "test_cycle_timing_recorded",
     "run_tests_requested",
     "test_summary",
     "file_annotations",
     "bindings_snapshot",
-    "pipeline_trace",
+    "test_trace",
     "reconnecting",
     "test_recovery_needed",
   }

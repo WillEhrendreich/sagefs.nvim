@@ -567,10 +567,10 @@ describe("testing.parse_status_response", function()
   end)
 end)
 
--- ─── parse_pipeline_response: parse get_pipeline_trace JSON ──────────────────
+-- ─── parse_test_trace_response: parse get_test_trace JSON ──────────────────
 
-describe("testing.parse_pipeline_response", function()
-  it("parses valid pipeline trace", function()
+describe("testing.parse_test_trace_response", function()
+  it("parses valid test trace", function()
     local json = vim.fn.json_encode({
       enabled = true,
       isRunning = false,
@@ -579,7 +579,7 @@ describe("testing.parse_pipeline_response", function()
       providers = { "Expecto" },
       policies = { "Unit: OnEveryChange", "Integration: OnDemand" },
     })
-    local data, err = testing.parse_pipeline_response(json)
+    local data, err = testing.parse_test_trace_response(json)
     assert.is_nil(err)
     assert.is_true(data.enabled)
     assert.is_false(data.isRunning)
@@ -587,7 +587,7 @@ describe("testing.parse_pipeline_response", function()
   end)
 
   it("returns error for empty input", function()
-    local _, err = testing.parse_pipeline_response("")
+    local _, err = testing.parse_test_trace_response("")
     assert.are.equal("empty response", err)
   end)
 end)
@@ -805,7 +805,7 @@ describe("testing [round-trip]", function()
     assert.truthy(summary_text:find("1 ✖"))
   end)
 
-  it("pipeline trace → parse → verify structure", function()
+  it("test trace → parse → verify structure", function()
     local payload = {
       enabled = true,
       isRunning = false,
@@ -815,7 +815,7 @@ describe("testing [round-trip]", function()
       policies = { "Unit: OnEveryChange", "Integration: OnDemand" },
     }
     local json = vim.fn.json_encode(payload)
-    local data, err = testing.parse_pipeline_response(json)
+    local data, err = testing.parse_test_trace_response(json)
     assert.is_nil(err)
     assert.is_true(data.enabled)
     assert.is_false(data.isRunning)

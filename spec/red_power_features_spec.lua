@@ -1,5 +1,5 @@
 -- RED tests for Tier 4: Power Features
--- Type explorer formatting, history search, pipeline statusline, call graph,
+-- Type explorer formatting, history search, test trace statusline, call graph,
 -- export to .fsx, user autocmds, and treesitter cell detection.
 -- Each test defines the pure-module API contract for a feature that doesn't exist yet.
 
@@ -172,22 +172,22 @@ describe("history.parse_events_response [RED T4]", function()
 end)
 
 -- =============================================================================
--- Pipeline Statusline (t4-pipeline-statusline)
--- Uses testing.lua functions already tested above — just needs format_pipeline_statusline
+-- test trace statusline (t4-pipeline-statusline)
+-- Uses testing.lua functions already tested above — just needs format_test_trace_statusline
 -- =============================================================================
 
 local testing = require("sagefs.testing")
 
-describe("testing.format_pipeline_statusline [RED T4]", function()
-  it("returns compact pipeline info for statusline", function()
-    assert.is_function(testing.format_pipeline_statusline)
+describe("testing.format_test_trace_statusline [RED T4]", function()
+  it("returns compact test trace info for statusline", function()
+    assert.is_function(testing.format_test_trace_statusline)
     local trace = {
       enabled = true,
       running = true,
       providers = { "Expecto" },
       summary = { total = 10, passed = 8, failed = 2 },
     }
-    local line = testing.format_pipeline_statusline(trace)
+    local line = testing.format_test_trace_statusline(trace)
     assert.is_string(line)
     assert.is_true(#line > 0)
     assert.is_true(#line < 60, "statusline should be compact")
@@ -199,14 +199,14 @@ describe("testing.format_pipeline_statusline [RED T4]", function()
       running = false,
       providers = { "Expecto" },
     }
-    local line = testing.format_pipeline_statusline(trace)
+    local line = testing.format_test_trace_statusline(trace)
     -- Should not show running indicator
     assert.is_falsy(line:find("⏳"))
   end)
 
   it("returns empty when disabled", function()
     local trace = { enabled = false }
-    local line = testing.format_pipeline_statusline(trace)
+    local line = testing.format_test_trace_statusline(trace)
     assert.are.equal("", line)
   end)
 end)

@@ -2,7 +2,7 @@
 -- No vim API dependencies — fully testable with busted
 --
 -- Manages test discovery, results, run policies, and summary statistics
--- for SageFs's live testing pipeline. All state transitions are explicit
+-- for SageFs's live testing cycle. All state transitions are explicit
 -- and validated — invalid statuses are rejected.
 local M = {}
 
@@ -509,10 +509,10 @@ function M.parse_status_response(json_str)
   return data, nil
 end
 
---- Parse the response from get_pipeline_trace MCP tool
+--- Parse the response from get_test_trace MCP tool
 ---@param json_str string
 ---@return table|nil parsed, string|nil error
-function M.parse_pipeline_response(json_str)
+function M.parse_test_trace_response(json_str)
   if not json_str or json_str == "" then
     return nil, "empty response"
   end
@@ -998,18 +998,18 @@ function M.build_run_request(opts)
   }, nil
 end
 
---- Format pipeline trace data for display
+--- Format test trace data for display
 ---@param data table|nil
 ---@return string[]
-function M.format_pipeline_trace(data)
+function M.format_test_trace(data)
   if not data then
-    return { "No pipeline trace data available" }
+    return { "No test trace data available" }
   end
   local lines = {}
   if data.enabled then
-    table.insert(lines, "Pipeline: Enabled")
+    table.insert(lines, "Test Cycle: Enabled")
   else
-    table.insert(lines, "Pipeline: Disabled")
+    table.insert(lines, "Test Cycle: Disabled")
   end
   if data.running then
     table.insert(lines, "Status: Running")
@@ -1048,10 +1048,10 @@ function M.format_statusline(state)
   return table.concat(parts, " ")
 end
 
---- Format compact pipeline trace for statusline
+--- Format compact test trace for statusline
 ---@param trace table|nil
 ---@return string
-function M.format_pipeline_statusline(trace)
+function M.format_test_trace_statusline(trace)
   if not trace or not trace.enabled then return "" end
   local parts = {}
   if trace.running then

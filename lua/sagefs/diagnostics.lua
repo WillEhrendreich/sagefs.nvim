@@ -75,7 +75,7 @@ function M.to_vim_diagnostics(raw_list)
   return result
 end
 
---- Full pipeline: parse SSE data → group by file → convert to vim diagnostics
+--- Full cycle: parse SSE data → group by file → convert to vim diagnostics
 ---@param json_str string
 ---@return table<string, table[]>|nil groups, string|nil error
 function M.process_sse_event(json_str)

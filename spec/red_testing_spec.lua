@@ -246,11 +246,11 @@ describe("testing.build_run_request [RED]", function()
   end)
 end)
 
--- ─── format_pipeline_trace: debug display ────────────────────────────────────
--- Needed for: Pipeline trace command (debugging the three-speed pipeline)
+-- ─── format_test_trace: debug display ────────────────────────────────────
+-- Needed for: test trace command (debugging the three-speed cycle)
 
-describe("testing.format_pipeline_trace [RED]", function()
-  it("formats a pipeline trace response into readable lines", function()
+describe("testing.format_test_trace [RED]", function()
+  it("formats a test trace response into readable lines", function()
     local trace_data = {
       enabled = true,
       running = false,
@@ -261,13 +261,13 @@ describe("testing.format_pipeline_trace [RED]", function()
       },
       summary = { total = 42, passed = 40, failed = 2, stale = 0, running = 0 },
     }
-    local lines = testing.format_pipeline_trace(trace_data)
+    local lines = testing.format_test_trace(trace_data)
     assert.is_table(lines)
     assert.is_true(#lines >= 3)
   end)
 
   it("includes enabled/disabled status", function()
-    local lines = testing.format_pipeline_trace({ enabled = false })
+    local lines = testing.format_test_trace({ enabled = false })
     local found = false
     for _, line in ipairs(lines) do
       if line:find("[Dd]isabled") then found = true end
@@ -276,7 +276,7 @@ describe("testing.format_pipeline_trace [RED]", function()
   end)
 
   it("lists providers", function()
-    local lines = testing.format_pipeline_trace({
+    local lines = testing.format_test_trace({
       enabled = true,
       providers = { "Expecto", "xUnit", "NUnit" },
     })
@@ -288,7 +288,7 @@ describe("testing.format_pipeline_trace [RED]", function()
   end)
 
   it("returns informative message for nil data", function()
-    local lines = testing.format_pipeline_trace(nil)
+    local lines = testing.format_test_trace(nil)
     assert.is_table(lines)
     assert.is_true(#lines >= 1)
   end)

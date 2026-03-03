@@ -1,6 +1,6 @@
 -- RED tests for Tier 2: Live Testing UI
 -- Tests format_test_list, format_test_list_by_file, filter_by_category,
--- format_picker_items, build_run_request, format_pipeline_trace, format_statusline.
+-- format_picker_items, build_run_request, format_test_trace, format_statusline.
 -- These extend the existing red_testing_spec.lua with more thorough coverage
 -- and add new tests for features that weren't in the original RED specs.
 
@@ -241,12 +241,12 @@ describe("testing.build_run_request [RED T2]", function()
 end)
 
 -- =============================================================================
--- format_pipeline_trace: pipeline trace display
+-- format_test_trace: test trace display
 -- =============================================================================
 
-describe("testing.format_pipeline_trace [RED T2]", function()
-  it("formats a full pipeline trace response", function()
-    assert.is_function(testing.format_pipeline_trace)
+describe("testing.format_test_trace [RED T2]", function()
+  it("formats a full test trace response", function()
+    assert.is_function(testing.format_test_trace)
     local trace_data = {
       enabled = true,
       running = false,
@@ -257,7 +257,7 @@ describe("testing.format_pipeline_trace [RED T2]", function()
       },
       summary = { total = 42, passed = 40, failed = 2, stale = 0, running = 0 },
     }
-    local lines = testing.format_pipeline_trace(trace_data)
+    local lines = testing.format_test_trace(trace_data)
     assert.is_table(lines)
     assert.is_true(#lines >= 3)
     -- Should contain string content
@@ -265,7 +265,7 @@ describe("testing.format_pipeline_trace [RED T2]", function()
   end)
 
   it("includes enabled status", function()
-    local lines = testing.format_pipeline_trace({ enabled = true })
+    local lines = testing.format_test_trace({ enabled = true })
     local found = false
     for _, line in ipairs(lines) do
       if line:find("[Ee]nabled") then found = true end
@@ -274,7 +274,7 @@ describe("testing.format_pipeline_trace [RED T2]", function()
   end)
 
   it("includes disabled status", function()
-    local lines = testing.format_pipeline_trace({ enabled = false })
+    local lines = testing.format_test_trace({ enabled = false })
     local found = false
     for _, line in ipairs(lines) do
       if line:find("[Dd]isabled") then found = true end
@@ -283,7 +283,7 @@ describe("testing.format_pipeline_trace [RED T2]", function()
   end)
 
   it("lists providers", function()
-    local lines = testing.format_pipeline_trace({
+    local lines = testing.format_test_trace({
       enabled = true,
       providers = { "Expecto", "xUnit", "NUnit" },
     })
@@ -295,7 +295,7 @@ describe("testing.format_pipeline_trace [RED T2]", function()
   end)
 
   it("handles nil data gracefully", function()
-    local lines = testing.format_pipeline_trace(nil)
+    local lines = testing.format_test_trace(nil)
     assert.is_table(lines)
     assert.is_true(#lines >= 1)
   end)

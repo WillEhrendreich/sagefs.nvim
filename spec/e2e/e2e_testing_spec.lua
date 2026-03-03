@@ -1,4 +1,4 @@
--- spec/e2e/e2e_testing_spec.lua — E2E tests for live testing pipeline
+-- spec/e2e/e2e_testing_spec.lua — E2E tests for live testing cycle
 -- Runs against a real SageFs daemon with the WithTests sample project.
 -- Usage: nvim --headless --clean -u NONE -l spec/e2e/e2e_testing_spec.lua
 
