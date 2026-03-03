@@ -52,7 +52,7 @@ end
 ---@param scope_map table[]
 ---@return string[]
 function M.format_panel(scope_map)
-  local lines = { string.rep("=", 30) .. " Binding Scope Map " .. string.rep("=", 30), "" }
+  local lines = { "═══ Binding Scope Map ═══", "" }
   for _, e in ipairs(scope_map) do
     local shadow = e.shadow_count > 0 and string.format(" !! shadowed x%d", e.shadow_count) or ""
     lines[#lines + 1] = string.format("  %s : %s  (cell %d, L%d-%d)%s",

@@ -73,9 +73,9 @@ function M.gutter_sign(hit_count)
   if hit_count == nil then
     return { text = " ", hl = "Normal" }
   elseif hit_count > 0 then
-    return { text = "▎", hl = "SageFsCovered" }
+    return { text = "│", hl = "SageFsCovered" }
   else
-    return { text = "▎", hl = "SageFsUncovered" }
+    return { text = "█", hl = "SageFsUncovered" }
   end
 end
 

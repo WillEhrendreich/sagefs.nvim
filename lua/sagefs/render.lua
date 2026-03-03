@@ -25,34 +25,38 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsOutput", hl_config.output)
   vim.api.nvim_set_hl(0, "SageFsRunning", hl_config.running)
   vim.api.nvim_set_hl(0, "SageFsStale", hl_config.stale)
-  vim.api.nvim_set_hl(0, "SageFsCellBorder", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsCellBorder", { default = true, fg = "#585b70" })
   -- Testing highlights
-  vim.api.nvim_set_hl(0, "SageFsTestPassed", { fg = "#a6e3a1" })
-  vim.api.nvim_set_hl(0, "SageFsTestFailed", { fg = "#f38ba8" })
-  vim.api.nvim_set_hl(0, "SageFsTestRunning", { fg = "#f9e2af" })
-  vim.api.nvim_set_hl(0, "SageFsTestStale", { fg = "#fab387" })
-  vim.api.nvim_set_hl(0, "SageFsTestDetected", { fg = "#585b70" })
-  vim.api.nvim_set_hl(0, "SageFsTestDisabled", { fg = "#585b70" })
-  vim.api.nvim_set_hl(0, "SageFsTestSkipped", { fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsTestPassed", { default = true, fg = "#a6e3a1" })
+  vim.api.nvim_set_hl(0, "SageFsTestFailed", { default = true, fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsTestRunning", { default = true, fg = "#f9e2af" })
+  vim.api.nvim_set_hl(0, "SageFsTestStale", { default = true, fg = "#fab387" })
+  vim.api.nvim_set_hl(0, "SageFsTestDetected", { default = true, fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsTestDisabled", { default = true, fg = "#585b70" })
+  vim.api.nvim_set_hl(0, "SageFsTestSkipped", { default = true, fg = "#585b70" })
   -- Coverage highlights (covered = quiet, uncovered = loud)
-  vim.api.nvim_set_hl(0, "SageFsCovered", { fg = "#587358" })
-  vim.api.nvim_set_hl(0, "SageFsUncovered", { fg = "#f38ba8" })
-  vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { fg = "#f38ba8" })
-  vim.api.nvim_set_hl(0, "SageFsCovPending", { fg = "#45475a" })
-  vim.api.nvim_set_hl(0, "SageFsCovFailing", { fg = "#f38ba8" })
-  vim.api.nvim_set_hl(0, "SageFsCovPartial", { fg = "#fab387" })
+  vim.api.nvim_set_hl(0, "SageFsCovered", { default = true, fg = "#587358" })
+  vim.api.nvim_set_hl(0, "SageFsUncovered", { default = true, fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsCovNotCovered", { default = true, fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsCovPending", { default = true, fg = "#45475a" })
+  vim.api.nvim_set_hl(0, "SageFsCovFailing", { default = true, fg = "#f38ba8" })
+  vim.api.nvim_set_hl(0, "SageFsCovPartial", { default = true, fg = "#fab387" })
   -- Branch coverage highlights (shape + color for accessibility)
-  vim.api.nvim_set_hl(0, "SageFsBranchFull", { fg = "#a6e3a1" })    -- green ▐
-  vim.api.nvim_set_hl(0, "SageFsBranchPartial", { fg = "#f9e2af" }) -- yellow ◐
-  vim.api.nvim_set_hl(0, "SageFsBranchNone", { fg = "#f38ba8" })    -- red ▌
+  vim.api.nvim_set_hl(0, "SageFsBranchFull", { default = true, fg = "#a6e3a1" })    -- green ▐
+  vim.api.nvim_set_hl(0, "SageFsBranchPartial", { default = true, fg = "#f9e2af" }) -- yellow ◐
+  vim.api.nvim_set_hl(0, "SageFsBranchNone", { default = true, fg = "#f38ba8" })    -- red ▌
   -- CodeLens highlights
-  vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { fg = "#a6e3a1", italic = true })
-  vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { fg = "#f38ba8", italic = true })
-  vim.api.nvim_set_hl(0, "SageFsCodeLensRunning", { fg = "#f9e2af", italic = true })
-  vim.api.nvim_set_hl(0, "SageFsCodeLensStale", { fg = "#fab387", italic = true })
-  vim.api.nvim_set_hl(0, "SageFsCodeLensDetected", { fg = "#585b70", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensPassed", { default = true, fg = "#a6e3a1", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensFailed", { default = true, fg = "#f38ba8", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensRunning", { default = true, fg = "#f9e2af", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensStale", { default = true, fg = "#fab387", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsCodeLensDetected", { default = true, fg = "#585b70", italic = true })
+  -- Dependency visualization highlights
+  vim.api.nvim_set_hl(0, "SageFsDepSource", { default = true, fg = "#89b4fa" })
+  vim.api.nvim_set_hl(0, "SageFsDepTarget", { default = true, fg = "#cba6f7" })
+  vim.api.nvim_set_hl(0, "SageFsDepFlow", { default = true, fg = "#6c7086", italic = true })
   -- Inline failure highlights
-  vim.api.nvim_set_hl(0, "SageFsInlineFailure", { fg = "#f38ba8", italic = true })
+  vim.api.nvim_set_hl(0, "SageFsInlineFailure", { default = true, fg = "#f38ba8", italic = true })
 end
 
 -- ─── Extmark Rendering ────────────────────────────────────────────────────────

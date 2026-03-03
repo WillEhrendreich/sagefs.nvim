@@ -598,7 +598,7 @@ function M.format_failure_detail(output)
   -- Take first line only
   local first = output:match("^([^\n]*)")
   if first and #first > 120 then
-    first = first:sub(1, 117) .. "..."
+    first = first:sub(1, 117) .. "…"
   end
   return first or output
 end

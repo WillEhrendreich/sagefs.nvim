@@ -165,7 +165,7 @@ function M.format_inline_failure(failure, max_len)
   end
   local text = string.format(" ✗ %s: %s", test_name, label)
   if #text > max_len then
-    text = text:sub(1, max_len - 3) .. "..."
+    text = text:sub(1, max_len - 3) .. "…"
   end
   return text, "SageFsInlineFailure"
 end

@@ -64,10 +64,11 @@ function M.check()
     if vim.v.shell_error ~= 0 then error("not found") end
   end)
   if ok_curl then
-    vim.health.ok("curl available (required for HTTP transport)")
+    vim.health.ok("curl available (required for SSE event stream)")
   else
     vim.health.error("curl not found", {
-      "curl is required for HTTP communication with the SageFs daemon",
+      "curl is required for the SSE event stream (live updates, test results, coverage)",
+      "HTTP eval requests use vim.uv TCP and don't require curl",
     })
   end
 end

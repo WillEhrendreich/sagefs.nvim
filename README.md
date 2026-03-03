@@ -74,7 +74,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 | **Run tests** | `:SageFsRunTests [pattern]` → trigger test execution with optional filter. |
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
-| **Pipeline trace** | `:SageFsPipelineTrace` → floating window showing the three-speed pipeline state. |
+| **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
@@ -172,7 +172,7 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `<leader>rT` | n | Run tests |
 | `<leader>rth` | n | Tests here (current file) |
 | `<leader>rtf` | n | Test failures |
-| `<leader>rtp` | n | Pipeline trace |
+| `<leader>rtp` | n | Test trace |
 | `<leader>rte` | n | Enable live testing |
 | `<leader>rtd` | n | Disable live testing |
 | **Browse & explore** | | |
@@ -183,6 +183,7 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `<leader>ry` | n | Type explorer |
 | `<leader>ra` | n | Callers |
 | `<leader>ro` | n | Callees |
+| `<leader>rv` | n | Coverage |
 | **Server & reload** | | |
 | `<leader>rh` | n | Hot reload file picker |
 | `<leader>rr` | n | Soft reset |
@@ -227,7 +228,7 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsTestPolicy` | Configure test run policies per category |
 | `:SageFsEnableTesting` | Enable live testing |
 | `:SageFsDisableTesting` | Disable live testing |
-| `:SageFsPipelineTrace` | Show the three-speed test pipeline state |
+| `:SageFsTestTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
 | `:SageFsTypeExplorer` | Browse assemblies → namespaces → types → members |
 | `:SageFsTypeExplorerFlat` | Single fuzzy pick over all types in all assemblies |
@@ -271,7 +272,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `util.lua` | ~50 | Shared utilities (json_decode) |
 | `hotreload_model.lua` | ~55 | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | ~70 | Daemon lifecycle state machine (idle→starting→running→stopped) |
-| `pipeline.lua` | ~65 | Pipeline trace parsing and formatting |
+| `test_trace.lua` | ~65 | Test trace parsing and formatting |
 | `annotations.lua` | ~240 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | ~55 | Display density presets (minimal/normal/full), layer visibility control |
 | `cell_highlight.lua` | ~265 | Dynamic eval region visuals — `╭│╰` bracket, 4 styles, eval-state color hints |

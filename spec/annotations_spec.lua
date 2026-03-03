@@ -171,7 +171,7 @@ describe("annotations.format_inline_failure", function()
       Failure = { InlineLabel = long_msg },
     }, 50)
     assert.truthy(#text <= 50)
-    assert.truthy(text:match("%.%.%.$"))
+    assert.truthy(text:match("…$"))
   end)
 
   it("handles AssertionDiff DU", function()

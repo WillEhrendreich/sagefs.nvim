@@ -734,7 +734,7 @@ describe("testing.format_failure_detail", function()
     local long = string.rep("x", 200)
     local result = testing.format_failure_detail(long)
     assert.is_true(#result <= 120)
-    assert.truthy(result:find("%.%.%.$"))
+    assert.truthy(result:find("…$"))
   end)
 
   it("returns '(no details)' for nil", function()

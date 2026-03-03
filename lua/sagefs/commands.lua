@@ -995,43 +995,6 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Flat type picker — single fuzzy search over all types" })
 
-  -- ─── History Command ─────────────────────────────────────────────────────
-
-  vim.api.nvim_create_user_command("SageFsHistory", function()
-    transport.http_json({
-      method = "GET",
-      url = helpers.dashboard_url() .. "/api/history",
-      timeout = 5,
-      callback = function(ok, raw)
-        if not ok then
-          helpers.notify("Failed to fetch history" .. err_detail(raw), vim.log.levels.ERROR)
-          return
-        end
-        local parse_ok, data = pcall(vim.json.decode, raw)
-        if not parse_ok or not data then return end
-        local items = history.format_events(data)
-        if #items == 0 then
-          helpers.notify("No eval history", vim.log.levels.INFO)
-          return
-        end
-        local labels = {}
-        for i, item in ipairs(items) do
-          table.insert(labels, string.format("%d. %s", i, item.label))
-        end
-        vim.ui.select(labels, { prompt = "FSI History:" }, function(choice)
-          if not choice then return end
-          local idx = tonumber(choice:match("^(%d+)%."))
-          if idx and items[idx] then
-            local event = { code = items[idx].code, result = items[idx].result,
-              timestamp = items[idx].timestamp, source = items[idx].source }
-            local preview = history.format_preview(event)
-            render.show_float(preview, { title = "Eval #" .. idx })
-          end
-        end)
-      end,
-    })
-  end, { desc = "Browse FSI eval history" })
-
   -- ─── Export Command ──────────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsExportFile", function()
@@ -1384,6 +1347,8 @@ function M.register_keymaps(plugin, helpers)
     { desc = "SageFs: Callers", silent = true })
   vim.keymap.set("n", "<leader>ro", "<cmd>SageFsCallees<CR>",
     { desc = "SageFs: Callees", silent = true })
+  vim.keymap.set("n", "<leader>rv", "<cmd>SageFsCoverage<CR>",
+    { desc = "SageFs: Coverage", silent = true })
 
   -- Server & reload
   vim.keymap.set("n", "<leader>rh", function()
