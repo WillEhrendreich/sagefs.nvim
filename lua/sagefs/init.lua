@@ -454,7 +454,7 @@ local function handle_result(buf, cell_id, result, end_line)
   end)
 end
 
-local function post_exec(code, buf, cell_id, end_line)
+local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line)
   -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
   if model.is_cell_running(M.state, cell_id) then
     notify("Cell already evaluating", vim.log.levels.WARN)
@@ -466,10 +466,19 @@ local function post_exec(code, buf, cell_id, end_line)
     render.render_all(buf, M.state)
     cell_highlight.set_eval_hint(buf, "running")
   end)
+  local body = {
+    code = code,
+    working_directory = vim.fn.getcwd(),
+    sessionId = M.active_session and M.active_session.id or nil,
+    format = "json",
+    file_path = file_path or "",
+    eval_mode = eval_mode or "",
+    block_start_line = block_start_line or 0,
+  }
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
-    body = { code = code, working_directory = vim.fn.getcwd(), sessionId = M.active_session and M.active_session.id or nil, format = "json" },
+    body = body,
     timeout = 60,
     callback = function(ok, raw)
       local elapsed_ms = math.floor((vim.uv.hrtime() - start_time) / 1e6)
@@ -537,9 +546,6 @@ local function prepare_cell_eval()
     return nil
   end
 
-  local ctx = cells.get_module_context(buf, lines, cell.start_line)
-  if ctx then code = ctx .. "\n" .. code end
-
   local all = cells.find_all_cells_auto(buf, lines)
   local cell_id = 1
   for _, c in ipairs(all) do
@@ -562,15 +568,17 @@ end
 function M.eval_cell()
   local ctx = prepare_cell_eval()
   if not ctx then return end
+  local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
 end
 
 function M.eval_cell_and_advance()
   local ctx = prepare_cell_eval()
   if not ctx then return end
+  local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
 
   local next_start = cells.find_next_cell_start(ctx.lines, ctx.cursor_line)
   if next_start then
@@ -594,8 +602,9 @@ function M.eval_selection()
     return
   end
 
+  local fp = vim.api.nvim_buf_get_name(buf)
   render.flash_cell(buf, start_pos[2], end_pos[2])
-  post_exec(code, buf, 0)
+  post_exec(code, buf, 0, nil, fp, "block", start_pos[2])
 end
 
 function M.eval_current_line()
@@ -616,8 +625,9 @@ function M.eval_current_line()
     return
   end
 
+  local fp = vim.api.nvim_buf_get_name(buf)
   render.flash_cell(buf, line_nr, line_nr)
-  post_exec(code, buf, 0)
+  post_exec(code, buf, 0, nil, fp, "block", line_nr)
 end
 
 function M.eval_file()
@@ -631,9 +641,10 @@ function M.eval_file()
     return
   end
 
+  local fp = vim.api.nvim_buf_get_name(buf)
   notify("Evaluating file: " .. vim.fn.expand("%:t"))
   render.flash_cell(buf, 1, #lines)
-  post_exec(code, buf, 0)
+  post_exec(code, buf, 0, nil, fp, "file", nil)
 end
 
 -- ─── Code Completion ─────────────────────────────────────────────────────────
