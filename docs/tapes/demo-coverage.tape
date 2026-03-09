@@ -9,7 +9,7 @@ Set Theme "Catppuccin Mocha"
 Set LoopOffset 0%
 
 Hide
-Type "nvim --cmd \"set rtp+=.\" samples/eval-demo.fsx"
+Type `nvim --cmd "set rtp+=." samples/eval-demo.fsx`
 Enter
 Sleep 3s
 Show
@@ -17,15 +17,19 @@ Show
 Sleep 1s
 
 # Evaluate all cells so coverage data is populated
-Type "\<Esc>gg"
+Escape
+Type "gg"
 Sleep 300ms
-Type "\<A-CR>"
+Alt+Enter
 Sleep 2s
-Type "}j\<A-CR>"
+Type "}j"
+Alt+Enter
 Sleep 2s
-Type "}j\<A-CR>"
+Type "}j"
+Alt+Enter
 Sleep 3s
 
 # Show coverage summary
-Type ":SageFsCoverage\<CR>"
+Type ":SageFsCoverage"
+Enter
 Sleep 3s

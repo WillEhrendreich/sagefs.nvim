@@ -8,12 +8,13 @@ Set Padding 16
 Set Theme "Catppuccin Mocha"
 
 Hide
-Type "nvim --cmd \"set rtp+=.\" samples/eval-demo.fsx"
+Type `nvim --cmd "set rtp+=." samples/eval-demo.fsx`
 Enter
 Sleep 3s
 Show
 
-Type "\<Esc>"
+Escape
 Sleep 500ms
-Type ":SageFsSessions\<CR>"
+Type ":SageFsSessions"
+Enter
 Sleep 2s

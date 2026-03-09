@@ -9,7 +9,7 @@ Set Theme "Catppuccin Mocha"
 Set LoopOffset 0%
 
 Hide
-Type "nvim --cmd \"set rtp+=.\" samples/eval-demo.fsx"
+Type `nvim --cmd "set rtp+=." samples/eval-demo.fsx`
 Enter
 Sleep 3s
 Show
@@ -17,19 +17,20 @@ Show
 Sleep 1s
 
 # Evaluate the first cell
-Type "\<Esc>gg"
+Escape
+Type "gg"
 Sleep 500ms
-Type "\<A-CR>"
+Alt+Enter
 Sleep 2s
 
 # Move to next cell and evaluate
 Type "}j"
 Sleep 500ms
-Type "\<A-CR>"
+Alt+Enter
 Sleep 2s
 
 # Move to last cell and evaluate
 Type "}j"
 Sleep 500ms
-Type "\<A-CR>"
+Alt+Enter
 Sleep 3s
