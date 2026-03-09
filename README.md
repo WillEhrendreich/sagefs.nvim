@@ -35,13 +35,13 @@ SageFs is a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/too
 - **Affordance-driven MCP** — AI tools (Copilot, Claude, etc.) can execute F# code, type-check, explore .NET APIs, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state — agents see `get_fsi_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
 - **Multi-session isolation** — Run multiple FSI sessions simultaneously across different projects, each in an isolated worker sub-process. A standby pool of pre-warmed sessions makes hard resets near-instant.
 - **Crash-proof supervisor** — Erlang-style auto-restart with exponential backoff (`sagefs --supervised`). Watchdog state exposed via API and shown in editor status bars.
-- **Event sourcing** — All session events (evals, resets, diagnostics, errors) stored in PostgreSQL via [Marten](https://martendb.io/) for history replay and analytics.
+- **Binary session persistence** — Session state and test caches saved to compact binary files (`.sagefs` v3, `.sagetc` v1) for near-instant cold starts. Raw binary with CRC-32C integrity checking — no JSON parsing, no database.
 
 See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full details, including CLI reference, per-directory config (`.SageFs/config.fsx`), startup profiles, and the full [frontend feature matrix](https://github.com/WillEhrendreich/SageFs#frontend-feature-matrix).
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests, zero failures.**
+This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests, zero failures.**
 
 ### Fully Implemented & Tested
 
@@ -59,6 +59,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1161 tests,
 | **Stale detection** | Editing a cell marks its result as stale automatically. |
 | **Flash animation** | Brief highlight flash when a cell begins evaluation. |
 | **Session management** | Create, switch, stop sessions via picker (`:SageFsSessions`). |
+| **Project config helper** | `:SageFsConfig` creates or opens `.SageFs/config.fsx` so you can disable warmup auto-open. |
 | **Project discovery** | Auto-discovers `.fsproj` files and offers to create sessions. |
 | **Smart eval** | If no session exists, prompts to create one before evaluating. |
 | **Session context** | Floating window showing assemblies, namespaces, warmup details. |
@@ -210,6 +211,7 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsStatus` | Status dashboard (daemon, session, tests, coverage, config) |
 | `:SageFsSessions` | Session picker (create/switch/stop/reset) |
 | `:SageFsCreateSession` | Discover projects and create session |
+| `:SageFsConfig` | Create or open `.SageFs/config.fsx` and disable warmup namespace auto-open |
 | `:SageFsStart` | Start SageFs daemon from Neovim |
 | `:SageFsStop` | Stop the managed SageFs daemon |
 | `:SageFsHotReload` | Hot reload file picker |
@@ -262,7 +264,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `testing.lua` | ~1200 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
 | `coverage.lua` | ~110 | Line-level coverage state, file/total summaries, gutter signs, statusline |
 | `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
-| `type_explorer_cache.lua` | ~65 | In-memory cache for type explorer data, invalidated on hard reset |
+| `type_explorer_cache.lua` | ~30 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | ~60 | FSI event history formatting for picker and preview |
 | `export.lua` | ~20 | Session export to .fsx format |
 | `events.lua` | ~80 | User autocmd event definitions (28 event types) |
@@ -289,7 +291,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `init.lua` | ~970 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | ~215 | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | ~380 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | ~1420 | All 47 commands, keymaps, autocmds |
+| `commands.lua` | ~1245 | All 46 commands, keymaps, autocmds |
 | `hotreload.lua` | ~110 | Hot reload file toggle API |
 
 All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
@@ -326,9 +328,9 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
 | **Busted (pure)** | `busted` via LuaRocks | 1107 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 54 | Real vim APIs — plugin setup, 47 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **Integration** | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — plugin setup, 46 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
 | **E2E** | Headless Neovim + real SageFs | 27 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1188** | 1161 unit+integration (all passing), 27 E2E (requires running SageFs) |
+| **Total** | | **1187** | 1160 unit+integration (all passing), 27 E2E (requires running SageFs) |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
@@ -362,7 +364,7 @@ These are the MCP tools exposed by SageFs. The server uses **affordance-driven t
 | `enable_live_testing` | Enable the live test pipeline |
 | `disable_live_testing` | Disable the live test pipeline |
 | `set_run_policy` | Control when test categories auto-run (every/save/demand/disabled) |
-| `get_pipeline_trace` | Debug the three-speed test pipeline waterfall |
+| `get_test_trace` | Debug the three-speed test pipeline waterfall |
 | `run_tests` | Run tests on demand with name/category filters |
 
 ## License

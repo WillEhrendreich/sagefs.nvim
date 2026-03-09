@@ -1,119 +1,94 @@
-# As-You-Type Live Testing — Neovim Plugin
+# Live Testing — Neovim Plugin
 
-> See `docs/live-testing-as-you-type.md` in the SageFs repo for the centralized architecture,
-> endpoint contract, server pipeline, and decision log. This doc covers **Neovim-specific** implementation only.
+Live testing in sagefs.nvim gives you pass/fail feedback in the gutter as you work, powered by SageFs's three-speed test pipeline. No manual test runs needed — results stream in via SSE and update inline.
 
-## Current State
+## How It Works
 
-- Plugin uses tree-sitter for test discovery (`[<Test>]`/`[<Fact>]` attributes)
-- Connects to SageFs daemon via HTTP + SSE (port 37749)
-- Has SSE listener, gutter rendering, Telescope integration
-- `TextChanged` autocmd fires for `*.fsx` only — **NOT** for `*.fs` files (this is the #1 bug)
-- Live testing is observe-only for `.fs` files (no reaction to typing)
+SageFs's daemon runs a three-speed pipeline that detects, analyzes, and executes tests automatically:
 
-## What Needs to Change
+1. **Tree-sitter detection** (~50ms) — Finds `[<Test>]`, `[<Fact>]`, `[<Property>]` attributes even in broken code
+2. **F# Compiler Service analysis** (~350ms) — Builds a dependency graph to determine which tests are affected by your change
+3. **Test execution** (~500ms) — Runs only the affected tests via the appropriate framework (Expecto, xUnit, NUnit, MSTest, TUnit)
 
-Per the centralized design, the editor's only job is:
+The plugin receives results through the SSE event stream and renders them as gutter signs.
 
-1. Register `TextChanged` + `TextChangedI` autocmds for `*.fs` files (currently only `*.fsx`)
-2. On change: debounce 300ms, cancel previous timer
-3. After debounce: use tree-sitter to find enclosing function scope, POST it to SageFs
-4. Display results from existing SSE subscription (already done)
+## Gutter Signs
 
-## Neovim-Specific: Tree-Sitter for Scope Extraction
+Test results appear as signs in the sign column:
 
-Neovim's unique advantage: tree-sitter provides **error-tolerant** scope detection.
-Even mid-keystroke with broken syntax, tree-sitter identifies the enclosing function
-scope (ERROR nodes appear INSIDE the scope, not replacing it).
+| Sign | Meaning |
+|------|---------|
+| `✓` (green) | Test passed |
+| `✗` (red) | Test failed |
+| `●` (yellow) | Test running |
+| `◌` (dim) | Test discovered but not yet run |
 
-Tree-sitter `value_declaration` node walk extracts the function being edited:
+Signs are placed at the line where the test attribute appears. They update in real-time as SSE events arrive.
 
-```lua
-local function find_enclosing_scope(bufnr, cursor_row)
-  local parser = vim.treesitter.get_parser(bufnr, "fsharp")
-  if not parser then return nil end
-  local tree = parser:parse()[1]
-  if not tree then return nil end
+## Commands
 
-  local node = tree:root():named_descendant_for_range(cursor_row, 0, cursor_row, 0)
-  while node do
-    if node:type() == "value_declaration"
-      or node:type() == "function_or_value_defn" then
-      local sr, sc, er, ec = node:range()
-      local lines = vim.api.nvim_buf_get_lines(bufnr, sr, er + 1, false)
-      local text = table.concat(lines, "\n")
-      -- extract function name from first line
-      local name = lines[1] and lines[1]:match("let%s+(%w+)") or "unknown"
-      return { scopeName = name, scopeText = text, startLine = sr, endLine = er }
-    end
-    node = node:parent()
-  end
-  return nil
-end
-```
+| Command | Description |
+|---------|-------------|
+| `:SageFsEnableTesting` | Enable the live testing pipeline |
+| `:SageFsDisableTesting` | Disable the live testing pipeline |
+| `:SageFsRunTests [pattern]` | Run tests manually, with optional name filter |
+| `:SageFsTestPanel` | Toggle persistent test results split panel |
+| `:SageFsTests` | Show test results in a floating window |
+| `:SageFsTestsHere` | Show tests for the current file only |
+| `:SageFsFailures` | Jump to failing tests |
+| `:SageFsTestPolicy` | Configure run policies per test category |
+| `:SageFsTestTrace` | Show the three-speed pipeline state |
 
-This is ~20 lines of Lua. If tree-sitter can't find a scope (grammar mismatch, no parser),
-nothing is POSTed — user sees stale results until code stabilizes.
+## Test Panel
 
-## Implementation
+`:SageFsTestPanel` opens a persistent split showing all test results. Features:
 
-### Step 1: Fix TextChanged Autocmds (`commands.lua`)
+- **Scope filters**: Press `b` (binding/treesitter scope), `f` (current file), `m` (module), `a` (all), or `Tab` to cycle
+- **Failure-first sort**: Failing tests always appear at the top
+- **Jump to source**: Press `<CR>` on a test to jump to its definition
+- **Live updates**: Panel refreshes as SSE events arrive
 
-In `register_autocmds`, add `TextChanged` + `TextChangedI` for `*.fs`:
+## Run Policies
 
-```lua
-vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-  pattern = "*.fs",
-  callback = function(ev)
-    if not state.live_testing_enabled then return end
-    debounce_post_scope(ev.buf)
-  end,
-})
-```
+`:SageFsTestPolicy` lets you configure when each test category runs:
 
-### Step 2: Debounce + Extract Scope + POST
+| Policy | Behavior |
+|--------|----------|
+| `every` | Run on every hot reload (keystroke-level) |
+| `save` | Run only on file save |
+| `demand` | Run only when explicitly triggered |
+| `disabled` | Never run |
 
-```lua
-local debounce_timer = nil
-local generation = 0
+Categories: `unit`, `integration`, `browser`, `benchmark`, `architecture`, `property`.
 
-local function debounce_post_scope(bufnr)
-  if debounce_timer then
-    vim.fn.timer_stop(debounce_timer)
-  end
-  debounce_timer = vim.fn.timer_start(300, function()
-    vim.schedule(function()
-      local cursor = vim.api.nvim_win_get_cursor(0)
-      local scope = find_enclosing_scope(bufnr, cursor[1] - 1)
-      if not scope then return end
+Typical setup: unit tests on `every`, integration on `save`, browser on `demand`.
 
-      generation = generation + 1
-      transport.post("/api/live-testing/evaluate-scope", {
-        filePath = vim.api.nvim_buf_get_name(bufnr),
-        scopeName = scope.scopeName,
-        scopeText = scope.scopeText,
-        startLine = scope.startLine,
-        endLine = scope.endLine,
-        generation = generation,
-      })
-    end)
-  end)
-end
-```
+## SSE Events
 
-### Step 3: Existing SSE Handles Results
+The plugin handles these test-related SSE events:
 
-No changes needed. `LiveTestingListener` already processes test result SSE events
-and `render_test_signs` already displays gutter markers.
+| Event | Action |
+|-------|--------|
+| `test_summary` | Update overall test counts |
+| `test_results_batch` | Update individual test pass/fail state and gutter signs |
+| `test_trace` | Update the three-speed pipeline state display |
+| `SageFsTestRunStarted` | Mark tests as running |
+| `SageFsTestRunCompleted` | Finalize test run |
+| `SageFsProvidersDetected` | Show which test frameworks are active |
+| `SageFsAffectedTestsComputed` | Show dependency graph analysis results |
+| `SageFsTestCycleTimingRecorded` | Record pipeline timing for the test trace |
 
-## Files to Modify
+## Coverage Integration
 
-1. `lua/sagefs/commands.lua` — add `TextChanged`/`TextChangedI` autocmds for `*.fs`
-2. `lua/sagefs/init.lua` — add `debounce_post_scope` and `find_enclosing_scope`
-3. `lua/sagefs/transport.lua` — ensure `post` function exists (may already exist)
+When live testing is enabled, FCS-based code coverage runs alongside tests. Coverage results appear as separate gutter signs (see [coverage documentation](./coverage.md) or the main README).
 
-## Dependencies
+## Architecture
 
-- **Requires** `POST /api/live-testing/evaluate-scope` endpoint in SageFs daemon
-- **tree-sitter fsharp grammar** for scope extraction (if unavailable, nothing is POSTed)
-- No new plugin dependencies
+The testing subsystem spans several modules:
+
+- **`testing.lua`** (~1200 lines) — Core testing state machine: SSE handlers, gutter sign management, panel formatting, policy configuration, pipeline state, annotation integration
+- **`test_trace.lua`** (~65 lines) — Test trace parsing and formatting for the three-speed pipeline display
+- **`annotations.lua`** (~240 lines) — Coverage annotation formatting, branch coverage signs, CodeLens-style markers, inline failure display
+- **`events.lua`** — Defines 10+ test-related User autocmd events for scripting integration
+
+All test modules are pure Lua with zero vim API dependencies — they're fully testable under busted without Neovim.

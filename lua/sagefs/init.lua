@@ -17,6 +17,7 @@ local daemon = require("sagefs.daemon")
 local transport = require("sagefs.transport")
 local render = require("sagefs.render")
 local commands = require("sagefs.commands")
+local project_config = require("sagefs.config")
 local density = require("sagefs.density")
 local cell_highlight = require("sagefs.cell_highlight")
 
@@ -142,6 +143,8 @@ local SSE_HANDLER_DEFS = {
   { action = "cell_dependencies", event = "cell_dependencies" },
   { action = "binding_scope_map", event = "binding_scope_map" },
   { action = "eval_timeline", event = "eval_timeline" },
+  -- Inline eval result decorations — fire event so plugins can display ghost text
+  { action = "eval_result", event = "eval_result" },
 }
 
 -- State target → { state_key, module }
@@ -925,6 +928,20 @@ function M.discover_and_create(working_dir)
     if not choice then return end
     M.create_session({ choice }, working_dir)
   end)
+end
+
+function M.configure_warmup_auto_open(working_dir)
+  working_dir = working_dir or vim.fn.getcwd()
+  local result = project_config.ensure_auto_open_opt_out(working_dir)
+  vim.cmd.edit(vim.fn.fnameescape(result.path))
+
+  if result.status == "created" then
+    notify("Created .SageFs/config.fsx with AutoOpenNamespaces = false")
+  elseif result.status == "already_disabled" then
+    notify("Warmup auto-open is already disabled for this directory")
+  else
+    notify("Existing config opened. Set AutoOpenNamespaces = false; it was not overwritten", vim.log.levels.WARN)
+  end
 end
 
 -- ─── Check on Save ────────────────────────────────────────────────────────────

@@ -151,6 +151,10 @@ function M.register_commands(plugin, helpers)
     plugin.discover_and_create()
   end, { desc = "Create new SageFs session" })
 
+  vim.api.nvim_create_user_command("SageFsConfig", function()
+    plugin.configure_warmup_auto_open()
+  end, { desc = "Create or open .SageFs/config.fsx for warmup auto-open" })
+
   vim.api.nvim_create_user_command("SageFsHotReload", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     hotreload.picker(sid)

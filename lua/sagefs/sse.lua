@@ -134,6 +134,8 @@ function M.classify_event(event)
     cell_dependencies = "cell_dependencies",
     binding_scope_map = "binding_scope_map",
     eval_timeline = "eval_timeline",
+    -- Inline eval result decorations (Sprint 7+ daemon)
+    eval_result = "eval_result",
   }
 
   local action = type_to_action[event.type] or "unknown"

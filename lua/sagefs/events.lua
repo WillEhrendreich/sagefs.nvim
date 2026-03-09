@@ -35,6 +35,7 @@ M.EVENT_NAMES = {
   "SageFsCellDependencies",
   "SageFsBindingScopeMap",
   "SageFsEvalTimeline",
+  "SageFsEvalResult",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -68,6 +69,7 @@ local EVENT_MAP = {
   cell_dependencies = "SageFsCellDependencies",
   binding_scope_map = "SageFsBindingScopeMap",
   eval_timeline = "SageFsEvalTimeline",
+  eval_result = "SageFsEvalResult",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────

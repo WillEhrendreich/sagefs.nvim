@@ -40,7 +40,7 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 Architecture: 37 pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
-1107 tests, zero failures.
+1160 tests, zero failures.
 
 ==============================================================================
 2. QUICKSTART                                            *sagefs-quickstart*
@@ -133,19 +133,28 @@ Evaluation ~
     Evaluate the cell under the cursor. Results appear as inline
     virtual text.
 
-:SageFsEvalAndAdvance                                   *:SageFsEvalAndAdvance*
+:SageFsEvalAdvance                                   *:SageFsEvalAdvance*
     Evaluate the current cell and move the cursor to the next cell.
 
 :SageFsClear                                            *:SageFsClear*
     Clear all inline results and cell state for the current buffer.
+
+:SageFsCancel                                           *:SageFsCancel*
+    Cancel a running evaluation.
 
 Testing ~
 
 :SageFsTestPanel                                        *:SageFsTestPanel*
     Open the live test panel showing pass/fail state.
 
+:SageFsTests                                            *:SageFsTests*
+    Show test results in a floating window.
+
 :SageFsRunTests                                         *:SageFsRunTests*
     Trigger a test run for the current session.
+
+:SageFsFailures                                         *:SageFsFailures*
+    Jump to failing tests.
 
 :SageFsEnableTesting                                    *:SageFsEnableTesting*
     Enable live testing (tests run automatically on hot reload).
@@ -156,13 +165,16 @@ Testing ~
 Sessions ~
 
 :SageFsSessions                                         *:SageFsSessions*
-    List active SageFs sessions.
-
-:SageFsSwitchSession                                    *:SageFsSwitchSession*
-    Switch to a different SageFs session.
+    List active SageFs sessions. Provides create/switch/stop/reset
+    actions from the picker.
 
 :SageFsCreateSession                                    *:SageFsCreateSession*
     Create a new SageFs session for a project.
+
+:SageFsConfig                                           *:SageFsConfig*
+    Create or open .SageFs/config.fsx for the current directory.
+    Use this to set `AutoOpenNamespaces = false` and disable warmup
+    namespace/module auto-open without overwriting an existing config.
 
 Utilities ~
 
@@ -214,10 +226,6 @@ Analysis ~
 
 :SageFsExport                                           *:SageFsExport*
     Export the current session as an .fsx file.
-
-:SageFsDensity                                          *:SageFsDensity*
-    Cycle through density presets (minimal, normal, full) which
-    control how much inline information is shown.
 
 :SageFsTypeExplorer                                     *:SageFsTypeExplorer*
     Browse types via completions-based namespace drill-down.
@@ -294,15 +302,14 @@ Default keymaps (configured in setup): >
 <
 All keymaps are buffer-local to F# filetypes (.fs, .fsx, .fsi).
 
-The `<leader>s` namespace is recommended for additional bindings: >lua
+The `<leader>r` namespace is used for REPL bindings: >lua
 
-  vim.keymap.set("n", "<leader>se", "<cmd>SageFsEval<CR>")
-  vim.keymap.set("n", "<leader>sr", "<cmd>SageFsRunTests<CR>")
-  vim.keymap.set("n", "<leader>st", "<cmd>SageFsTestPanel<CR>")
-  vim.keymap.set("n", "<leader>sd", "<cmd>SageFsDensity<CR>")
-  vim.keymap.set("n", "<leader>sc", "<cmd>SageFsClear<CR>")
-  vim.keymap.set("n", "<leader>ss", "<cmd>SageFsStats<CR>")
-  vim.keymap.set("n", "<leader>sp", "<cmd>SageFsPlayground<CR>")
+  vim.keymap.set("n", "<leader>re", "<cmd>SageFsEval<CR>")
+  vim.keymap.set("n", "<leader>rT", "<cmd>SageFsRunTests<CR>")
+  vim.keymap.set("n", "<leader>rt", "<cmd>SageFsTestPanel<CR>")
+  vim.keymap.set("n", "<leader>rc", "<cmd>SageFsClear<CR>")
+  vim.keymap.set("n", "<leader>rs", "<cmd>SageFsSessions<CR>")
+  vim.keymap.set("n", "<leader>rp", "<cmd>SageFsPlayground<CR>")
 <
 ==============================================================================
 6. CONFIGURATION                                          *sagefs-config*
@@ -310,7 +317,8 @@ The `<leader>s` namespace is recommended for additional bindings: >lua
 Pass configuration to setup(): >lua
 
   require("sagefs").setup({
-    port = 37849,                -- SageFs daemon port
+    port = 37749,                -- SageFs daemon port
+    dashboard_port = 37750,      -- Dashboard/hot-reload port
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
     density = "normal",          -- "minimal", "normal", "full"
