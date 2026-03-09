@@ -1,0 +1,59 @@
+name: Record Screenshots and Demos
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'docs/tapes/**'
+      - 'samples/**'
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y neovim
+
+      - name: Install VHS and dependencies
+        run: |
+          sudo apt-get install -y ffmpeg xvfb
+
+          # Install ttyd
+          curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64" -o /usr/local/bin/ttyd
+          chmod +x /usr/local/bin/ttyd
+
+          # Install VHS (tarball has a versioned directory prefix)
+          VHS_VERSION=$(curl -s https://api.github.com/repos/charmbracelet/vhs/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/charmbracelet/vhs/releases/latest/download/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin "vhs_${VHS_VERSION}_Linux_x86_64/vhs"
+          chmod +x /usr/local/bin/vhs
+          vhs --version
+
+      - name: Record screenshots
+        run: |
+          mkdir -p docs
+          for tape in docs/tapes/screenshot-*.tape; do
+            echo "Recording $tape..."
+            vhs "$tape"
+          done
+
+      - name: Record demo GIFs
+        run: |
+          mkdir -p docs
+          for tape in docs/tapes/demo-*.tape; do
+            echo "Recording $tape..."
+            vhs "$tape"
+          done
+
+      - name: Commit demo GIFs
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update demo GIFs [skip ci]"
+          file_pattern: "docs/demo-*.gif docs/screenshot-*.png"

@@ -2,6 +2,43 @@
 
 Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs) — a live F# development server that eliminates the edit-build-run cycle. SageFs provides sub-second hot reload, live unit testing with a three-speed pipeline, FCS-based code coverage, an affordance-driven MCP server for AI agents, multi-session management, file watching, and more. This plugin connects Neovim to the running daemon, giving you cell evaluation with inline results, session management, hot reload controls, live test state, coverage gutter signs, and SSE live updates from your editor.
 
+## Screenshots & Demos
+
+<table>
+<tr>
+<td align="center" width="50%">
+
+**Eval Loop** — evaluate F# cells and see results inline as ghost text
+
+![Eval Loop](docs/demo-eval-loop.gif)
+
+</td>
+<td align="center" width="50%">
+
+**Live Testing** — tests run automatically as you type, results in the gutter
+
+![Live Testing](docs/demo-live-testing.gif)
+
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+
+**Coverage** — line-level coverage with branch annotations in the gutter
+
+![Coverage](docs/demo-coverage.gif)
+
+</td>
+<td align="center" width="50%">
+
+**Cell Styles** — Full/Normal/Minimal density modes for different workflows
+
+![Cell Styles](docs/screenshot-05-cell-styles.png)
+
+</td>
+</tr>
+</table>
+
 ## Feature Tour
 
 ![Cell evaluation — the core loop](docs/screenshots/01-eval-loop.png)
@@ -127,6 +164,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests,
     dashboard_port = 37750, -- Dashboard/hot-reload port
     auto_connect = true,    -- Connect SSE on startup
     check_on_save = false,  -- Type-check .fsx files on save (diagnostics via SSE)
+    density = "normal",     -- "minimal" | "normal" | "full"
   },
 }
 ```
@@ -335,6 +373,52 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. E2E tests additionally require `sagefs` and `dotnet` on PATH.
+
+## User Autocmd Events
+
+sagefs.nvim fires `User` autocmds for all SageFs daemon events. Listen with:
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "SageFsEvalResult",
+  callback = function(ev)
+    -- ev.data contains the event payload
+    print(vim.inspect(ev.data))
+  end,
+})
+```
+
+| Event | When it fires | Key payload fields |
+|-------|---------------|--------------------|
+| `SageFsEvalCompleted` | Evaluation completes (any outcome) | result data |
+| `SageFsEvalResult` | Eval result received from daemon | `filePath`, `blockStartLine`, `output`, `success` |
+| `SageFsEvalDiff` | Diff between last two evals of a cell | diff lines |
+| `SageFsEvalTimeline` | Timeline data updated | timestamps, durations, status |
+| `SageFsTestPassed` | A single test transitions to passed | test id, name |
+| `SageFsTestFailed` | A single test transitions to failed | test id, name, error |
+| `SageFsTestResultsBatch` | Batch of test results arrives | array of test results |
+| `SageFsTestRunStarted` | Daemon begins executing a test run | run metadata |
+| `SageFsTestRunCompleted` | Test run finishes (all tests resolved) | summary |
+| `SageFsTestState` | Overall test state changes | enabled flag, summary |
+| `SageFsTestsDiscovered` | Daemon detects new tests in project | test list |
+| `SageFsTestSummary` | Aggregate summary updated | total, passed, failed, running, stale |
+| `SageFsTestTrace` | Three-speed pipeline trace data | pipeline timing |
+| `SageFsTestRecoveryNeeded` | Worker crash or stale state detected | session id |
+| `SageFsRunTestsRequested` | Test run requested (before execution) | filter |
+| `SageFsAffectedTestsComputed` | Tests affected by a code change computed | test ids |
+| `SageFsTestCycleTimingRecorded` | Three-speed waterfall timing recorded | phase timings |
+| `SageFsConnected` | SSE stream connects to daemon | — |
+| `SageFsDisconnected` | SSE stream disconnects | — |
+| `SageFsReconnecting` | Plugin retrying dropped SSE connection | retry count |
+| `SageFsCoverageUpdated` | Coverage data updated | file annotations |
+| `SageFsFileAnnotations` | Per-file annotation data arrives | signs, CodeLens, failures |
+| `SageFsHotReloadTriggered` | Hot reload event received | file path |
+| `SageFsHotReloadSnapshot` | Full hot-reload snapshot arrives | all watched files |
+| `SageFsWarmupContext` | Session warmup context data arrives | assemblies, namespaces |
+| `SageFsProvidersDetected` | Test providers reported | xUnit, NUnit, Expecto, etc. |
+| `SageFsBindingsSnapshot` | All active FSI bindings snapshot | name → type_sig map |
+| `SageFsBindingScopeMap` | Binding scope map data | cell → bindings |
+| `SageFsCellDependencies` | Dependency graph data for buffer cells | edges |
 
 ## SageFs MCP Tools Reference
 

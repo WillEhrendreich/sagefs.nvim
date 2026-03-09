@@ -19,8 +19,9 @@ CONTENTS                                                    *sagefs-contents*
   11. Type Explorer .............................. |sagefs-type-explorer|
   12. Diagnostics ................................ |sagefs-diagnostics|
   13. Health Check ............................... |sagefs-health|
-  14. Cell Highlight ............................. |sagefs-cell-style|
-  15. FAQ ........................................ |sagefs-faq|
+  14. Cell Highlight ............................. |sagefs-cell-highlight|
+  15. User Autocmd Events ........................ |sagefs-events|
+  16. FAQ ........................................ |sagefs-faq|
 
 ==============================================================================
 1. INTRODUCTION                                         *sagefs-introduction*
@@ -294,22 +295,66 @@ Analysis ~
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
 
-Default keymaps (configured in setup): >
+Always-on keymaps (global, not buffer-local): >
 
-  <A-CR>       Evaluate cell under cursor
-  <S-A-CR>     Evaluate cell and advance to next cell
-  <C-A-CR>     Evaluate treesitter scope under cursor
+  <A-CR>       (n) Evaluate cell under cursor (smart: prompts for session)
+  <A-CR>       (v) Evaluate visual selection
+  <S-A-CR>     (n) Evaluate cell and advance to next cell
 <
-All keymaps are buffer-local to F# filetypes (.fs, .fsx, .fsi).
+The `<leader>r` namespace is used for all REPL bindings (**R**EPL prefix).
+All leader keymaps are registered globally via `setup()`.
 
-The `<leader>r` namespace is used for REPL bindings: >lua
-
-  vim.keymap.set("n", "<leader>re", "<cmd>SageFsEval<CR>")
-  vim.keymap.set("n", "<leader>rT", "<cmd>SageFsRunTests<CR>")
-  vim.keymap.set("n", "<leader>rt", "<cmd>SageFsTestPanel<CR>")
-  vim.keymap.set("n", "<leader>rc", "<cmd>SageFsClear<CR>")
-  vim.keymap.set("n", "<leader>rs", "<cmd>SageFsSessions<CR>")
-  vim.keymap.set("n", "<leader>rp", "<cmd>SageFsPlayground<CR>")
+Core eval ~
+>
+  <leader>re   Evaluate cell under cursor
+  <leader>rl   Evaluate current line
+  <leader>rf   Evaluate entire file
+  <leader>rc   Clear all results
+  <leader>rx   Cancel running evaluation
+<
+Sessions & connection ~
+>
+  <leader>rs   Session picker (create/switch/stop/reset)
+  <leader>rC   Connect SSE stream
+  <leader>rX   Disconnect SSE stream
+  <leader>ri   Status info dashboard
+<
+Testing ~
+>
+  <leader>rt   Test panel (toggle persistent split)
+  <leader>rT   Run tests
+  <leader>rth  Tests here (current file)
+  <leader>rtf  Test failures
+  <leader>rtp  Test trace (three-speed pipeline state)
+  <leader>rte  Enable live testing
+  <leader>rtd  Disable live testing
+<
+Browse & explore ~
+>
+  <leader>rb   Show FSI bindings
+  <leader>rd   Eval diff (last two evals of current cell)
+  <leader>rg   Scope map (what each cell defines)
+  <leader>rm   Timeline (flame chart of eval history)
+  <leader>ry   Type explorer (namespace drill-down)
+  <leader>ra   Callers of symbol
+  <leader>ro   Callees of symbol
+  <leader>rv   Coverage summary
+<
+Server & reload ~
+>
+  <leader>rh   Hot reload file picker
+  <leader>rr   Soft reset FSI session
+  <leader>rR   Hard reset (rebuild) FSI session
+  <leader>rS   Start SageFs daemon
+  <leader>rQ   Stop SageFs daemon
+  <leader>rD   Cycle display density (minimal → normal → full)
+<
+Misc ~
+>
+  <leader>rp   Playground (scratch F# buffer)
+  <leader>rn   Notebook export
+  <leader>rw   Watch all files for hot reload
+  <leader>rW   Unwatch all files
 <
 ==============================================================================
 6. CONFIGURATION                                          *sagefs-config*
@@ -321,9 +366,9 @@ Pass configuration to setup(): >lua
     dashboard_port = 37750,      -- Dashboard/hot-reload port
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
-    density = "normal",          -- "minimal", "normal", "full"
+    density = "normal",          -- "minimal" | "normal" | "full"
     cell_highlight = {
-      style = "sp",              -- "sp", "glow", "flash", "bar"
+      style = "normal",          -- "off" | "minimal" | "normal" | "full"
       flash_duration_ms = 300,   -- Flash fade duration
     },
   })
@@ -449,7 +494,146 @@ On transparent terminals (no `Normal` bg), the `full` mode uses
 zero background by design — just sign column characters.
 
 ==============================================================================
-15. FAQ                                                      *sagefs-faq*
+15. USER AUTOCMD EVENTS                                      *sagefs-events*
+
+sagefs.nvim fires `User` autocmds for all SageFs daemon events. Use these
+to build custom integrations or extend the plugin's behavior.
+
+All events carry a `data` table in `vim.v.event`. Listen with: >lua
+
+  vim.api.nvim_create_autocmd("User", {
+    pattern = "SageFsEvalCompleted",
+    callback = function(ev)
+      -- ev.data contains the payload (may be nil for connection events)
+      print(vim.inspect(ev.data))
+    end,
+  })
+<
+
+Event reference ~
+
+*SageFsEvalCompleted*
+    Fired when an evaluation completes (success or error). Payload contains
+    evaluation result data.
+
+*SageFsEvalResult*                                       *SageFsEvalResult*
+    Fired when an eval result is received from the daemon. Payload: >
+
+      { filePath, blockStartLine, output, success }
+<
+    - `filePath`       Path to the evaluated file
+    - `blockStartLine` 1-based line of the cell's start
+    - `output`         Result text (stdout/error)
+    - `success`        Boolean — true if eval succeeded
+
+    Example: >lua
+
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "SageFsEvalResult",
+        callback = function(ev)
+          if not ev.data.success then
+            vim.notify("Eval error: " .. (ev.data.output or ""), vim.log.levels.WARN)
+          end
+        end,
+      })
+<
+
+*SageFsTestPassed*
+    Fired when a single test transitions to passed state.
+
+*SageFsTestFailed*
+    Fired when a single test transitions to failed state.
+
+*SageFsTestResultsBatch*
+    Fired when a batch of test results arrives. More efficient than
+    per-test events for bulk updates.
+
+*SageFsTestRunStarted*
+    Fired when the daemon begins executing a test run.
+
+*SageFsTestRunCompleted*
+    Fired when a test run finishes (all tests resolved).
+
+*SageFsTestState*
+    Fired when overall test state changes (e.g., enabled/disabled).
+
+*SageFsTestsDiscovered*
+    Fired when the daemon detects new tests in the project.
+
+*SageFsConnected*
+    Fired when the SSE stream successfully connects to the daemon.
+
+*SageFsDisconnected*
+    Fired when the SSE stream disconnects.
+
+*SageFsReconnecting*
+    Fired when the plugin is retrying a dropped SSE connection
+    (exponential backoff: 1s → 2s → 4s → … → 32s).
+
+*SageFsCoverageUpdated*
+    Fired when coverage data is updated. Triggers gutter sign refresh.
+
+*SageFsHotReloadTriggered*
+    Fired when a hot reload event is received from the daemon.
+
+*SageFsWarmupContext*
+    Fired when session warmup context data arrives (assemblies, namespaces,
+    timing). Used to populate `:SageFsContext`.
+
+*SageFsHotReloadSnapshot*
+    Fired with a full hot-reload snapshot (all watched files and their
+    watch status).
+
+*SageFsProvidersDetected*
+    Fired when the daemon reports which test providers are active
+    (xUnit, NUnit, Expecto, etc.).
+
+*SageFsAffectedTestsComputed*
+    Fired with the set of tests affected by a code change. Shows which
+    tests the three-speed pipeline will execute.
+
+*SageFsTestCycleTimingRecorded*
+    Fired with timing data for the three-speed test pipeline waterfall
+    (tree-sitter → FCS → execution phases).
+
+*SageFsRunTestsRequested*
+    Fired when a test run is requested (before execution starts).
+
+*SageFsTestSummary*
+    Fired with an aggregate summary (total/passed/failed/running/stale).
+    Used for statusline and panel header.
+
+*SageFsFileAnnotations*
+    Fired with per-file annotation data (coverage signs, CodeLens,
+    inline failure messages).
+
+*SageFsBindingsSnapshot*
+    Fired with a snapshot of all active FSI bindings (name → type_sig).
+    Used to populate `:SageFsBindings`.
+
+*SageFsTestTrace*
+    Fired with three-speed test pipeline trace data. Used to populate
+    `:SageFsTestTrace`.
+
+*SageFsTestRecoveryNeeded*
+    Fired when the daemon detects a test session that needs recovery
+    (e.g., worker crash, stale state).
+
+*SageFsEvalDiff*
+    Fired with the diff between the last two evaluations of a cell.
+
+*SageFsCellDependencies*
+    Fired with dependency graph data for the current buffer's cells.
+
+*SageFsBindingScopeMap*
+    Fired with binding scope map data (what each cell defines, shadows).
+
+*SageFsEvalTimeline*
+    Fired with evaluation timeline data (timestamps, durations, status).
+    Used to populate `:SageFsTimeline`.
+
+==============================================================================
+16. FAQ                                                      *sagefs-faq*
 
 Q: How do I install SageFs?
 A: `dotnet tool install -g sagefs`. See the SageFs README for details.
