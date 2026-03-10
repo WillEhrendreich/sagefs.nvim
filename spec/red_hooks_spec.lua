@@ -182,6 +182,6 @@ describe("events hook autocmd mappings", function()
   end)
 
   it("EVENT_NAMES count increases to 28", function()
-    assert.are.equal(29, #events.EVENT_NAMES)
+    assert.are.equal(34, #events.EVENT_NAMES)
   end)
 end)

@@ -403,3 +403,81 @@ describe("sse.classify_event session events", function()
     assert.are.equal("A.dll", data.context.assemblies[1])
   end)
 end)
+
+-- ─── Phase 7C: classify_event for SessionFaulted, WarmupCompleted, FileReloaded, SystemAlarm ─
+
+describe("sse.classify_event — Phase 7C lifecycle events", function()
+  it("classifies SessionFaulted (PascalCase from daemon)", function()
+    local result = sse.classify_event({ type = "SessionFaulted", data = '{"session_id":"abc","reason":"Crash"}' })
+    assert.are.equal("session_faulted", result.action)
+  end)
+
+  it("classifies session_faulted (snake_case SSE)", function()
+    local result = sse.classify_event({ type = "session_faulted", data = '{"session_id":"abc","reason":"Crash"}' })
+    assert.are.equal("session_faulted", result.action)
+  end)
+
+  it("classifies WarmupCompleted (PascalCase from daemon)", function()
+    local result = sse.classify_event({ type = "WarmupCompleted", data = '{"session_id":"abc","project_count":3}' })
+    assert.are.equal("warmup_completed", result.action)
+  end)
+
+  it("classifies warmup_completed (snake_case SSE)", function()
+    local result = sse.classify_event({ type = "warmup_completed", data = '{"session_id":"abc","project_count":3}' })
+    assert.are.equal("warmup_completed", result.action)
+  end)
+
+  it("classifies FileReloaded (PascalCase from daemon)", function()
+    local result = sse.classify_event({ type = "FileReloaded", data = '{"file":"Foo.fs","elapsed_ms":12}' })
+    assert.are.equal("file_reloaded", result.action)
+  end)
+
+  it("classifies file_reloaded (snake_case SSE)", function()
+    local result = sse.classify_event({ type = "file_reloaded", data = '{"file":"Foo.fs","elapsed_ms":12}' })
+    assert.are.equal("file_reloaded", result.action)
+  end)
+
+  it("classifies SystemAlarm (PascalCase from daemon)", function()
+    local result = sse.classify_event({ type = "SystemAlarm", data = '{"phase":"warmup","message":"crash"}' })
+    assert.are.equal("system_alarm", result.action)
+  end)
+
+  it("classifies system_alarm (snake_case SSE)", function()
+    local result = sse.classify_event({ type = "system_alarm", data = '{"phase":"warmup","message":"crash"}' })
+    assert.are.equal("system_alarm", result.action)
+  end)
+
+  it("full round-trip: parse + classify SessionFaulted", function()
+    local chunk = 'event: SessionFaulted\ndata: {"session_id":"x","reason":"OutOfMemory"}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("session_faulted", classified.action)
+    assert.truthy(classified.data:find("OutOfMemory"))
+  end)
+
+  it("full round-trip: parse + classify WarmupCompleted", function()
+    local chunk = 'event: WarmupCompleted\ndata: {"session_id":"y","project_count":5}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("warmup_completed", classified.action)
+  end)
+
+  it("full round-trip: parse + classify FileReloaded", function()
+    local chunk = 'event: FileReloaded\ndata: {"file":"Domain.fs","elapsed_ms":47}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("file_reloaded", classified.action)
+  end)
+
+  it("full round-trip: parse + classify SystemAlarm", function()
+    local chunk = 'event: SystemAlarm\ndata: {"phase":"eval","message":"Exception in user code"}\n\n'
+    local events = sse.parse_chunk(chunk)
+    assert.are.equal(1, #events)
+    local classified = sse.classify_event(events[1])
+    assert.are.equal("system_alarm", classified.action)
+    assert.truthy(classified.data:find("Exception in user code"))
+  end)
+end)

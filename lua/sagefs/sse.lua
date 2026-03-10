@@ -144,6 +144,15 @@ function M.classify_event(event)
     FailureNarratives = "failure_narratives",
     -- Warmup progress (phase-by-phase status during session startup)
     warmup_progress = "warmup_progress",
+    -- Phase 7C: lifecycle events
+    SessionFaulted = "session_faulted",
+    session_faulted = "session_faulted",
+    WarmupCompleted = "warmup_completed",
+    warmup_completed = "warmup_completed",
+    FileReloaded = "file_reloaded",
+    file_reloaded = "file_reloaded",
+    SystemAlarm = "system_alarm",
+    system_alarm = "system_alarm",
   }
 
   local action = type_to_action[event.type] or "unknown"

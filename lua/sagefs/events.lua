@@ -37,6 +37,11 @@ M.EVENT_NAMES = {
   "SageFsEvalTimeline",
   "SageFsEvalResult",
   "SageFsWarmupProgress",
+  -- Phase 7C: lifecycle events
+  "SageFsSessionFaulted",
+  "SageFsWarmupCompleted",
+  "SageFsFileReloaded",
+  "SageFsSystemAlarm",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -73,6 +78,11 @@ local EVENT_MAP = {
   eval_result = "SageFsEvalResult",
   failure_narratives = "SageFsFailureNarratives",
   warmup_progress = "SageFsWarmupProgress",
+  -- Phase 7C: lifecycle events
+  session_faulted = "SageFsSessionFaulted",
+  warmup_completed = "SageFsWarmupCompleted",
+  file_reloaded = "SageFsFileReloaded",
+  system_alarm = "SageFsSystemAlarm",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────

@@ -67,6 +67,11 @@ M.warmup_message = ""   -- Current warmup detail message
 M.warmup_progress = 0   -- Normalized progress (0.0-1.0)
 M.time_travel_state = require("sagefs.time_travel").new()
 
+-- Phase 7C: lifecycle state
+M.system_alarm = nil       -- Latest SystemAlarm payload (for statusline ⚠ indicator)
+M.last_reload_file = nil   -- Last file reloaded by hot reload (path string)
+M.last_reload_ms = nil     -- Elapsed ms for last file reload
+
 -- Eval watchdog: monotonic ID tracks which eval is in flight.
 -- 0 = idle; >0 = eval in flight (generation counter).
 -- Prevents phantom "evaluation interrupted" notifications when a new eval
@@ -272,6 +277,52 @@ local function build_handlers()
       notify(label)
     end
     fire_user_event("warmup_progress", data)
+  end
+
+  -- Phase 7C: SessionFaulted — clear session state, notify ERROR, fire autocmd
+  handlers.session_faulted = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local sid = data.session_id or data.SessionId or "?"
+    local reason = data.reason or data.Reason or "unknown"
+    -- Clear all session-specific state so stale results don't linger
+    M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
+    M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    notify(string.format("Session faulted [%s]: %s", sid, reason), vim.log.levels.ERROR)
+    fire_user_event("session_faulted", data)
+  end
+
+  -- Phase 7C: WarmupCompleted — notify INFO (configurable), fire autocmd
+  handlers.warmup_completed = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local sid = data.session_id or data.SessionId or "?"
+    local n = data.project_count or data.ProjectCount or 0
+    local label = n == 1 and "1 project" or (tostring(n) .. " projects")
+    if M.config.notify_warmup_completed ~= false then
+      notify(string.format("Session ready [%s] — %s loaded", sid, label))
+    end
+    fire_user_event("warmup_completed", data)
+  end
+
+  -- Phase 7C: FileReloaded — silent state update (no notify), fire autocmd
+  handlers.file_reloaded = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.last_reload_file = data.file or data.File
+    M.last_reload_ms = data.elapsed_ms or data.ElapsedMs
+    fire_user_event("file_reloaded", data)
+  end
+
+  -- Phase 7C: SystemAlarm — store for statusline, notify ERROR, fire autocmd
+  handlers.system_alarm = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.system_alarm = data
+    local phase = data.phase or data.Phase or "?"
+    local msg = data.message or data.Message or "alarm"
+    notify(string.format("⚠ ALARM [%s]: %s", phase, msg), vim.log.levels.ERROR)
+    fire_user_event("system_alarm", data)
   end
 
   return sse_parser.build_dispatch_table(handlers)
@@ -1157,6 +1208,12 @@ function M.statusline()
 
   local timeline_sl = require("sagefs.timeline").format_statusline(M.timeline_stats)
   if timeline_sl ~= "" then table.insert(parts, timeline_sl) end
+
+  -- Phase 7C: system alarm indicator (highest visibility — always last in bar)
+  if M.system_alarm then
+    local phase = M.system_alarm.phase or M.system_alarm.Phase or "?"
+    table.insert(parts, "⚠ ALARM [" .. phase .. "]")
+  end
 
   return table.concat(parts, " │ ")
 end

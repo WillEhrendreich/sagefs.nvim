@@ -54,8 +54,8 @@ end)
 
 describe("events.EVENT_NAMES — completeness", function()
   it("contains entries for all 28 event types", function()
-    -- 14 original + 10 new + 4 hooks + 1 = 29
-    assert.are.equal(29, #events.EVENT_NAMES)
+    -- 14 original + 10 new + 4 hooks + 1 = 29, +4 Phase 7C = 34
+    assert.are.equal(34, #events.EVENT_NAMES)
   end)
 end)
 

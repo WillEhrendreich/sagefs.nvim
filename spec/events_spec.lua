@@ -10,7 +10,7 @@ describe("events", function()
     end)
 
     it("contains 29 event names", function()
-      assert.are.equal(29, #events.EVENT_NAMES)
+      assert.are.equal(34, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -53,7 +53,7 @@ describe("events", function()
       assert.is_nil(result)
     end)
 
-    it("maps all 28 event types correctly", function()
+    it("maps all 32 event types correctly (including Phase 7C)", function()
       local mappings = {
         { "eval_completed", "SageFsEvalCompleted" },
         { "test_passed", "SageFsTestPassed" },
@@ -83,6 +83,11 @@ describe("events", function()
         { "cell_dependencies", "SageFsCellDependencies" },
         { "binding_scope_map", "SageFsBindingScopeMap" },
         { "eval_timeline", "SageFsEvalTimeline" },
+        -- Phase 7C: lifecycle events
+        { "session_faulted", "SageFsSessionFaulted" },
+        { "warmup_completed", "SageFsWarmupCompleted" },
+        { "file_reloaded", "SageFsFileReloaded" },
+        { "system_alarm", "SageFsSystemAlarm" },
       }
       for _, pair in ipairs(mappings) do
         local result = events.build_autocmd_data(pair[1], {})
@@ -102,5 +107,54 @@ describe("events", function()
       assert.are.equal("abc", result.data.session_id)
       assert.are.equal(12345, result.data.timestamp)
     end)
+
+    -- ── Phase 7C: new lifecycle event autocmd mappings ──────────────────────
+    it("maps session_faulted to SageFsSessionFaulted", function()
+      local result = events.build_autocmd_data("session_faulted", { session_id = "x", reason = "crash" })
+      assert.is_table(result)
+      assert.are.equal("SageFsSessionFaulted", result.pattern)
+      assert.are.equal("x", result.data.session_id)
+      assert.are.equal("crash", result.data.reason)
+    end)
+
+    it("maps warmup_completed to SageFsWarmupCompleted", function()
+      local result = events.build_autocmd_data("warmup_completed", { session_id = "y", project_count = 3 })
+      assert.is_table(result)
+      assert.are.equal("SageFsWarmupCompleted", result.pattern)
+      assert.are.equal(3, result.data.project_count)
+    end)
+
+    it("maps file_reloaded to SageFsFileReloaded", function()
+      local result = events.build_autocmd_data("file_reloaded", { file = "Domain.fs", elapsed_ms = 47 })
+      assert.is_table(result)
+      assert.are.equal("SageFsFileReloaded", result.pattern)
+      assert.are.equal("Domain.fs", result.data.file)
+      assert.are.equal(47, result.data.elapsed_ms)
+    end)
+
+    it("maps system_alarm to SageFsSystemAlarm", function()
+      local result = events.build_autocmd_data("system_alarm", { phase = "eval", message = "kaboom" })
+      assert.is_table(result)
+      assert.are.equal("SageFsSystemAlarm", result.pattern)
+      assert.are.equal("eval", result.data.phase)
+      assert.are.equal("kaboom", result.data.message)
+    end)
+
+    it("EVENT_NAMES contains all 4 new Phase 7C names", function()
+      local expected = {
+        "SageFsSessionFaulted",
+        "SageFsWarmupCompleted",
+        "SageFsFileReloaded",
+        "SageFsSystemAlarm",
+      }
+      for _, name in ipairs(expected) do
+        local found = false
+        for _, n in ipairs(events.EVENT_NAMES) do
+          if n == name then found = true; break end
+        end
+        assert.is_true(found, "EVENT_NAMES missing: " .. name)
+      end
+    end)
   end)
 end)
+
