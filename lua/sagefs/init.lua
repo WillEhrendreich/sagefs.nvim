@@ -62,8 +62,11 @@ M.timeline_state = require("sagefs.timeline").new()
 M.timeline_stats = nil  -- Latest server-pushed eval_timeline stats (for statusline)
 M.time_travel_state = require("sagefs.time_travel").new()
 
--- Eval watchdog: tracks in-flight evals for SSE disconnect detection
-local eval_in_flight = false
+-- Eval watchdog: monotonic ID tracks which eval is in flight.
+-- 0 = idle; >0 = eval in flight (generation counter).
+-- Prevents phantom "evaluation interrupted" notifications when a new eval
+-- starts within the 5-second watchdog window of a previous eval.
+local eval_id = 0
 local eval_watchdog_timer = nil
 
 -- SSE connection handle (managed by transport.lua)
@@ -236,6 +239,29 @@ local function build_handlers()
     M.timeline_stats = data
     fire_user_event("eval_timeline", data)
   end
+  -- warmup_progress: track warmup phase for statusline + notify on phase transitions
+  handlers.warmup_progress = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local prev_phase = M.warmup_phase
+    M.warmup_phase = data.Phase or data.phase
+    M.warmup_step = data.Step or data.step or 0
+    M.warmup_total = data.Total or data.total or 0
+    M.warmup_message = data.Message or data.message or ""
+    M.warmup_progress = data.Progress or data.progress or 0
+    -- Notify on phase transitions (not every namespace open)
+    if M.warmup_phase ~= prev_phase and M.warmup_phase ~= "opening_namespaces" then
+      local labels = {
+        creating_fsi = "Creating FSI session...",
+        scanning_sources = "Scanning source files...",
+        loading_assemblies = "Loading assemblies...",
+        finalizing = "Warmup complete!",
+      }
+      local label = labels[M.warmup_phase] or ("Warming up: " .. (M.warmup_phase or ""))
+      notify(label)
+    end
+    fire_user_event("warmup_progress", data)
+  end
 
   return sse_parser.build_dispatch_table(handlers)
 end
@@ -373,14 +399,15 @@ local function start_sse()
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
       -- Eval watchdog: if an eval is in flight, notify after 5s
-      if eval_in_flight then
+      if eval_id > 0 then
+        local watchdog_eval_id = eval_id
         if eval_watchdog_timer then
           pcall(vim.fn.timer_stop, eval_watchdog_timer)
         end
         eval_watchdog_timer = vim.fn.timer_start(5000, function()
           eval_watchdog_timer = nil
-          if eval_in_flight then
-            eval_in_flight = false
+          if eval_id == watchdog_eval_id then
+            eval_id = 0
             vim.schedule(function()
               notify("⚠ Evaluation interrupted: daemon connection lost. Try :SageFsReconnect", vim.log.levels.WARN)
             end)
@@ -448,8 +475,11 @@ local function show_shadow_warnings(buf, cell_id, shadows)
   end)
 end
 
-local function handle_result(buf, cell_id, result, end_line)
-  eval_in_flight = false
+local function handle_result(buf, cell_id, result, end_line, my_eval_id)
+  -- Only clear eval_id if we're still the current eval
+  if eval_id == my_eval_id then
+    eval_id = 0
+  end
   -- Cancel any pending watchdog timer
   if eval_watchdog_timer then
     pcall(vim.fn.timer_stop, eval_watchdog_timer)
@@ -504,7 +534,8 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
     notify("Cell already evaluating", vim.log.levels.WARN)
     return
   end
-  eval_in_flight = true
+  eval_id = eval_id + 1
+  local my_eval_id = eval_id
   local start_time = vim.uv.hrtime()
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
   vim.schedule(function()
@@ -551,9 +582,9 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
             vim.diagnostic.set(ns.fsi_diagnostics, buf, vim_diags)
           end)
         end
-        handle_result(buf, cell_id, result, end_line)
+        handle_result(buf, cell_id, result, end_line, my_eval_id)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line)
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id)
       end
     end,
   })
