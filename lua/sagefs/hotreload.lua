@@ -76,14 +76,14 @@ end
 
 function M.picker(session_id)
   if not session_id then
-    vim.notify("[SageFs] No active session", vim.log.levels.WARN)
+    vim.notify("[SageFs] No active session. Try: :SageFsCreateSession to create one, or :SageFsStart to start the daemon", vim.log.levels.WARN)
     return
   end
 
   M.fetch_state(session_id, function()
     local picker_items = hr_model.format_picker_items(M.state)
     if #picker_items == 0 then
-      vim.notify("[SageFs] No project files found", vim.log.levels.WARN)
+      vim.notify("[SageFs] No project files found. Fix: open a directory containing an .fsproj file", vim.log.levels.WARN)
       return
     end
 

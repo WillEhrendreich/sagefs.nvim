@@ -323,7 +323,7 @@ local function on_sse_events(raw_events)
   local errors = sse_parser.safe_dispatch_batch(dispatch_table, classified)
   for _, e in ipairs(errors) do
     vim.schedule(function()
-      vim.notify(string.format("[SageFs] SSE handler error (%s): %s", e.action, tostring(e.err)),
+      vim.notify(string.format("[SageFs] SSE handler error (%s): %s. Connection may be lost. Try: :SageFsReconnect to re-establish", e.action, tostring(e.err)),
         vim.log.levels.WARN)
     end)
   end
@@ -1141,6 +1141,14 @@ function M.setup(opts)
         end
       end)
     end, 500)
+  end
+
+  -- One-time welcome hint for new users
+  if not vim.g.sagefs_welcomed then
+    vim.g.sagefs_welcomed = true
+    vim.defer_fn(function()
+      vim.notify("[SageFs] Welcome! Run :SageFsStart to begin, or :checkhealth sagefs for setup guide.", vim.log.levels.INFO)
+    end, 1000)
   end
 
   _G.SageFs = M

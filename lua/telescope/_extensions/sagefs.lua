@@ -66,7 +66,7 @@ local function tests_picker(opts)
   opts = opts or {}
   local sagefs = get_sagefs()
   if not sagefs then
-    vim.notify("SageFs not loaded", vim.log.levels.WARN)
+    vim.notify("SageFs not loaded. Try: :SageFsStart to initialize, or :checkhealth sagefs for setup guide", vim.log.levels.WARN)
     return
   end
 
@@ -130,7 +130,7 @@ local function failures_picker(opts)
   opts = opts or {}
   local sagefs = get_sagefs()
   if not sagefs then
-    vim.notify("SageFs not loaded", vim.log.levels.WARN)
+    vim.notify("SageFs not loaded. Try: :SageFsStart to initialize, or :checkhealth sagefs for setup guide", vim.log.levels.WARN)
     return
   end
 
@@ -175,7 +175,7 @@ local function pick_test_picker(opts)
   if tp.pick_test then
     tp.pick_test(opts)
   else
-    vim.notify("sagefs.nvim: telescope.nvim not found — SageFsPickTest not available", vim.log.levels.WARN)
+    vim.notify("sagefs.nvim: telescope.nvim not found — SageFsPickTest not available.\nInstall: https://github.com/nvim-telescope/telescope.nvim", vim.log.levels.WARN)
   end
 end
 

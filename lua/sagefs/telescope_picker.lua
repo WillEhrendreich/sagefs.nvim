@@ -40,7 +40,7 @@ end
 local has_telescope = pcall(require, "telescope")
 if not has_telescope then
   vim.notify(
-    "sagefs.nvim: telescope.nvim not found — SageFsPickTest not available",
+    "sagefs.nvim: telescope.nvim not found — SageFsPickTest not available.\nInstall: https://github.com/nvim-telescope/telescope.nvim",
     vim.log.levels.WARN
   )
   return M
@@ -69,7 +69,7 @@ local function run_tests_by_pattern(pattern, port)
     timeout = 10,
     callback = function(ok, raw)
       if not ok then
-        vim.notify("SageFs: failed to trigger tests", vim.log.levels.ERROR)
+        vim.notify("SageFs: failed to trigger tests. Try: :SageFsLiveTestStatus for details", vim.log.levels.ERROR)
         return
       end
       local parse_ok, resp = pcall(vim.json.decode, raw)
@@ -139,7 +139,7 @@ function M.pick_test(opts)
   opts = opts or {}
   local ok, sagefs = pcall(require, "sagefs")
   if not ok then
-    vim.notify("SageFs not loaded", vim.log.levels.WARN)
+    vim.notify("SageFs not loaded. Try: :SageFsStart to initialize, or :checkhealth sagefs for setup guide", vim.log.levels.WARN)
     return
   end
 
@@ -233,7 +233,7 @@ function M.pick_test(opts)
             return
           end
         end
-        vim.notify("No source location for: " .. test_name, vim.log.levels.WARN)
+        vim.notify("No source location for: " .. test_name .. ". The test may not have been discovered yet. Try: :SageFsRunTests to refresh", vim.log.levels.WARN)
       end
       map("i", "<C-g>", jump_to_source)
       map("n", "<C-g>", jump_to_source)
