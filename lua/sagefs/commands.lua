@@ -287,8 +287,17 @@ function M.register_commands(plugin, helpers)
       body = req,
       timeout = 10,
       callback = function(ok, raw)
-        if ok then helpers.notify("Tests triggered")
-        else helpers.notify("Failed to trigger tests" .. err_detail(raw), vim.log.levels.ERROR) end
+        if not ok then
+          helpers.notify("Failed to trigger tests" .. err_detail(raw), vim.log.levels.ERROR)
+          return
+        end
+        local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if resp and resp.success then
+          helpers.notify("Tests triggered")
+        else
+          local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
+          helpers.notify("SageFs: test run failed — " .. reason, vim.log.levels.ERROR)
+        end
       end,
     })
   end, { desc = "Run tests (optional pattern filter)", nargs = "?" })
@@ -612,8 +621,17 @@ function M.register_commands(plugin, helpers)
       url = helpers.base_url() .. "/api/live-testing/enable",
       timeout = 5,
       callback = function(ok, raw)
-        if ok then helpers.notify("Live testing enabled")
-        else helpers.notify("Failed to enable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
+        if not ok then
+          helpers.notify("Failed to enable live testing" .. err_detail(raw), vim.log.levels.ERROR)
+          return
+        end
+        local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if resp and resp.success == false then
+          local reason = (resp.message or resp.reason) or "Unknown error"
+          helpers.notify("SageFs: failed to enable live testing — " .. reason, vim.log.levels.ERROR)
+        else
+          helpers.notify("Live testing enabled")
+        end
       end,
     })
   end, { desc = "Enable live testing" })
@@ -624,8 +642,17 @@ function M.register_commands(plugin, helpers)
       url = helpers.base_url() .. "/api/live-testing/disable",
       timeout = 5,
       callback = function(ok, raw)
-        if ok then helpers.notify("Live testing disabled")
-        else helpers.notify("Failed to disable live testing" .. err_detail(raw), vim.log.levels.ERROR) end
+        if not ok then
+          helpers.notify("Failed to disable live testing" .. err_detail(raw), vim.log.levels.ERROR)
+          return
+        end
+        local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if resp and resp.success == false then
+          local reason = (resp.message or resp.reason) or "Unknown error"
+          helpers.notify("SageFs: failed to disable live testing — " .. reason, vim.log.levels.ERROR)
+        else
+          helpers.notify("Live testing disabled")
+        end
       end,
     })
   end, { desc = "Disable live testing" })
