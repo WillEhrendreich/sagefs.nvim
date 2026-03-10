@@ -93,4 +93,14 @@ function M.flame_chart(state, width)
   return lines
 end
 
+--- Format statusline component from server-pushed eval_timeline stats.
+---@param stats table|nil {count, sparkline, p50Ms, p95Ms, p99Ms, meanMs}
+---@return string
+function M.format_statusline(stats)
+  if not stats or (stats.count or 0) == 0 then return "" end
+  local spark = stats.sparkline or ""
+  local p50 = stats.p50Ms and string.format(" p50=%.0fms", stats.p50Ms) or ""
+  return "⚡" .. spark .. p50
+end
+
 return M

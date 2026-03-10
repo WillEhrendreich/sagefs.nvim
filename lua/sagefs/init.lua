@@ -59,6 +59,7 @@ M.session_list = {}
 M.binding_tracker = format.new_binding_tracker()
 M.test_trace = nil
 M.timeline_state = require("sagefs.timeline").new()
+M.timeline_stats = nil  -- Latest server-pushed eval_timeline stats (for statusline)
 M.time_travel_state = require("sagefs.time_travel").new()
 
 -- SSE connection handle (managed by transport.lua)
@@ -223,6 +224,13 @@ local function build_handlers()
     if not data then return end
     M.test_trace = data
     fire_user_event("test_trace", data)
+  end
+  -- eval_timeline: store server-computed stats for statusline + fire event
+  handlers.eval_timeline = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.timeline_stats = data
+    fire_user_event("eval_timeline", data)
   end
 
   return sse_parser.build_dispatch_table(handlers)
@@ -1048,6 +1056,9 @@ function M.statusline()
 
   local cov_sl = coverage.format_statusline(M.coverage_state)
   if cov_sl ~= "" then table.insert(parts, cov_sl) end
+
+  local timeline_sl = require("sagefs.timeline").format_statusline(M.timeline_stats)
+  if timeline_sl ~= "" then table.insert(parts, timeline_sl) end
 
   return table.concat(parts, " │ ")
 end
