@@ -157,6 +157,13 @@ Testing ~
 :SageFsFailures                                         *:SageFsFailures*
     Jump to failing tests.
 
+:SageFsPickTest                                         *:SageFsPickTest*
+    Fuzzy-search all tests by name using telescope.nvim. Each entry shows
+    the test status prefix ([PASS]/[FAIL]/[STALE]/[RUN ]/…) and display
+    name. Sorted by failure priority. Requires telescope.nvim.
+    - <CR>    run the selected test (posts its name as pattern filter)
+    - <C-r>   run all tests matching the current prompt query
+
 :SageFsEnableTesting                                    *:SageFsEnableTesting*
     Enable live testing (tests run automatically on hot reload).
 
@@ -330,6 +337,7 @@ Testing ~
   <leader>rtd  Disable live testing
   <leader>tf   Filter tests by name pattern (prompts for input)
   <leader>tF   Run all tests (clears any active filter)
+  <leader>tp   Fuzzy-pick and run a test (telescope, SageFsPickTest)
 <
 Browse & explore ~
 >

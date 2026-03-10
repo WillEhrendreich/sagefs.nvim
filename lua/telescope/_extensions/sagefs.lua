@@ -170,9 +170,19 @@ local function failures_picker(opts)
   }):find()
 end
 
+local function pick_test_picker(opts)
+  local tp = require("sagefs.telescope_picker")
+  if tp.pick_test then
+    tp.pick_test(opts)
+  else
+    vim.notify("sagefs.nvim: telescope.nvim not found — SageFsPickTest not available", vim.log.levels.WARN)
+  end
+end
+
 return telescope.register_extension({
   exports = {
-    tests = tests_picker,
+    tests    = tests_picker,
     failures = failures_picker,
+    pick_test = pick_test_picker,
   },
 })

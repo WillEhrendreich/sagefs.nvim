@@ -277,6 +277,20 @@ function M.register_commands(plugin, helpers)
     render.show_float(lines, { title = string.format("Failures (%d)", #failed) })
   end, { desc = "Show failing tests (Telescope or float)" })
 
+  vim.api.nvim_create_user_command("SageFsPickTest", function()
+    local has_telescope = pcall(require, "telescope")
+    if has_telescope then
+      vim.cmd("Telescope sagefs pick_test")
+      return
+    end
+    local tp = require("sagefs.telescope_picker")
+    if tp.pick_test then
+      tp.pick_test()
+    else
+      helpers.notify("telescope.nvim required for SageFsPickTest", vim.log.levels.WARN)
+    end
+  end, { desc = "Fuzzy-pick and run a test via telescope" })
+
   vim.api.nvim_create_user_command("SageFsRunTests", function(opts)
     local req = testing.build_run_request({
       pattern = opts.args ~= "" and opts.args or nil,
@@ -1274,6 +1288,8 @@ function M.register_keymaps(plugin, helpers)
       end,
     })
   end, { desc = "SageFs: run all tests (clear filter)", silent = true })
+  vim.keymap.set("n", "<leader>tp", "<cmd>SageFsPickTest<CR>",
+    { desc = "SageFs: pick test (telescope)", silent = true })
 
   -- Browse & explore
   vim.keymap.set("n", "<leader>rb", "<cmd>SageFsBindings<CR>",
