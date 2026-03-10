@@ -33,6 +33,7 @@
 :SageFsStats	sagefs.txt	/*:SageFsStats*
 :SageFsStatus	sagefs.txt	/*:SageFsStatus*
 :SageFsStop	sagefs.txt	/*:SageFsStop*
+:SageFsSwitchProject	sagefs.txt	/*:SageFsSwitchProject*
 :SageFsSwitchSession	sagefs.txt	/*:SageFsSwitchSession*
 :SageFsTestPanel	sagefs.txt	/*:SageFsTestPanel*
 :SageFsTestPolicy	sagefs.txt	/*:SageFsTestPolicy*

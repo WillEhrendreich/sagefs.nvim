@@ -748,11 +748,15 @@ function M.register_commands(plugin, helpers)
         on_exit = function(_, code)
           vim.schedule(function()
             if code ~= 0 then
+              local stderr_output = table.concat(stderr_lines, "\n")
               local err_msg = #stderr_lines > 0
-                and table.concat(stderr_lines, "\n"):sub(1, 200)
+                and stderr_output:sub(1, 500)
                 or ("exit code " .. code)
               plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, err_msg)
-              helpers.notify("SageFs daemon failed: " .. err_msg, vim.log.levels.ERROR)
+              helpers.notify("SageFs daemon failed (exit code " .. code .. "):\n" .. err_msg, vim.log.levels.ERROR)
+              if #stderr_lines > 0 then
+                helpers.notify("Run :SageFsStart to retry, or check daemon output above.", vim.log.levels.INFO)
+              end
             else
               plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
               helpers.notify("SageFs daemon stopped")
@@ -777,6 +781,13 @@ function M.register_commands(plugin, helpers)
 
     if opts.args and opts.args ~= "" then
       try_start(opts.args)
+      return
+    end
+
+    -- Check persisted project choice
+    local saved = vim.g.sagefs_project_path
+    if saved and saved ~= "" then
+      try_start(saved)
       return
     end
 
@@ -826,6 +837,50 @@ function M.register_commands(plugin, helpers)
     plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
     helpers.notify("SageFs daemon stopped")
   end, { desc = "Stop SageFs daemon" })
+
+  vim.api.nvim_create_user_command("SageFsSwitchProject", function()
+    local daemon = require("sagefs.daemon")
+    local cwd = vim.fn.getcwd()
+
+    -- Scan for all project/solution files
+    local all = {}
+    for _, pat in ipairs({ "*.slnx", "*.sln" }) do
+      for _, f in ipairs(vim.fn.glob(cwd .. "/" .. pat, false, true)) do
+        table.insert(all, f)
+      end
+    end
+    local fsproj_files = vim.fn.glob(cwd .. "/**/*.fsproj", false, true)
+    for _, f in ipairs(fsproj_files) do
+      -- Exclude bin/obj
+      if not f:find("[/\\]bin[/\\]") and not f:find("[/\\]obj[/\\]") then
+        table.insert(all, f)
+      end
+    end
+
+    if #all == 0 then
+      helpers.notify("No .slnx, .sln, or .fsproj files found", vim.log.levels.WARN)
+      return
+    end
+
+    local names = vim.tbl_map(function(f) return vim.fn.fnamemodify(f, ":~:.") end, all)
+    vim.ui.select(names, { prompt = "Switch SageFs to project:" }, function(choice, idx)
+      if not choice then return end
+      vim.g.sagefs_project_path = all[idx]
+
+      -- Restart daemon with new project if running
+      if daemon.is_running(plugin.daemon_state) then
+        helpers.stop_sse()
+        vim.fn.jobstop(plugin.daemon_state.job_id)
+        plugin.daemon_state = daemon.mark_stopped(plugin.daemon_state)
+        helpers.notify("Restarting SageFs with " .. choice)
+        vim.defer_fn(function()
+          vim.cmd("SageFsStart " .. all[idx])
+        end, 500)
+      else
+        helpers.notify("Project set to " .. choice .. ". Run :SageFsStart to begin.")
+      end
+    end)
+  end, { desc = "Switch SageFs to a different project" })
 
   -- ─── Coverage Commands ───────────────────────────────────────────────────
 

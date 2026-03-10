@@ -269,6 +269,11 @@ Analysis ~
 :SageFsStop                                             *:SageFsStop*
     Stop the managed SageFs daemon.
 
+:SageFsSwitchProject                                    *:SageFsSwitchProject*
+    Re-scan for .fsproj/.sln/.slnx files and let the user pick which
+    project to use. Stores the choice in |vim.g.sagefs_project_path|
+    and restarts the daemon if it was running.
+
 :SageFsReset                                            *:SageFsReset*
     Soft reset active FSI session.
 
