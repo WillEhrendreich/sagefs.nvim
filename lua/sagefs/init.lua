@@ -62,6 +62,10 @@ M.timeline_state = require("sagefs.timeline").new()
 M.timeline_stats = nil  -- Latest server-pushed eval_timeline stats (for statusline)
 M.time_travel_state = require("sagefs.time_travel").new()
 
+-- Eval watchdog: tracks in-flight evals for SSE disconnect detection
+local eval_in_flight = false
+local eval_watchdog_timer = nil
+
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
 
@@ -342,6 +346,11 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
+      -- Cancel eval watchdog on reconnect
+      if eval_watchdog_timer then
+        pcall(vim.fn.timer_stop, eval_watchdog_timer)
+        eval_watchdog_timer = nil
+      end
       -- Two-phase reconnect (R10): increment generation counter.
       -- Clear testing/coverage/annotations since daemon replays them via SSE.
       -- Preserve warmup_context and hotreload_files (not session-scoped,
@@ -363,6 +372,21 @@ local function start_sse()
     on_disconnect = function(code)
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
+      -- Eval watchdog: if an eval is in flight, notify after 5s
+      if eval_in_flight then
+        if eval_watchdog_timer then
+          pcall(vim.fn.timer_stop, eval_watchdog_timer)
+        end
+        eval_watchdog_timer = vim.fn.timer_start(5000, function()
+          eval_watchdog_timer = nil
+          if eval_in_flight then
+            eval_in_flight = false
+            vim.schedule(function()
+              notify("⚠ Evaluation interrupted: daemon connection lost. Try :SageFsReconnect", vim.log.levels.WARN)
+            end)
+          end
+        end)
+      end
     end,
     on_reconnecting = function(attempt, status)
       M.state = model.set_status(M.state, status)
@@ -425,6 +449,12 @@ local function show_shadow_warnings(buf, cell_id, shadows)
 end
 
 local function handle_result(buf, cell_id, result, end_line)
+  eval_in_flight = false
+  -- Cancel any pending watchdog timer
+  if eval_watchdog_timer then
+    pcall(vim.fn.timer_stop, eval_watchdog_timer)
+    eval_watchdog_timer = nil
+  end
   local meta = { duration_ms = result.duration_ms, end_line = end_line }
   -- Stats: track eval completion
   if result.duration_ms then
@@ -474,6 +504,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
     notify("Cell already evaluating", vim.log.levels.WARN)
     return
   end
+  eval_in_flight = true
   local start_time = vim.uv.hrtime()
   M.state = model.set_cell_state(M.state, cell_id, "running", nil)
   vim.schedule(function()
