@@ -60,6 +60,11 @@ M.binding_tracker = format.new_binding_tracker()
 M.test_trace = nil
 M.timeline_state = require("sagefs.timeline").new()
 M.timeline_stats = nil  -- Latest server-pushed eval_timeline stats (for statusline)
+M.warmup_phase = nil    -- Current warmup phase (for statusline)
+M.warmup_step = 0       -- Current warmup step number
+M.warmup_total = 0      -- Total warmup steps
+M.warmup_message = ""   -- Current warmup detail message
+M.warmup_progress = 0   -- Normalized progress (0.0-1.0)
 M.time_travel_state = require("sagefs.time_travel").new()
 
 -- Eval watchdog: monotonic ID tracks which eval is in flight.
@@ -212,6 +217,12 @@ local function build_handlers()
     local event_type = data.type
     if event_type == "warmup_context_snapshot" then
       M.warmup_context = data.context
+      -- Clear warmup progress state — session is ready
+      M.warmup_phase = nil
+      M.warmup_step = 0
+      M.warmup_total = 0
+      M.warmup_message = ""
+      M.warmup_progress = 0
       fire_user_event("warmup_context", data)
     elseif event_type == "hotreload_snapshot" then
       M.hotreload_files = data.watchedFiles or {}
@@ -1092,6 +1103,20 @@ end
 
 function M.statusline()
   local parts = {}
+
+  -- Show warmup progress when actively warming up
+  if M.warmup_phase and M.warmup_phase ~= "" then
+    local labels = {
+      creating_fsi = "Creating FSI...",
+      scanning_sources = "Scanning sources...",
+      loading_assemblies = "Loading assemblies...",
+      opening_namespaces = string.format("Opening namespaces (%d/%d)...", M.warmup_step, M.warmup_total),
+      finalizing = "Ready!",
+    }
+    local label = labels[M.warmup_phase] or "Warming up..."
+    table.insert(parts, "⏳ SageFs: " .. label)
+    return table.concat(parts, " │ ")
+  end
 
   if M.active_session then
     table.insert(parts, sessions.format_statusline(M.active_session))

@@ -142,6 +142,8 @@ function M.classify_event(event)
     -- Failure narrative context for tests that transitioned Passed→Failed
     failure_narratives = "failure_narratives",
     FailureNarratives = "failure_narratives",
+    -- Warmup progress (phase-by-phase status during session startup)
+    warmup_progress = "warmup_progress",
   }
 
   local action = type_to_action[event.type] or "unknown"

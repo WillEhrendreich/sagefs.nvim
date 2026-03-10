@@ -36,6 +36,7 @@ M.EVENT_NAMES = {
   "SageFsBindingScopeMap",
   "SageFsEvalTimeline",
   "SageFsEvalResult",
+  "SageFsWarmupProgress",
 }
 
 -- ─── Event Type → Pattern Mapping ─────────────────────────────────────────────
@@ -71,6 +72,7 @@ local EVENT_MAP = {
   eval_timeline = "SageFsEvalTimeline",
   eval_result = "SageFsEvalResult",
   failure_narratives = "SageFsFailureNarratives",
+  warmup_progress = "SageFsWarmupProgress",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────
