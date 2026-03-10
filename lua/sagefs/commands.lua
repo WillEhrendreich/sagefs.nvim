@@ -1170,6 +1170,15 @@ function M.register_keymaps(plugin, helpers)
   local smart_eval = helpers.smart_eval(function() plugin.eval_cell() end)
   local smart_eval_sel = helpers.smart_eval(function() plugin.eval_selection() end)
   local hotreload = require("sagefs.hotreload")
+  local transport = require("sagefs.transport")
+  local testing = require("sagefs.testing")
+
+  local function err_detail(raw)
+    if not raw or raw == "" then return "" end
+    local detail = raw:sub(1, 200)
+    if #raw > 200 then detail = detail .. "…" end
+    return ": " .. detail
+  end
 
   -- Alt-Enter keymaps (no prefix, always available)
   vim.keymap.set("n", "<A-CR>", smart_eval,
@@ -1217,6 +1226,54 @@ function M.register_keymaps(plugin, helpers)
     { desc = "SageFs: Enable testing", silent = true })
   vim.keymap.set("n", "<leader>rtd", "<cmd>SageFsDisableTesting<CR>",
     { desc = "SageFs: Disable testing", silent = true })
+  vim.keymap.set("n", "<leader>tf", function()
+    vim.ui.input({ prompt = "Filter tests (pattern): " }, function(pattern)
+      if pattern == nil then return end  -- cancelled
+      local req = testing.build_run_request({ pattern = pattern ~= "" and pattern or nil })
+      transport.http_json({
+        method = "POST",
+        url = helpers.base_url() .. "/api/live-testing/run",
+        body = req,
+        timeout = 10,
+        callback = function(ok, raw)
+          if not ok then
+            helpers.notify("SageFs: test filter failed" .. err_detail(raw), vim.log.levels.ERROR)
+            return
+          end
+          local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+          if resp and resp.success then
+            local label = (pattern ~= "") and ("'" .. pattern .. "'") or "all tests"
+            helpers.notify("SageFs: running tests matching " .. label)
+          else
+            local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
+            helpers.notify("SageFs: test filter failed — " .. reason, vim.log.levels.ERROR)
+          end
+        end,
+      })
+    end)
+  end, { desc = "SageFs: filter tests by name pattern", silent = true })
+  vim.keymap.set("n", "<leader>tF", function()
+    local req = testing.build_run_request({})
+    transport.http_json({
+      method = "POST",
+      url = helpers.base_url() .. "/api/live-testing/run",
+      body = req,
+      timeout = 10,
+      callback = function(ok, raw)
+        if not ok then
+          helpers.notify("SageFs: run all tests failed" .. err_detail(raw), vim.log.levels.ERROR)
+          return
+        end
+        local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if resp and resp.success then
+          helpers.notify("SageFs: running all tests")
+        else
+          local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
+          helpers.notify("SageFs: run all tests failed — " .. reason, vim.log.levels.ERROR)
+        end
+      end,
+    })
+  end, { desc = "SageFs: run all tests (clear filter)", silent = true })
 
   -- Browse & explore
   vim.keymap.set("n", "<leader>rb", "<cmd>SageFsBindings<CR>",

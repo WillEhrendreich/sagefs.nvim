@@ -200,6 +200,34 @@ describe("testing.handle_results_batch [RED]", function()
     state = testing.handle_results_batch(state, { results = {} })
     assert.are.equal(0, testing.test_count(state))
   end)
+
+  it("bumps _version so schedule_render version-skip fires (enriched path, empty entries)", function()
+    -- When a batch carries only summary/freshness updates (no entries), the
+    -- per-entry update_test loop never runs and _version was previously not
+    -- incremented — causing the debounced render to silently skip the repaint.
+    local state = testing.new()
+    local v_before = state._version
+    state = testing.handle_results_batch(state, {
+      Entries = {},
+      Summary = { total = 0, passed = 0, failed = 0, stale = 0, running = 0 },
+    })
+    assert.is_true(state._version > v_before,
+      "_version must increase so schedule_render triggers a gutter sign repaint")
+  end)
+
+  it("bumps _version for enriched path with entries (each entry + final bump)", function()
+    local state = testing.new()
+    local v_before = state._version
+    state = testing.handle_results_batch(state, {
+      Entries = {
+        { TestId = "t1", DisplayName = "t1", FullName = "t1",
+          Status = "Passed", Category = "Unit", CurrentPolicy = "OnEveryChange" },
+      },
+    })
+    assert.is_true(state._version > v_before,
+      "_version must increase after enriched batch so gutter signs repaint")
+    assert.is_not_nil(state.tests["t1"])
+  end)
 end)
 
 describe("testing.handle_tests_discovered [RED]", function()

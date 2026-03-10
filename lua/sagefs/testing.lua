@@ -676,6 +676,10 @@ function M.handle_results_batch(state, data)
     state.generation = M.parse_generation(data.Generation or data.generation) or state.generation
     state.freshness = M.parse_freshness(data.Freshness or data.freshness)
     state.completion = M.parse_completion(data.Completion or data.completion)
+    -- Bump version so schedule_render() version-skip check fires the render.
+    -- update_test already bumps per-entry but an empty batch with summary-only
+    -- changes (e.g. freshness snapshot) would otherwise be silently dropped.
+    state._version = state._version + 1
     return state
   end
 
