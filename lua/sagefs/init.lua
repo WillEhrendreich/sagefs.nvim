@@ -997,6 +997,12 @@ function M.health_check(callback)
     callback = function(ok, raw)
       vim.schedule(function()
         if ok and raw and raw:match('"healthy"') then
+          -- Parse api_version and features from structured health response
+          local ok_parse, parsed = pcall(vim.fn.json_decode, raw)
+          if ok_parse and type(parsed) == "table" then
+            M.state.api_version = parsed.apiVersion
+            M.state.features = parsed.features or {}
+          end
           notify("Connected to SageFs on port " .. M.config.port)
           if callback then callback(true) end
         elseif ok and raw and (raw:match('"error"') or raw:match('"success"')) then
