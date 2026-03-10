@@ -80,6 +80,16 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests, zero failures.**
 
+### New in Latest
+
+- **Telescope source-jump** — Press `<CR>` on any test in the telescope picker to jump directly to its source file and line
+- **Failure narrative floating window** — Press `<C-d>` on a failing test to see a detailed floating window with:
+  - **Summary**: What happened and why
+  - **Time since last pass**: How long ago this test was green
+  - **Causal changes**: Which symbols/files changed that likely caused the failure
+- **test_source_locations SSE** — Daemon pushes test→file/line mappings for instant navigation
+- **failure_narratives SSE** — Daemon pushes enriched failure context for each failing test
+
 ### Fully Implemented & Tested
 
 | Feature | Description |
@@ -185,7 +195,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests,
 }
 ```
 
-## Keymaps
+## ⌨️ Keymaps
 
 All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace.
 
@@ -213,6 +223,11 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `<leader>rtp` | n | Test trace |
 | `<leader>rte` | n | Enable live testing |
 | `<leader>rtd` | n | Disable live testing |
+| **Test panel / Telescope actions** | | |
+| `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
+| `<C-g>` | n | Explicit jump to source (warns if no location) |
+| `<C-r>` | n | Run selected test |
+| `<C-d>` | n | Show failure narrative floating window |
 | **Browse & explore** | | |
 | `<leader>rb` | n | Bindings |
 | `<leader>rd` | n | Eval diff |
@@ -286,6 +301,63 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsCellStyle [style]` | Set or cycle cell highlight style (off/minimal/normal/full) |
 | `:SageFsBindings` | Show FSI binding state |
 | `:SageFsEvalLine` | Evaluate current line only |
+
+## 🎨 Understanding What You See
+
+### Gutter Signs
+
+| Sign | Meaning |
+|------|---------|
+| ✓ (green) | Test passing |
+| ✗ (red) | Test failing |
+| ○ (gray) | No coverage |
+| ▐ (green) | Branch coverage: fully covered |
+| ◐ (yellow) | Branch coverage: partially covered |
+| ▌ (red) | Branch coverage: uncovered |
+
+### Inline Results
+
+After evaluating with `<Alt-Enter>`, results appear as virtual text to the right of your code. Multi-line results render as virtual lines below the `;;` boundary.
+
+### Telescope Picker
+
+- `<CR>` — Jump to test source location (falls back to run if no source mapping)
+- `<C-g>` — Explicit jump to source (warns if no location available)
+- `<C-r>` — Run the selected test
+- `<C-d>` — Show failure narrative floating window (on failing tests)
+
+### Floating Narrative Window
+
+When pressing `<C-d>` on a failing test, you'll see:
+
+```
+╭─ Failure Narrative ──────────────────╮
+│ Summary: Expected 42 but got 41      │
+│ Time since last pass: 3 minutes ago  │
+│ Causal changes:                      │
+│   • MyModule.calculate (changed)     │
+│   • src/Core.fs (modified)           │
+╰──────────────────────────────────────╯
+```
+
+### Display Density
+
+Cycle with `<leader>rD`:
+- **Minimal** — signs only, cleanest view
+- **Normal** — signs + CodeLens + inline results
+- **Full** — everything + branch EOL annotations
+
+## 🏥 Health Check
+
+Run `:checkhealth sagefs` to verify:
+
+- ✅ SageFs CLI installed and on PATH
+- ✅ Daemon running and reachable
+- ✅ SSE connection active
+- ✅ API version compatible
+- ✅ Live testing enabled
+- ✅ Tree-sitter F# parser available
+- ✅ curl available on PATH
 
 ## Architecture
 
