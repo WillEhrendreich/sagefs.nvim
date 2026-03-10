@@ -1,0 +1,8 @@
+{
+  "name": "sagefs-snippets",
+  "contributes": {
+    "snippets": [
+      { "language": "fsharp", "path": "./fsharp.json" }
+    ]
+  }
+}

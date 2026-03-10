@@ -302,6 +302,30 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsBindings` | Show FSI binding state |
 | `:SageFsEvalLine` | Evaluate current line only |
 
+## ✂️ Snippets
+
+When [LuaSnip](https://github.com/L3MON4D3/LuaSnip) is installed, sagefs.nvim registers F# snippets automatically. Snippets are loaded lazily for `fsharp` buffers.
+
+| Prefix | Description |
+|--------|-------------|
+| `testlist` | Expecto `testList` with a `testCase` |
+| `testcase` | Expecto `testCase` |
+| `testprop` | FsCheck property-based test |
+| `expeq` | `Expect.equal` assertion (Expecto.Flip) |
+| `exptrue` | `Expect.isTrue` assertion (Expecto.Flip) |
+| `;;` | FSI eval separator |
+| `matchresult` | Match on `Result` type |
+| `pipemap` | Pipeline with `map` |
+| `runtests` | Run Expecto tests in SageFs |
+
+To disable snippets, set `snippets = false` in your config:
+
+```lua
+opts = {
+  snippets = false,
+}
+```
+
 ## 🎨 Understanding What You See
 
 ### Gutter Signs

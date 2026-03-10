@@ -1274,6 +1274,16 @@ function M.setup(opts)
   commands.register_autocmds(M, helpers)
   hotreload.setup(M.config.dashboard_port)
 
+  -- Load F# snippets when LuaSnip is available (opt-out via config.snippets = false)
+  if M.config.snippets ~= false then
+    local ok, loader = pcall(require, "luasnip.loaders.from_vscode")
+    if ok then
+      local source = debug.getinfo(1, "S").source:sub(2)
+      local plugin_root = vim.fn.fnamemodify(source, ":h:h:h")
+      loader.lazy_load({ paths = { plugin_root .. "/snippets" } })
+    end
+  end
+
   if M.config.auto_connect then
     vim.defer_fn(function()
       M.health_check(function(healthy)

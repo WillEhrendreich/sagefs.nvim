@@ -1,0 +1,73 @@
+{
+  "Expecto testList": {
+    "prefix": "testlist",
+    "body": [
+      "let ${1:tests} = testList \"${2:description}\" [",
+      "  testCase \"${3:case name}\" <| fun _ ->",
+      "    $0",
+      "]"
+    ],
+    "description": "Expecto testList with a testCase"
+  },
+  "Expecto testCase": {
+    "prefix": "testcase",
+    "body": [
+      "testCase \"${1:description}\" <| fun _ ->",
+      "  $0"
+    ],
+    "description": "Expecto testCase"
+  },
+  "Expecto testProp": {
+    "prefix": "testprop",
+    "body": [
+      "testProp \"${1:description}\" <| fun (${2:x}: ${3:int}) ->",
+      "  $0"
+    ],
+    "description": "FsCheck property-based test"
+  },
+  "Expect.equal": {
+    "prefix": "expeq",
+    "body": [
+      "${1:actual} |> Expect.equal \"${2:message}\" ${3:expected}"
+    ],
+    "description": "Expecto.Flip Expect.equal assertion"
+  },
+  "Expect.isTrue": {
+    "prefix": "exptrue",
+    "body": [
+      "${1:actual} |> Expect.isTrue \"${2:message}\""
+    ],
+    "description": "Expecto.Flip Expect.isTrue assertion"
+  },
+  "SageFs eval separator": {
+    "prefix": ";;",
+    "body": [
+      ";;",
+      "$0"
+    ],
+    "description": "FSI eval separator"
+  },
+  "Result match": {
+    "prefix": "matchresult",
+    "body": [
+      "match ${1:result} with",
+      "| Ok ${2:value} -> $0",
+      "| Error ${3:err} -> failwith (sprintf \"Error: %A\" ${3:err})"
+    ],
+    "description": "Match on Result type"
+  },
+  "Pipeline map": {
+    "prefix": "pipemap",
+    "body": [
+      "|> ${1:List}.map (fun ${2:x} -> $0)"
+    ],
+    "description": "Pipeline with map"
+  },
+  "Run Expecto tests": {
+    "prefix": "runtests",
+    "body": [
+      "Expecto.Tests.runTestsWithCLIArgs [] [||] ${1:tests};;"
+    ],
+    "description": "Run Expecto tests in SageFs"
+  }
+}
