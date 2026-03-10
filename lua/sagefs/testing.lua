@@ -87,6 +87,7 @@ function M.new()
     completion = nil,    -- "Complete" | "Partial" | "Superseded" | nil
     _file_index = {},    -- file → { testId → true } (O(1) file lookup, maintained incrementally)
     _version = 0,        -- mutation counter for render skip (FDA short-circuit / Nu ViewVersion)
+    failure_narratives = {},  -- testId → {TestId, Summary, TimeSinceLastPass, CausalChanges}
   }
 end
 
@@ -845,6 +846,24 @@ end
 function M.handle_test_summary(state, data)
   if not data then return state end
   state.summary = M.normalize_summary(data)
+  return state
+end
+
+--- Handle failure_narratives SSE event.
+--- Caches enriched failure context keyed by TestId for display in test panel.
+---@param state table
+---@param data table[] array of {TestId, Summary, TimeSinceLastPass, CausalChanges}
+---@return table state
+function M.handle_failure_narratives(state, data)
+  if not data then return state end
+  local items = type(data) == "table" and data or {}
+  local by_id = state.failure_narratives or {}
+  for _, narrative in ipairs(items) do
+    local id = narrative.TestId or narrative.testId
+    if id then by_id[id] = narrative end
+  end
+  state.failure_narratives = by_id
+  state._version = (state._version or 0) + 1
   return state
 end
 

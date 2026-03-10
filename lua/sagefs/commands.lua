@@ -525,6 +525,44 @@ function M.register_commands(plugin, helpers)
     vim.keymap.set("n", "<Tab>", function()
       set_panel_scope(testing.next_scope(test_panel_scope_kind))
     end, { buffer = test_panel_buf, desc = "Cycle filter scope" })
+    -- Buffer-local <C-d> to show failure narrative in floating window
+    vim.keymap.set("n", "<C-d>", function()
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      local entry = test_panel_entries[row]
+      if not entry then return end
+      local narratives = plugin.testing_state.failure_narratives or {}
+      local narrative = narratives[entry.testId]
+      if not narrative then
+        vim.notify("No failure narrative for: " .. (entry.displayName or ""), vim.log.levels.INFO)
+        return
+      end
+      local lines = {}
+      table.insert(lines, "📋 " .. (narrative.Summary or ""))
+      if narrative.TimeSinceLastPass and narrative.TimeSinceLastPass ~= "" then
+        table.insert(lines, "⏱️  Last passed: " .. narrative.TimeSinceLastPass .. " ago")
+      end
+      if narrative.CausalChanges and #narrative.CausalChanges > 0 then
+        table.insert(lines, "")
+        table.insert(lines, "Causal changes:")
+        for _, change in ipairs(narrative.CausalChanges) do
+          local icon = (change.Kind == "symbol" or change.kind == "symbol") and "λ" or "📄"
+          table.insert(lines, "  " .. icon .. " " .. (change.Name or change.name or ""))
+        end
+      end
+      local max_width = 40
+      for _, l in ipairs(lines) do
+        if #l + 4 > max_width then max_width = #l + 4 end
+      end
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_open_win(buf, true, {
+        relative = "cursor", row = 1, col = 0,
+        width = max_width,
+        height = #lines,
+        style = "minimal", border = "rounded",
+      })
+      vim.keymap.set("n", "q", function() vim.api.nvim_win_close(0, true) end, { buffer = buf })
+    end, { buffer = test_panel_buf, desc = "Show failure narrative" })
     -- Open in vertical split
     vim.cmd("botright vsplit")
     test_panel_win = vim.api.nvim_get_current_win()
@@ -542,7 +580,7 @@ function M.register_commands(plugin, helpers)
 
   -- Auto-update panel on test events
   local panel_group = vim.api.nvim_create_augroup("SageFsTestPanel", { clear = true })
-  for _, pattern in ipairs({ "SageFsTestResultsBatch", "SageFsTestRunCompleted", "SageFsTestsDiscovered", "SageFsTestState" }) do
+  for _, pattern in ipairs({ "SageFsTestResultsBatch", "SageFsTestRunCompleted", "SageFsTestsDiscovered", "SageFsTestState", "SageFsFailureNarratives" }) do
     vim.api.nvim_create_autocmd("User", {
       group = panel_group,
       pattern = pattern,

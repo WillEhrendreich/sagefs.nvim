@@ -139,6 +139,9 @@ function M.classify_event(event)
     eval_timeline = "eval_timeline",
     -- Inline eval result decorations (Sprint 7+ daemon)
     eval_result = "eval_result",
+    -- Failure narrative context for tests that transitioned Passed→Failed
+    failure_narratives = "failure_narratives",
+    FailureNarratives = "failure_narratives",
   }
 
   local action = type_to_action[event.type] or "unknown"

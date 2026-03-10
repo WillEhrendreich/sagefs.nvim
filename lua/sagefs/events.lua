@@ -70,6 +70,7 @@ local EVENT_MAP = {
   binding_scope_map = "SageFsBindingScopeMap",
   eval_timeline = "SageFsEvalTimeline",
   eval_result = "SageFsEvalResult",
+  failure_narratives = "SageFsFailureNarratives",
 }
 
 -- ─── Build Autocmd Data ───────────────────────────────────────────────────────

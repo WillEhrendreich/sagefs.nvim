@@ -146,6 +146,8 @@ local SSE_HANDLER_DEFS = {
   { action = "eval_timeline", event = "eval_timeline" },
   -- Inline eval result decorations — fire event so plugins can display ghost text
   { action = "eval_result", event = "eval_result" },
+  -- Failure narrative context for tests that transitioned Passed→Failed
+  { action = "failure_narratives", fn = "handle_failure_narratives", target = "testing", event = "failure_narratives" },
 }
 
 -- State target → { state_key, module }
