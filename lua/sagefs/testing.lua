@@ -79,6 +79,7 @@ function M.new()
     policies = {},   -- category → policy string
     summary = { total = 0, passed = 0, failed = 0, stale = 0, running = 0, disabled = 0 },
     locations = {},  -- file → [{testId, file, line}]
+    source_locations = {},  -- testName → {CellId, TestName, FilePath, StartLine, EndLine}
     providers = {},  -- [string]
     run_phase = "Idle",  -- "Idle" | "Running" | "RunningButEdited"
     generation = 0,      -- current RunGeneration int
@@ -784,6 +785,32 @@ function M.handle_test_locations(state, data)
     end
   end
   state.locations = by_file
+  return state
+end
+
+--- Handle test_source_locations SSE event (daemon-resolved source locations).
+--- Caches by TestName for telescope lookup and by FilePath for panel/gutter.
+---@param state table
+---@param data table {Locations: [{CellId: int, TestName: string, FilePath: string, StartLine: int, EndLine: int}]}
+---@return table
+function M.handle_source_locations(state, data)
+  if not data then return state end
+  local locations = data.Locations or data.locations
+  if not locations then return state end
+  local by_name = {}
+  local by_file = {}
+  for _, loc in ipairs(locations) do
+    local name = loc.TestName or loc.testName
+    local file = loc.FilePath or loc.filePath
+    if name then by_name[name] = loc end
+    if file then
+      if not by_file[file] then by_file[file] = {} end
+      table.insert(by_file[file], loc)
+    end
+  end
+  state.source_locations = by_name
+  state.locations = by_file
+  state._version = state._version + 1
   return state
 end
 

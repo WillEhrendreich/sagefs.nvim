@@ -1892,3 +1892,82 @@ describe("testing.filter_by_covering_file", function()
     assert.are.equal("t1", results[1].testId)
   end)
 end)
+
+-- ─── handle_source_locations ─────────────────────────────────────────────────
+
+describe("testing.handle_source_locations", function()
+  it("populates source_locations by TestName and locations by FilePath", function()
+    local s = testing.new()
+    s = testing.handle_source_locations(s, {
+      Locations = {
+        { CellId = 1, TestName = "test A", FilePath = "/src/A.fs", StartLine = 10, EndLine = 15 },
+        { CellId = 2, TestName = "test B", FilePath = "/src/A.fs", StartLine = 20, EndLine = 25 },
+        { CellId = 3, TestName = "test C", FilePath = "/src/B.fs", StartLine = 5, EndLine = 8 },
+      },
+    })
+    -- by_name lookup
+    assert.is_not_nil(s.source_locations["test A"])
+    assert.are.equal("/src/A.fs", s.source_locations["test A"].FilePath)
+    assert.are.equal(10, s.source_locations["test A"].StartLine)
+    assert.is_not_nil(s.source_locations["test B"])
+    assert.is_not_nil(s.source_locations["test C"])
+    -- by_file lookup
+    assert.are.equal(2, #s.locations["/src/A.fs"])
+    assert.are.equal(1, #s.locations["/src/B.fs"])
+  end)
+
+  it("returns state unchanged for nil data", function()
+    local s = testing.new()
+    local v = s._version
+    local s2 = testing.handle_source_locations(s, nil)
+    assert.are.same({}, s2.source_locations)
+    assert.are.equal(v, s2._version)
+  end)
+
+  it("clears cache when Locations is empty array", function()
+    local s = testing.new()
+    s = testing.handle_source_locations(s, {
+      Locations = {
+        { CellId = 1, TestName = "test A", FilePath = "/src/A.fs", StartLine = 10, EndLine = 15 },
+      },
+    })
+    assert.is_not_nil(s.source_locations["test A"])
+    s = testing.handle_source_locations(s, { Locations = {} })
+    assert.are.same({}, s.source_locations)
+    assert.are.same({}, s.locations)
+  end)
+
+  it("increments _version on each call", function()
+    local s = testing.new()
+    local v0 = s._version
+    s = testing.handle_source_locations(s, {
+      Locations = {
+        { CellId = 1, TestName = "test A", FilePath = "/src/A.fs", StartLine = 10, EndLine = 15 },
+      },
+    })
+    assert.are.equal(v0 + 1, s._version)
+    s = testing.handle_source_locations(s, { Locations = {} })
+    assert.are.equal(v0 + 2, s._version)
+  end)
+
+  it("handles camelCase field names", function()
+    local s = testing.new()
+    s = testing.handle_source_locations(s, {
+      locations = {
+        { cellId = 1, testName = "test D", filePath = "/src/D.fs", startLine = 42, endLine = 50 },
+      },
+    })
+    assert.is_not_nil(s.source_locations["test D"])
+    assert.are.equal("/src/D.fs", s.source_locations["test D"].filePath)
+    assert.are.equal(42, s.source_locations["test D"].startLine)
+    assert.are.equal(1, #s.locations["/src/D.fs"])
+  end)
+
+  it("returns state unchanged when Locations key missing", function()
+    local s = testing.new()
+    local v = s._version
+    local s2 = testing.handle_source_locations(s, { something_else = true })
+    assert.are.same({}, s2.source_locations)
+    assert.are.equal(v, s2._version)
+  end)
+end)

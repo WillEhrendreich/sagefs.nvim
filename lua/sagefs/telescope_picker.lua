@@ -1,8 +1,9 @@
 -- sagefs/telescope_picker.lua — SageFsPickTest: fuzzy telescope picker over live test status
 -- Allows filtering tests by name and running selected test via POST /api/live-testing/run
 --
--- <CR>    run selected test by display name
+-- <CR>    jump to source if available, otherwise run selected test
 -- <C-r>   run all tests matching the current prompt query
+-- <C-g>   jump to source (no fallback)
 
 local M = {}
 
@@ -130,8 +131,9 @@ end
 
 --- SageFsPickTest: fuzzy telescope picker over live test status.
 --- Keybindings inside picker:
----   <CR>    run selected test (posts its display name as filter)
+---   <CR>    jump to source if available, otherwise run selected test
 ---   <C-r>   run all tests matching the current prompt query
+---   <C-g>   jump to source (no fallback)
 ---@param opts table|nil Telescope opts
 function M.pick_test(opts)
   opts = opts or {}
@@ -189,14 +191,52 @@ function M.pick_test(opts)
     sorter    = conf.generic_sorter(opts),
     previewer = make_test_previewer(),
     attach_mappings = function(prompt_bufnr, map)
-      -- <CR>: run selected test by display name
+      -- <CR>: jump to source if available, otherwise run selected test
       actions.select_default:replace(function()
         actions.close(prompt_bufnr)
         local entry = action_state.get_selected_entry()
-        if entry and entry.value then
-          run_tests_by_pattern(entry.value.displayName or entry.value.fullName or "", port)
+        if not entry or not entry.value then return end
+        local test_name = entry.value.fullName or entry.value.displayName or ""
+        local locs = sagefs.testing_state and sagefs.testing_state.source_locations or {}
+        local loc = locs[test_name]
+        if loc then
+          local file = loc.FilePath or loc.filePath
+          local line = loc.StartLine or loc.startLine
+          if file and file ~= "" then
+            vim.cmd.edit(file)
+            if line then
+              vim.api.nvim_win_set_cursor(0, { line, 0 })
+              vim.cmd("normal! zz")
+            end
+            return
+          end
         end
+        run_tests_by_pattern(entry.value.displayName or entry.value.fullName or "", port)
       end)
+      -- <C-g>: jump to source (no fallback)
+      local function jump_to_source()
+        local entry = action_state.get_selected_entry()
+        if not entry or not entry.value then return end
+        actions.close(prompt_bufnr)
+        local test_name = entry.value.fullName or entry.value.displayName or ""
+        local locs = sagefs.testing_state and sagefs.testing_state.source_locations or {}
+        local loc = locs[test_name]
+        if loc then
+          local file = loc.FilePath or loc.filePath
+          local line = loc.StartLine or loc.startLine
+          if file and file ~= "" then
+            vim.cmd.edit(file)
+            if line then
+              vim.api.nvim_win_set_cursor(0, { line, 0 })
+              vim.cmd("normal! zz")
+            end
+            return
+          end
+        end
+        vim.notify("No source location for: " .. test_name, vim.log.levels.WARN)
+      end
+      map("i", "<C-g>", jump_to_source)
+      map("n", "<C-g>", jump_to_source)
       -- <C-r>: run tests matching current prompt query
       map("i", "<C-r>", function()
         local query = action_state.get_current_line()

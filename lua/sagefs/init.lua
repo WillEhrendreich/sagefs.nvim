@@ -126,6 +126,7 @@ local SSE_HANDLER_DEFS = {
   { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed" },
   { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing" },
   { action = "test_locations_detected", fn = "handle_test_locations", target = "testing" },
+  { action = "test_source_locations", fn = "handle_source_locations", target = "testing", event = "test_source_locations" },
   { action = "providers_detected", fn = "handle_providers_detected", target = "testing", event = "providers_detected" },
   { action = "test_summary", fn = "handle_test_summary", target = "testing", session_scoped = true, event = "test_summary" },
   -- Coverage

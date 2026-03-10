@@ -115,6 +115,9 @@ function M.classify_event(event)
     live_testing_disabled = "live_testing_disabled",
     providers_detected = "providers_detected",
     test_cycle_timing_recorded = "test_cycle_timing_recorded",
+    -- Source locations (daemon-resolved test → file mapping)
+    test_source_locations = "test_source_locations",
+    TestSourceLocations = "test_source_locations",
     -- Coverage
     CoverageUpdated = "coverage_updated",
     CoverageCleared = "coverage_cleared",
