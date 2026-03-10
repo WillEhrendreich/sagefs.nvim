@@ -1081,11 +1081,22 @@ function M.health_check(callback)
     callback = function(ok, raw)
       vim.schedule(function()
         if ok and raw and raw:match('"healthy"') then
-          -- Parse api_version and features from structured health response
+          -- Parse api_version, features, and typed error from structured health response
           local ok_parse, parsed = pcall(vim.fn.json_decode, raw)
           if ok_parse and type(parsed) == "table" then
             M.state.api_version = parsed.apiVersion
             M.state.features = parsed.features or {}
+            -- Show typed error message when daemon reports unhealthy
+            if parsed.error and type(parsed.error) == "table" then
+              local err = parsed.error
+              local msg = err.message or "Unknown error"
+              local action = err.suggestedAction or ""
+              local detail = action ~= "" and (msg .. " → " .. action) or msg
+              notify(detail, vim.log.levels.WARN)
+              M.state.last_error = err
+            else
+              M.state.last_error = nil
+            end
           end
           notify("Connected to SageFs on port " .. M.config.port)
           if callback then callback(true) end
