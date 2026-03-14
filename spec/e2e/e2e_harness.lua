@@ -285,8 +285,14 @@ function H.wait_for_health(port, timeout_ms)
     port, timeout_ms / 1000))
 
   local ok = vim.wait(timeout_ms, function()
-    local resp = H.http_get("/health", port)
-    return resp.status == 200
+    for _, endpoint in ipairs({ "/health", "/version" }) do
+      local resp = H.http_get(endpoint, port)
+      if resp.status == 200 or resp.status == 204 then
+        return true
+      end
+    end
+
+    return false
   end, H.POLL_INTERVAL_MS)
 
   if not ok then

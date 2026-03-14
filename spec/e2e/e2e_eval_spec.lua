@@ -22,6 +22,14 @@ H.run_suite({
       end)
     end)
 
+    H.describe("version endpoint", function()
+      H.it("returns 200 with apiVersion", function()
+        local resp = H.http_get("/version", handle.port)
+        H.assert_eq(200, resp.status, "version status")
+        H.assert_contains(resp.body, "\"apiVersion\"", "version body contains apiVersion")
+      end)
+    end)
+
     H.describe("POST /exec", function()
       H.it("evaluates simple expression", function()
         local resp = H.eval("let x = 42;;", handle.port)

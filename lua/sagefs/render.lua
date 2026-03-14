@@ -70,7 +70,7 @@ function M.render_cell(buf, boundary_line, cell_id, state)
   local ns_id = M.get_namespace()
   local cell = model.get_cell_state(state, cell_id)
   local render = format.build_render_options(cell, cell_id)
-  if not render then return end
+  if not render then return nil end
 
   local virt_text = {}
   if render.inline then
@@ -99,6 +99,8 @@ function M.render_cell(buf, boundary_line, cell_id, state)
       virt_lines_above = false,
     })
   end
+
+  return render
 end
 
 function M.render_all(buf, state)
@@ -109,13 +111,17 @@ function M.render_all(buf, state)
   local all_cells = cells.find_all_cells_auto(buf, lines)
 
   for _, cell in ipairs(all_cells) do
-    M.render_cell(buf, cell.end_line, cell.id, state)
+    local render = M.render_cell(buf, cell.end_line, cell.id, state)
 
     local cell_state = model.get_cell_state(state, cell.id)
-    if cell_state.status == "idle" or cell_state.status == "stale" then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, cell.end_line - 1, 0, {
+    local codelens =
+      render and render.codelens
+      or (cell_state.status == "idle" and { text = "▶ Eval", hl = "SageFsCodeLensDetected" })
+
+    if codelens then
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, cell.start_line - 1, 0, {
         id = cell.id * 1000 + 2,
-        virt_lines = { { { "▶ Eval", "SageFsRunning" } } },
+        virt_lines = { { { codelens.text, codelens.hl or "SageFsCodeLensDetected" } } },
         virt_lines_above = true,
       })
     end

@@ -301,6 +301,20 @@ describe("format.gutter_sign [exhaustive]", function()
   end)
 end)
 
+describe("format.build_render_options", function()
+  it("gives stale codelens the stale highlight group", function()
+    local opts = format.build_render_options({
+      status = "stale",
+      output = "old value",
+    }, 6)
+
+    assert.is_table(opts)
+    assert.is_table(opts.codelens)
+    assert.are.equal("▶ Eval", opts.codelens.text)
+    assert.are.equal("SageFsCodeLensStale", opts.codelens.hl)
+  end)
+end)
+
 -- ─── format_status_report ─────────────────────────────────────────────────────
 
 describe("format_status_report", function()

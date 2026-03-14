@@ -186,7 +186,7 @@ function M.build_render_options(cell, cell_id)
   }
 
   if is_stale then
-    opts.codelens = { text = "▶ Eval" }
+    opts.codelens = { text = "▶ Eval", hl = "SageFsCodeLensStale" }
   end
 
   return opts
