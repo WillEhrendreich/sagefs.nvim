@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 29 event names", function()
-      assert.are.equal(34, #events.EVENT_NAMES)
+    it("contains 36 event names", function()
+      assert.are.equal(36, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -36,6 +36,16 @@ describe("events", function()
       assert.is_true(has_passed)
       assert.is_true(has_failed)
     end)
+
+    it("contains source location and failure narrative events", function()
+      local has_source_locations, has_failure_narratives = false, false
+      for _, name in ipairs(events.EVENT_NAMES) do
+        if name == "SageFsTestSourceLocations" then has_source_locations = true end
+        if name == "SageFsFailureNarratives" then has_failure_narratives = true end
+      end
+      assert.is_true(has_source_locations)
+      assert.is_true(has_failure_narratives)
+    end)
   end)
 
   -- ─── build_autocmd_data ──────────────────────────────────────────────────
@@ -53,7 +63,7 @@ describe("events", function()
       assert.is_nil(result)
     end)
 
-    it("maps all 32 event types correctly (including Phase 7C)", function()
+    it("maps all supported event types correctly", function()
       local mappings = {
         { "eval_completed", "SageFsEvalCompleted" },
         { "test_passed", "SageFsTestPassed" },
@@ -61,14 +71,15 @@ describe("events", function()
         { "test_results_batch", "SageFsTestResultsBatch" },
         { "test_run_started", "SageFsTestRunStarted" },
         { "test_run_completed", "SageFsTestRunCompleted" },
+        { "test_state", "SageFsTestState" },
+        { "tests_discovered", "SageFsTestsDiscovered" },
+        { "test_source_locations", "SageFsTestSourceLocations" },
         { "connected", "SageFsConnected" },
         { "disconnected", "SageFsDisconnected" },
         { "coverage_updated", "SageFsCoverageUpdated" },
         { "hot_reload_triggered", "SageFsHotReloadTriggered" },
         { "warmup_context", "SageFsWarmupContext" },
         { "hotreload_snapshot", "SageFsHotReloadSnapshot" },
-        { "test_state", "SageFsTestState" },
-        { "tests_discovered", "SageFsTestsDiscovered" },
         { "providers_detected", "SageFsProvidersDetected" },
         { "affected_tests_computed", "SageFsAffectedTestsComputed" },
         { "test_cycle_timing_recorded", "SageFsTestCycleTimingRecorded" },
@@ -83,6 +94,9 @@ describe("events", function()
         { "cell_dependencies", "SageFsCellDependencies" },
         { "binding_scope_map", "SageFsBindingScopeMap" },
         { "eval_timeline", "SageFsEvalTimeline" },
+        { "eval_result", "SageFsEvalResult" },
+        { "failure_narratives", "SageFsFailureNarratives" },
+        { "warmup_progress", "SageFsWarmupProgress" },
         -- Phase 7C: lifecycle events
         { "session_faulted", "SageFsSessionFaulted" },
         { "warmup_completed", "SageFsWarmupCompleted" },

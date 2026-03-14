@@ -3,6 +3,7 @@
 -- testing, SSE, configuration, and optional dependencies.
 
 local M = {}
+local discovery = require("sagefs.daemon_discovery")
 
 --- Run SageFs CLI and extract version string, or nil on failure
 local function get_cli_version()
@@ -12,12 +13,51 @@ local function get_cli_version()
 end
 
 --- Attempt a simple HTTP health check against the daemon
-local function check_daemon_port(port)
+local function run_curl_probe(port, endpoint)
   local ok, result = pcall(vim.fn.system,
-    string.format("curl -s -o /dev/null -w \"%%{http_code}\" --connect-timeout 2 http://localhost:%d/health", port))
-  if not ok or vim.v.shell_error ~= 0 then return false, nil end
-  local code = vim.trim(result or "")
-  return code == "200" or code == "204", code
+    string.format("curl -s -w \"\\n%%{http_code}\" --connect-timeout 2 http://localhost:%d%s", port, endpoint))
+
+  if not ok or vim.v.shell_error ~= 0 then
+    return false, { endpoint = endpoint, raw = nil, code = nil }
+  end
+
+  local lines = vim.split(result or "", "\n", { plain = true })
+  local code = vim.trim(table.remove(lines) or "")
+  local raw = table.concat(lines, "\n")
+
+  return true, {
+    endpoint = endpoint,
+    raw = raw ~= "" and raw or nil,
+    code = code ~= "" and code or nil,
+  }
+end
+
+local function check_daemon_port(port)
+  local result = nil
+
+  discovery.probe_contract(function(endpoint, done)
+    local ok, probe = run_curl_probe(port, endpoint)
+    if not ok then
+      done(false, probe)
+      return
+    end
+
+    if not discovery.is_reachable_http_code(probe.code) then
+      done(false, probe)
+      return
+    end
+
+    done(true, probe)
+  end, function(ok, probe)
+    result = { ok = ok, probe = probe }
+  end)
+
+  local probe = result and result.probe or nil
+  if result and result.ok and probe then
+    return true, probe.code, probe.endpoint
+  end
+
+  return false, probe and probe.code or nil, nil
 end
 
 function M.check()
@@ -60,9 +100,10 @@ function M.check()
 
   -- ── 4. Daemon connectivity ──────────────────────────────────────────────
   local port = cfg.port or 37749
-  local daemon_ok, http_code = check_daemon_port(port)
+  local daemon_ok, http_code, endpoint = check_daemon_port(port)
   if daemon_ok then
-    vim.health.ok("Daemon reachable on port " .. port)
+    local suffix = endpoint == "/version" and " via /version fallback" or ""
+    vim.health.ok("Daemon reachable on port " .. port .. suffix)
   else
     local detail = http_code and (" (HTTP " .. http_code .. ")") or ""
     vim.health.warn("Daemon not reachable on port " .. port .. detail, {

@@ -9,37 +9,45 @@ require("spec.helper")
 local events = require("sagefs.events")
 local format = require("sagefs.format")
 
--- ─── Finding #2: 10 fire_user_event types missing from EVENT_MAP ────────────
+-- ─── Finding #2: fire_user_event contract must stay mapped in events.lua ──────
 
 describe("events.build_autocmd_data — completeness", function()
-  -- These are ALL event types fired by init.lua via fire_user_event().
-  -- Every one MUST have an EVENT_MAP entry so downstream User autocmds fire.
+  -- These are the event types currently emitted by init.lua via fire_user_event().
+  -- Every emitted event MUST have an EVENT_MAP entry so downstream User autocmds fire.
+  -- Keep this list in sync with direct fire_user_event() calls and SSE_HANDLER_DEFS.event.
   local all_fired_event_types = {
-    "eval_completed",
-    "test_passed",
-    "test_failed",
     "test_results_batch",
     "test_run_started",
     "test_run_completed",
-    "test_state",
-    "tests_discovered",
-    "connected",
-    "disconnected",
-    "coverage_updated",
-    "hot_reload_triggered",
-    "warmup_context",
-    "hotreload_snapshot",
-    -- These 10 are fired by init.lua but MISSING from EVENT_MAP:
+    "test_source_locations",
     "providers_detected",
+    "test_summary",
+    "coverage_updated",
+    "file_annotations",
     "affected_tests_computed",
     "test_cycle_timing_recorded",
     "run_tests_requested",
-    "test_summary",
-    "file_annotations",
+    "eval_completed",
+    "hot_reload_triggered",
+    "eval_diff",
+    "cell_dependencies",
+    "binding_scope_map",
+    "eval_timeline",
+    "eval_result",
+    "failure_narratives",
+    "warmup_context",
+    "hotreload_snapshot",
     "bindings_snapshot",
     "test_trace",
-    "reconnecting",
+    "warmup_progress",
+    "session_faulted",
+    "warmup_completed",
+    "file_reloaded",
+    "system_alarm",
+    "connected",
     "test_recovery_needed",
+    "disconnected",
+    "reconnecting",
   }
 
   for _, event_type in ipairs(all_fired_event_types) do
@@ -53,9 +61,8 @@ describe("events.build_autocmd_data — completeness", function()
 end)
 
 describe("events.EVENT_NAMES — completeness", function()
-  it("contains entries for all 28 event types", function()
-    -- 14 original + 10 new + 4 hooks + 1 = 29, +4 Phase 7C = 34
-    assert.are.equal(34, #events.EVENT_NAMES)
+  it("contains entries for all 36 supported autocmd events", function()
+    assert.are.equal(36, #events.EVENT_NAMES)
   end)
 end)
 

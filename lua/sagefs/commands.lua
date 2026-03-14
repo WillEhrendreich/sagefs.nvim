@@ -3,10 +3,105 @@
 
 local M = {}
 
+local function register_simple_command(create_user_command, name, desc, handler)
+  create_user_command(name, handler, { desc = desc })
+end
+
+function M.register_simple_commands(plugin, helpers, create_user_command)
+  create_user_command = create_user_command or vim.api.nvim_create_user_command
+
+  local simple_commands = {
+    {
+      name = "SageFsEval",
+      desc = "Evaluate current cell",
+      handler = function()
+        plugin.eval_cell()
+      end,
+    },
+    {
+      name = "SageFsEvalAdvance",
+      desc = "Evaluate current cell and move to next",
+      handler = function()
+        plugin.eval_cell_and_advance()
+      end,
+    },
+    {
+      name = "SageFsEvalFile",
+      desc = "Evaluate entire file",
+      handler = function()
+        plugin.eval_file()
+      end,
+    },
+    {
+      name = "SageFsEvalLine",
+      desc = "Evaluate current line only",
+      handler = function()
+        plugin.eval_current_line()
+      end,
+    },
+    {
+      name = "SageFsClear",
+      desc = "Clear all cell results",
+      handler = function()
+        helpers.clear_and_render()
+      end,
+    },
+    {
+      name = "SageFsDisconnect",
+      desc = "Disconnect from SageFs",
+      handler = function()
+        helpers.stop_sse()
+        helpers.notify("Disconnected")
+      end,
+    },
+    {
+      name = "SageFsSessions",
+      desc = "Manage SageFs sessions",
+      handler = function()
+        plugin.session_picker()
+      end,
+    },
+    {
+      name = "SageFsCreateSession",
+      desc = "Create new SageFs session",
+      handler = function()
+        plugin.discover_and_create()
+      end,
+    },
+    {
+      name = "SageFsConfig",
+      desc = "Create or open .SageFs/config.fsx for warmup auto-open",
+      handler = function()
+        plugin.configure_warmup_auto_open()
+      end,
+    },
+    {
+      name = "SageFsReset",
+      desc = "Reset active FSI session",
+      handler = function()
+        plugin.reset_session()
+      end,
+    },
+    {
+      name = "SageFsContext",
+      desc = "Show session context (assemblies, namespaces, warmup)",
+      handler = function()
+        plugin.show_session_context()
+      end,
+    },
+  }
+
+  for _, command in ipairs(simple_commands) do
+    register_simple_command(create_user_command, command.name, command.desc, command.handler)
+  end
+end
+
 --- Register all :SageFs* user commands
 ---@param plugin table  The sagefs plugin module (init.lua's M)
 ---@param helpers table  { clear_and_render: fun(), start_sse: fun(), stop_sse: fun(), notify: fun(msg, level) }
 function M.register_commands(plugin, helpers)
+  M.register_simple_commands(plugin, helpers)
+
   local hotreload = require("sagefs.hotreload")
   local model = require("sagefs.model")
   local testing = require("sagefs.testing")
@@ -27,26 +122,6 @@ function M.register_commands(plugin, helpers)
     return ": " .. detail
   end
 
-  vim.api.nvim_create_user_command("SageFsEval", function()
-    plugin.eval_cell()
-  end, { desc = "Evaluate current cell" })
-
-  vim.api.nvim_create_user_command("SageFsEvalAdvance", function()
-    plugin.eval_cell_and_advance()
-  end, { desc = "Evaluate current cell and move to next" })
-
-  vim.api.nvim_create_user_command("SageFsEvalFile", function()
-    plugin.eval_file()
-  end, { desc = "Evaluate entire file" })
-
-  vim.api.nvim_create_user_command("SageFsEvalLine", function()
-    plugin.eval_current_line()
-  end, { desc = "Evaluate current line only" })
-
-  vim.api.nvim_create_user_command("SageFsClear", function()
-    helpers.clear_and_render()
-  end, { desc = "Clear all cell results" })
-
   vim.api.nvim_create_user_command("SageFsCellStyle", function(cmd)
     local ch = require("sagefs.cell_highlight")
     if cmd.args ~= "" then
@@ -66,11 +141,6 @@ function M.register_commands(plugin, helpers)
       if healthy then helpers.start_sse() end
     end)
   end, { desc = "Connect to SageFs" })
-
-  vim.api.nvim_create_user_command("SageFsDisconnect", function()
-    helpers.stop_sse()
-    helpers.notify("Disconnected")
-  end, { desc = "Disconnect from SageFs" })
 
   vim.api.nvim_create_user_command("SageFsStatus", function()
     plugin.health_check(function(healthy)
@@ -143,18 +213,6 @@ function M.register_commands(plugin, helpers)
 
   -- Note: SageFsTestTrace is registered later with HTTP fetch (richer than SSE state)
 
-  vim.api.nvim_create_user_command("SageFsSessions", function()
-    plugin.session_picker()
-  end, { desc = "Manage SageFs sessions" })
-
-  vim.api.nvim_create_user_command("SageFsCreateSession", function()
-    plugin.discover_and_create()
-  end, { desc = "Create new SageFs session" })
-
-  vim.api.nvim_create_user_command("SageFsConfig", function()
-    plugin.configure_warmup_auto_open()
-  end, { desc = "Create or open .SageFs/config.fsx for warmup auto-open" })
-
   vim.api.nvim_create_user_command("SageFsHotReload", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     hotreload.picker(sid)
@@ -182,18 +240,10 @@ function M.register_commands(plugin, helpers)
     end)
   end, { desc = "Unwatch all files for hot reload" })
 
-  vim.api.nvim_create_user_command("SageFsReset", function()
-    plugin.reset_session()
-  end, { desc = "Reset active FSI session" })
-
   vim.api.nvim_create_user_command("SageFsHardReset", function()
     te_cache.clear()
     plugin.hard_reset()
   end, { desc = "Hard reset (rebuild) active FSI session" })
-
-  vim.api.nvim_create_user_command("SageFsContext", function()
-    plugin.show_session_context()
-  end, { desc = "Show session context (assemblies, namespaces, warmup)" })
 
   vim.api.nvim_create_user_command("SageFsExport", function()
     local transport = require("sagefs.transport")

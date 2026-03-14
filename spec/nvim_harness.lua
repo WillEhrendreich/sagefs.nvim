@@ -152,6 +152,150 @@ describe("plugin setup", function()
   end)
 end)
 
+describe("health check discovery", function()
+  it("falls back to /version when /health is unavailable", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local original_notify = vim.notify
+    local urls = {}
+    local notifications = {}
+    local healthy = nil
+
+    transport.http_json = function(opts)
+      table.insert(urls, opts.url)
+
+      if opts.url:find("/health$") then
+        opts.callback(false, "connect: refused")
+        return
+      end
+
+      if opts.url:find("/version$") then
+        opts.callback(true, vim.json.encode({
+          version = "1.2.3",
+          apiVersion = 7,
+          server = "sagefs",
+          mcp = true,
+          sse = true,
+        }))
+        return
+      end
+
+      error("unexpected discovery request: " .. opts.url)
+    end
+
+    vim.notify = function(msg, level)
+      table.insert(notifications, { msg = msg, level = level })
+    end
+
+    sagefs.state.api_version = nil
+    sagefs.state.features = nil
+    sagefs.state.last_error = nil
+
+    local ok, err = xpcall(function()
+      sagefs.health_check(function(result)
+        healthy = result
+      end)
+
+      local completed = vim.wait(1000, function()
+        return healthy ~= nil
+      end, 10)
+
+      assert_truthy(completed, "scheduled health callback")
+    end, debug.traceback)
+
+    transport.http_json = original_http_json
+    vim.notify = original_notify
+
+    if not ok then
+      error(err, 0)
+    end
+
+    assert_eq(2, #urls, "health check probe count")
+    assert_eq("http://localhost:37749/health", urls[1], "first probe")
+    assert_eq("http://localhost:37749/version", urls[2], "fallback probe")
+    assert_truthy(healthy, "health check result")
+    assert_eq(7, sagefs.state.api_version, "api version from fallback")
+    assert_type("table", sagefs.state.features, "features reset on fallback")
+    assert_eq(0, vim.tbl_count(sagefs.state.features), "fallback features empty")
+    assert_truthy(#notifications > 0, "connection notification emitted")
+    assert_truthy(notifications[1].msg:find("Connected to SageFs on port 37749", 1, true), "connect notification")
+  end)
+
+  it("falls back to /version when /health omits apiVersion", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local original_notify = vim.notify
+    local urls = {}
+    local notifications = {}
+    local healthy = nil
+
+    transport.http_json = function(opts)
+      table.insert(urls, opts.url)
+
+      if opts.url:find("/health$") then
+        opts.callback(true, vim.json.encode({
+          healthy = false,
+          status = "no session",
+          features = {},
+        }))
+        return
+      end
+
+      if opts.url:find("/version$") then
+        opts.callback(true, vim.json.encode({
+          version = "1.2.3",
+          apiVersion = 7,
+          server = "sagefs",
+          mcp = true,
+          sse = true,
+        }))
+        return
+      end
+
+      error("unexpected discovery request: " .. opts.url)
+    end
+
+    vim.notify = function(msg, level)
+      table.insert(notifications, { msg = msg, level = level })
+    end
+
+    sagefs.state.api_version = nil
+    sagefs.state.features = nil
+    sagefs.state.last_error = nil
+
+    local ok, err = xpcall(function()
+      sagefs.health_check(function(result)
+        healthy = result
+      end)
+
+      local completed = vim.wait(1000, function()
+        return healthy ~= nil
+      end, 10)
+
+      assert_truthy(completed, "scheduled health callback")
+    end, debug.traceback)
+
+    transport.http_json = original_http_json
+    vim.notify = original_notify
+
+    if not ok then
+      error(err, 0)
+    end
+
+    assert_eq(2, #urls, "health check probe count")
+    assert_eq("http://localhost:37749/health", urls[1], "first probe")
+    assert_eq("http://localhost:37749/version", urls[2], "fallback probe")
+    assert_truthy(healthy, "health check result")
+    assert_eq(7, sagefs.state.api_version, "api version from fallback")
+    assert_type("table", sagefs.state.features, "features reset on fallback")
+    assert_eq(0, vim.tbl_count(sagefs.state.features), "fallback features empty")
+    assert_truthy(#notifications > 0, "connection notification emitted")
+    assert_truthy(notifications[1].msg:find("Connected to SageFs on port 37749", 1, true), "connect notification")
+  end)
+end)
+
 -- ─── Extmark namespace ───────────────────────────────────────────────────────
 
 describe("extmark namespace", function()
@@ -894,6 +1038,53 @@ describe("virtual lines placement", function()
 
     local marks = get_extmarks(buf, ns)
     assert_eq(3, #marks[1][4].virt_lines, "3 virtual lines")
+  end)
+end)
+
+describe("eval codelens placement", function()
+  it("anchors ▶ Eval above the cell start while keeping output at the cell end", function()
+    local render = require("sagefs.render")
+    local buf = make_buffer({
+      "let first = 42",
+      "first + 1;;",
+      "",
+      "let second = 5;;",
+    })
+    vim.api.nvim_buf_set_name(buf, "/tmp/eval_anchor_" .. tostring(buf) .. ".fs")
+
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local all_cells = cells.find_all_cells_auto(buf, lines)
+    assert_eq(2, #all_cells, "2 cells detected")
+
+    local state = model.new()
+    state = model.set_cell_state(state, all_cells[1].id, "running")
+    state = model.set_cell_state(state, all_cells[1].id, "success", "43")
+
+    render.render_all(buf, state)
+
+    local marks = get_extmarks(buf, render.get_namespace())
+    local output_mark = nil
+    local codelens_mark = nil
+
+    for _, mark in ipairs(marks) do
+      local details = mark[4] or {}
+      local virt_text = details.virt_text
+      local virt_lines = details.virt_lines
+
+      if virt_text and virt_text[1] and virt_text[1][1] and virt_text[1][1]:find("43", 1, true) then
+        output_mark = mark
+      end
+
+      if virt_lines and virt_lines[1] and virt_lines[1][1] and virt_lines[1][1][1] == "▶ Eval" then
+        codelens_mark = mark
+      end
+    end
+
+    assert_truthy(output_mark, "should render output extmark")
+    assert_truthy(codelens_mark, "should render eval codelens extmark")
+    assert_eq(all_cells[1].end_line - 1, output_mark[2], "output stays on cell end")
+    assert_eq(all_cells[2].start_line - 1, codelens_mark[2], "codelens anchors to cell start")
+    assert_truthy(codelens_mark[4].virt_lines_above, "codelens renders above the cell start")
   end)
 end)
 

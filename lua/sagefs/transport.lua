@@ -193,15 +193,16 @@ function M.connect_sse(url, opts)
             opts.on_disconnect(code)
           end
           if not handle._stopped and opts.auto_reconnect then
-            local status = sse_parser.connection_status(handle._attempt)
+            local reconnect_attempt = was_connected and 1 or handle._attempt
+            local status = sse_parser.connection_status(reconnect_attempt)
             if opts.on_reconnecting then
-              opts.on_reconnecting(handle._attempt, status)
+              opts.on_reconnecting(reconnect_attempt, status)
             end
             -- After threshold (5+ attempts), fire on_disconnect even if never connected
             if not was_connected and status == "disconnected" and opts.on_disconnect then
               opts.on_disconnect(code)
             end
-            local delay = sse_parser.reconnect_delay(handle._attempt)
+            local delay = sse_parser.reconnect_delay(reconnect_attempt)
             vim.defer_fn(connect, delay)
           end
         end,
