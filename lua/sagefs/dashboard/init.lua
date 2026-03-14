@@ -1,12 +1,23 @@
 -- sagefs/dashboard/init.lua — Dashboard panel window manager + integration
--- This module DOES use vim APIs (for window/buffer management, keymaps, autocmds)
--- Core logic delegated to pure modules (section, state, compositor, sections/*)
+--
+-- Architecture:
+--   SSE events → state.update (pure fold) → dirty sections (event_index O(1) lookup)
+--     → render only dirty (cached outputs for clean sections) → compositor (monoid)
+--     → buf_set_lines + highlights
+--
+-- Pure core: section, state, compositor, event_index, statusline, sections/*
+-- Impure shell: this file (vim buffer/window management, autocmds, keymaps)
 
 local section_mod = require("sagefs.dashboard.section")
 local state_mod = require("sagefs.dashboard.state")
 local compositor = require("sagefs.dashboard.compositor")
+local event_index_mod = require("sagefs.dashboard.event_index")
 
 local M = {}
+
+-- ─── Statusline (public, pure — safe to require without opening dashboard) ──
+
+M.statusline = require("sagefs.dashboard.statusline")
 
 -- ─── Available sections (register on load) ───────────────────────────────────
 
@@ -22,11 +33,15 @@ local section_modules = {
   require("sagefs.dashboard.sections.coverage"),
   require("sagefs.dashboard.sections.filmstrip"),
   require("sagefs.dashboard.sections.alarms"),
+  require("sagefs.dashboard.sections.help"),
 }
 
 for _, s in ipairs(section_modules) do
   section_mod.register(s)
 end
+
+-- Build the event→section reverse index once (O(1) lookups thereafter)
+local _event_idx = event_index_mod.build(section_mod.all())
 
 -- ─── Internal State ──────────────────────────────────────────────────────────
 
@@ -36,6 +51,8 @@ M._state = nil
 M._last_composed = nil
 M._ns_id = nil
 M._augroup = nil
+M._section_cache = {}   -- section_id → last SectionOutput (dirty tracking)
+M._render_scheduled = false -- coalescing flag for vim.schedule
 
 -- ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -44,6 +61,7 @@ M.config = {
   height = 20,
   separator = "─────────────────────────────",
   default_sections = { "health", "session", "tests", "diagnostics", "failures" },
+  persist_sections = true, -- save visible sections to vim.g
 }
 
 -- ─── Public API ──────────────────────────────────────────────────────────────
@@ -61,11 +79,24 @@ function M.open()
     return
   end
 
+  -- Setup theme-aware highlight groups
+  local ok_hl, highlights = pcall(require, "sagefs.dashboard.highlights")
+  if ok_hl then highlights.setup() end
+
   -- Initialize state if first open
   if not M._state then
     M._state = state_mod.new()
-    M._state.visible_sections = vim.deepcopy(M.config.default_sections)
+    -- Restore persisted section visibility (or use defaults)
+    local persisted = M.config.persist_sections and vim.g.sagefs_dashboard_sections
+    if persisted and type(persisted) == "table" and #persisted > 0 then
+      M._state.visible_sections = vim.deepcopy(persisted)
+    else
+      M._state.visible_sections = vim.deepcopy(M.config.default_sections)
+    end
   end
+
+  -- Clear section cache on fresh open
+  M._section_cache = {}
 
   -- Create namespace for highlights
   M._ns_id = M._ns_id or vim.api.nvim_create_namespace("sagefs_dashboard")
@@ -122,37 +153,67 @@ function M.toggle()
   end
 end
 
---- Update state from an SSE event and re-render if the dashboard is open.
+--- Update state from an SSE event and re-render dirty sections only.
+--- Uses event_index for O(1) lookup of which sections care about this event.
 --- @param event_type string
 --- @param payload table|nil
 function M.on_event(event_type, payload)
   if not M._state then return end
   M._state = state_mod.update(M._state, event_type, payload)
-  if M.is_open() then
+  if not M.is_open() then return end
+
+  -- O(1) lookup: which sections need re-rendering?
+  local dirty_ids = event_index_mod.to_set(event_index_mod.lookup(_event_idx, event_type))
+
+  -- Coalesce rapid events into a single vim.schedule pass
+  if not M._render_scheduled then
+    M._render_scheduled = true
+    -- Merge dirty set into pending dirty set
+    M._pending_dirty = M._pending_dirty or {}
+    for id, _ in pairs(dirty_ids) do M._pending_dirty[id] = true end
+
     vim.schedule(function()
-      M.render()
+      M._render_scheduled = false
+      local dirty = M._pending_dirty
+      M._pending_dirty = nil
+      M.render(dirty)
     end)
+  else
+    -- Already scheduled — just expand the dirty set
+    M._pending_dirty = M._pending_dirty or {}
+    for id, _ in pairs(dirty_ids) do M._pending_dirty[id] = true end
   end
 end
 
---- Force re-render the dashboard.
-function M.render()
+--- Render the dashboard. With dirty_set, only re-render those sections (cache rest).
+--- Without dirty_set (nil), re-render all visible sections (full refresh).
+--- @param dirty_set table<string,true>|nil
+function M.render(dirty_set)
   if not M.is_open() then return end
   if not M._bufnr or not vim.api.nvim_buf_is_valid(M._bufnr) then return end
 
-  -- Collect visible section outputs
+  -- Collect visible section outputs (cached or fresh)
   local outputs = {}
   local visible_ids = M._state.visible_sections or M.config.default_sections
   local sections = section_mod.ordered(visible_ids)
 
   for _, s in ipairs(sections) do
-    local ok, output = pcall(s.render, M._state)
-    if ok and output then
-      table.insert(outputs, output)
+    local use_cache = dirty_set
+      and not dirty_set[s.id]
+      and M._section_cache[s.id]
+
+    if use_cache then
+      table.insert(outputs, M._section_cache[s.id])
+    else
+      local ok, output = pcall(s.render, M._state)
+      if ok and output then
+        M._section_cache[s.id] = output
+        table.insert(outputs, output)
+      end
     end
   end
 
-  -- Compose
+  -- Compose (monoid fold)
   local composed = compositor.compose(outputs, { separator = M.config.separator })
   M._last_composed = composed
 
@@ -161,7 +222,7 @@ function M.render()
   vim.api.nvim_buf_set_lines(M._bufnr, 0, -1, false, composed.lines)
   vim.bo[M._bufnr].modifiable = false
 
-  -- Apply highlights
+  -- Apply highlights (clear + re-apply is simpler and correct)
   vim.api.nvim_buf_clear_namespace(M._bufnr, M._ns_id, 0, -1)
   for _, hl in ipairs(composed.highlights) do
     pcall(vim.api.nvim_buf_add_highlight,
@@ -174,6 +235,14 @@ end
 function M.toggle_section(section_id)
   if not M._state then return end
   state_mod.toggle_section(M._state, section_id)
+
+  -- Persist visible sections if configured
+  if M.config.persist_sections then
+    vim.g.sagefs_dashboard_sections = vim.deepcopy(M._state.visible_sections)
+  end
+
+  -- Invalidate cache for toggled section
+  M._section_cache[section_id] = nil
   M.render()
 end
 
@@ -218,8 +287,8 @@ function M._setup_keymaps()
   -- CR: context action at cursor
   vim.keymap.set("n", "<CR>", function() M._action_at_cursor() end, opts)
 
-  -- ?: help
-  vim.keymap.set("n", "?", function() M._show_help() end, opts)
+  -- ?: toggle inline help section (not vim.notify — help is a section like any other)
+  vim.keymap.set("n", "?", function() M.toggle_section("help") end, opts)
 end
 
 -- ─── Internal: Autocmds ──────────────────────────────────────────────────────
@@ -337,26 +406,6 @@ function M._dispatch_action(action)
   elseif action.type == "jump_to_eval" then
     if sagefs.jump_to_eval then sagefs.jump_to_eval(action.index) end
   end
-end
-
-function M._show_help()
-  local lines = {
-    "SageFs Dashboard Help",
-    "═════════════════════",
-    "",
-    "q       Close dashboard",
-    "<Tab>   Next section",
-    "<S-Tab> Previous section",
-    "1-9     Toggle section N",
-    "e       Enable live testing",
-    "d       Disable live testing",
-    "h       Toggle hot reload",
-    "r       Run all tests",
-    "R       Refresh dashboard",
-    "<CR>    Context action at cursor",
-    "?       Show this help",
-  }
-  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
 end
 
 -- ─── Setup (called from plugin init) ─────────────────────────────────────────
