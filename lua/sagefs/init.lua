@@ -422,6 +422,13 @@ local function on_sse_events(raw_events)
     end)
   end
 
+  -- Forward events to the dashboard panel (if initialized)
+  if M._dashboard then
+    for _, c in ipairs(classified) do
+      M._dashboard.on_event(c.action, c.data)
+    end
+  end
+
   -- Debounced gutter refresh — avoids flooding Neovim with extmark resets
   schedule_render()
 end
@@ -455,6 +462,8 @@ local function start_sse()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
       fire_user_event("connected")
+      -- Forward connection to dashboard
+      if M._dashboard then M._dashboard.on_event("connected") end
       vim.schedule(function()
         fire_user_event("test_recovery_needed")
       end)
@@ -462,6 +471,8 @@ local function start_sse()
     on_disconnect = function(code)
       M.state = model.set_status(M.state, "disconnected")
       fire_user_event("disconnected")
+      -- Forward disconnection to dashboard
+      if M._dashboard then M._dashboard.on_event("disconnected") end
       -- Eval watchdog: if an eval is in flight, notify after 5s
       if eval_id > 0 then
         local watchdog_eval_id = eval_id
@@ -1290,6 +1301,12 @@ function M.setup(opts)
   commands.register_commands(M, helpers)
   commands.register_keymaps(M, helpers)
   commands.register_autocmds(M, helpers)
+
+  -- Dashboard panel (opt-in via config.dashboard or :SageFsDashboard command)
+  local dashboard = require("sagefs.dashboard")
+  dashboard.setup(opts.dashboard)
+  M._dashboard = dashboard
+
   hotreload.setup(M.config.dashboard_port)
 
   -- Load F# snippets when LuaSnip is available (opt-out via config.snippets = false)
