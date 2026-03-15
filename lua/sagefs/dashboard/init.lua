@@ -280,7 +280,7 @@ function M._setup_keymaps()
   -- Section-specific keys
   vim.keymap.set("n", "e", function() M._dispatch_action({ type = "enable_testing" }) end, opts)
   vim.keymap.set("n", "d", function() M._dispatch_action({ type = "disable_testing" }) end, opts)
-  vim.keymap.set("n", "h", function() M._dispatch_action({ type = "toggle_hot_reload" }) end, opts)
+  vim.keymap.set("n", "h", function() M._dispatch_action({ type = "switch_workflow" }) end, opts)
   vim.keymap.set("n", "r", function() M._dispatch_action({ type = "run_tests" }) end, opts)
   vim.keymap.set("n", "R", function() M.render() end, opts)
 
@@ -395,8 +395,8 @@ function M._dispatch_action(action)
     if sagefs.disable_live_testing then sagefs.disable_live_testing() end
   elseif action.type == "run_tests" then
     if sagefs.run_tests then sagefs.run_tests() end
-  elseif action.type == "toggle_hot_reload" then
-    if sagefs.toggle_hot_reload then sagefs.toggle_hot_reload() end
+  elseif action.type == "switch_workflow" then
+    if sagefs.switch_workflow then sagefs.switch_workflow() end
   elseif action.type == "switch_session" then
     if sagefs.switch_session then sagefs.switch_session(action.session_id) end
   elseif action.type == "jump_to_test" then

@@ -47,6 +47,7 @@ function M.new()
     },
     alarms = {},
     warmup_context = nil,
+    workflow_label = nil,
     -- UI state
     visible_sections = {
       "health", "session", "tests", "diagnostics", "failures",
@@ -186,6 +187,12 @@ end
 
 handlers.warmup_completed = function(state, _)
   -- Clear warmup context on completion; daemon health gets updated via connected
+  return state
+end
+
+handlers.workflow_switched = function(state, payload)
+  if not payload then return state end
+  state.workflow_label = payload.workflowLabel or payload.WorkflowLabel
   return state
 end
 

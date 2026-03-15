@@ -213,6 +213,26 @@ describe("Dashboard state", function()
       assert.equals("Faulted", s.sessions[1].status)
       assert.equals("Ready", s.sessions[2].status)
     end)
+
+    it("updates workflow label on workflow_switched", function()
+      local s = state_mod.new()
+      assert.is_nil(s.workflow_label)
+      s = state_mod.update(s, "workflow_switched", { workflowLabel = "REPL" })
+      assert.equals("REPL", s.workflow_label)
+    end)
+
+    it("handles PascalCase payload for workflow_switched", function()
+      local s = state_mod.new()
+      s = state_mod.update(s, "workflow_switched", { WorkflowLabel = "Live" })
+      assert.equals("Live", s.workflow_label)
+    end)
+
+    it("handles nil payload for workflow_switched", function()
+      local s = state_mod.new()
+      s.workflow_label = "REPL"
+      s = state_mod.update(s, "workflow_switched", nil)
+      assert.equals("REPL", s.workflow_label)
+    end)
   end)
 
   -- ─── Handled Events ────────────────────────────────────────────────────

@@ -759,6 +759,10 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Disable live testing" })
 
+  vim.api.nvim_create_user_command("SageFsWorkflow", function()
+    helpers.notify("Current workflow: " .. (plugin.workflow_label or "unknown") .. ". Use the SageFs MCP tool 'switch_workflow' or the TUI to change workflows.", vim.log.levels.INFO)
+  end, { desc = "Show current workflow label" })
+
   vim.api.nvim_create_user_command("SageFsCancel", function()
     transport.http_json({
       method = "POST",

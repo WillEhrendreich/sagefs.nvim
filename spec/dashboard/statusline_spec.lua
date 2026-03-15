@@ -89,4 +89,28 @@ describe("statusline", function()
     assert.truthy(result:find("🔄5"))
     assert.truthy(result:find("42ms"))
   end)
+
+  it("shows workflow label when set", function()
+    local s = state_mod.new()
+    s.daemon.connected = true
+    s.workflow_label = "REPL"
+    local result = statusline.get(s)
+    assert.truthy(result:find("%[REPL%]"))
+  end)
+
+  it("omits workflow label when nil", function()
+    local s = state_mod.new()
+    s.daemon.connected = true
+    s.workflow_label = nil
+    local result = statusline.get(s)
+    assert.is_nil(result:find("%["))
+  end)
+
+  it("omits workflow label when empty string", function()
+    local s = state_mod.new()
+    s.daemon.connected = true
+    s.workflow_label = ""
+    local result = statusline.get(s)
+    assert.is_nil(result:find("%["))
+  end)
 end)

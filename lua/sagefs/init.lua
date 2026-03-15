@@ -73,6 +73,7 @@ M.time_travel_state = require("sagefs.time_travel").new()
 M.system_alarm = nil       -- Latest SystemAlarm payload (for statusline ⚠ indicator)
 M.last_reload_file = nil   -- Last file reloaded by hot reload (path string)
 M.last_reload_ms = nil     -- Elapsed ms for last file reload
+M.workflow_label = nil     -- Current workflow label (e.g. "REPL", "Live")
 
 -- Eval watchdog: monotonic ID tracks which eval is in flight.
 -- 0 = idle; >0 = eval in flight (generation counter).
@@ -234,6 +235,11 @@ local function build_handlers()
     elseif event_type == "hotreload_snapshot" then
       M.hotreload_files = data.watchedFiles or {}
       fire_user_event("hotreload_snapshot", data)
+    elseif event_type == "workflow_switched" then
+      M.workflow_label = data.workflowLabel or data.WorkflowLabel
+      fire_user_event("workflow_switched", data)
+    elseif event_type == "workflow_switching" then
+      fire_user_event("workflow_switching", data)
     end
   end
   handlers.bindings_snapshot = function(raw)
@@ -1192,6 +1198,59 @@ function M.health_check(callback)
   end)
 end
 
+-- ─── Live Testing / Workflow Commands ────────────────────────────────────────
+
+function M.enable_live_testing()
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/api/live-testing/enable",
+    timeout = 5,
+    callback = function(ok, raw)
+      vim.schedule(function()
+        if not ok then
+          notify("Failed to enable live testing", vim.log.levels.ERROR)
+          return
+        end
+        local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if parsed and parsed.success == false then
+          notify("SageFs: failed to enable live testing — " .. (parsed.message or parsed.reason or "Unknown"), vim.log.levels.ERROR)
+        else
+          notify("Live testing enabled")
+        end
+      end)
+    end,
+  })
+end
+
+function M.disable_live_testing()
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/api/live-testing/disable",
+    timeout = 5,
+    callback = function(ok, raw)
+      vim.schedule(function()
+        if not ok then
+          notify("Failed to disable live testing", vim.log.levels.ERROR)
+          return
+        end
+        local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if parsed and parsed.success == false then
+          notify("SageFs: failed to disable live testing — " .. (parsed.message or parsed.reason or "Unknown"), vim.log.levels.ERROR)
+        else
+          notify("Live testing disabled")
+        end
+      end)
+    end,
+  })
+end
+
+function M.switch_workflow()
+  -- Workflow switching is done via /api/dispatch with an action name.
+  -- Currently the daemon doesn't expose a dedicated REST endpoint for this;
+  -- notify the user to use the MCP tool directly.
+  notify("Use the SageFs MCP tool 'switch_workflow' or the TUI to change workflows", vim.log.levels.INFO)
+end
+
 function M.statusline()
   local parts = {}
 
@@ -1227,6 +1286,11 @@ function M.statusline()
     else
       table.insert(parts, icon .. " SageFs")
     end
+  end
+
+  -- Workflow label (e.g. [REPL], [Live])
+  if M.workflow_label and M.workflow_label ~= "" then
+    table.insert(parts, "[" .. M.workflow_label .. "]")
   end
 
   local test_sl = testing.format_statusline(M.testing_state)

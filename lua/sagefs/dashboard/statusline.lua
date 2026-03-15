@@ -23,6 +23,11 @@ function M.get(state)
     return table.concat(parts, " ")
   end
 
+  -- Workflow label
+  if state.workflow_label and state.workflow_label ~= "" then
+    table.insert(parts, "[" .. state.workflow_label .. "]")
+  end
+
   -- Testing summary (only when enabled)
   local testing = state.testing or {}
   if testing.enabled then
