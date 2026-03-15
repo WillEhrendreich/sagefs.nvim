@@ -53,6 +53,7 @@ function M.new()
       "health", "session", "tests", "diagnostics", "failures",
     },
     focused_section = nil,
+    auto_open_enabled = true,
   }
 end
 
@@ -82,6 +83,45 @@ function M.toggle_section(state, section_id)
   end
   table.insert(state.visible_sections, section_id)
   return state
+end
+
+-- ─── Auto-Open Policy ────────────────────────────────────────────────────
+
+--- Check if the dashboard should auto-open (e.g., on test failure).
+--- @param state table
+--- @param is_open boolean whether the dashboard is currently open
+--- @return boolean
+function M.should_auto_open(state, is_open)
+  return state.auto_open_enabled and not is_open
+end
+
+--- Mark that the user explicitly closed the dashboard (disables auto-open).
+--- @param state table
+function M.mark_explicit_close(state)
+  state.auto_open_enabled = false
+end
+
+--- Mark that the user explicitly opened the dashboard (re-enables auto-open).
+--- @param state table
+function M.mark_explicit_open(state)
+  state.auto_open_enabled = true
+end
+
+-- ─── Section Persistence ─────────────────────────────────────────────────
+
+--- Persist visible sections to vim.g for cross-session survival.
+--- @param state table
+function M.persist_visible_sections(state)
+  vim.g.sagefs_dashboard_sections = vim.deepcopy(state.visible_sections)
+end
+
+--- Restore visible sections from vim.g (if available and non-empty).
+--- @param state table
+function M.restore_visible_sections(state)
+  local persisted = vim.g.sagefs_dashboard_sections
+  if persisted and type(persisted) == "table" and #persisted > 0 then
+    state.visible_sections = vim.deepcopy(persisted)
+  end
 end
 
 -- ─── Event Handlers ──────────────────────────────────────────────────────────

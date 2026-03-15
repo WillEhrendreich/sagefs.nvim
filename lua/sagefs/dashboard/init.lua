@@ -59,6 +59,8 @@ M._render_scheduled = false -- coalescing flag for vim.schedule
 M.config = {
   position = "botright",
   height = 20,
+  max_height = 40,
+  min_height = 5,
   separator = "─────────────────────────────",
   default_sections = { "health", "session", "tests", "diagnostics", "failures" },
   persist_sections = true, -- save visible sections to vim.g
@@ -86,14 +88,15 @@ function M.open()
   -- Initialize state if first open
   if not M._state then
     M._state = state_mod.new()
-    -- Restore persisted section visibility (or use defaults)
-    local persisted = M.config.persist_sections and vim.g.sagefs_dashboard_sections
-    if persisted and type(persisted) == "table" and #persisted > 0 then
-      M._state.visible_sections = vim.deepcopy(persisted)
-    else
-      M._state.visible_sections = vim.deepcopy(M.config.default_sections)
-    end
   end
+
+  -- Restore persisted section visibility (or use defaults)
+  if M.config.persist_sections then
+    state_mod.restore_visible_sections(M._state)
+  end
+
+  -- Re-enable auto-open on explicit user open
+  state_mod.mark_explicit_open(M._state)
 
   -- Clear section cache on fresh open
   M._section_cache = {}
@@ -133,6 +136,10 @@ end
 
 --- Close the dashboard panel.
 function M.close()
+  -- Mark explicit close to suppress auto-open
+  if M._state then
+    state_mod.mark_explicit_close(M._state)
+  end
   if M._augroup then
     vim.api.nvim_del_augroup_by_id(M._augroup)
     M._augroup = nil
@@ -160,6 +167,15 @@ end
 function M.on_event(event_type, payload)
   if not M._state then return end
   M._state = state_mod.update(M._state, event_type, payload)
+
+  -- Auto-open on test failure events
+  if event_type == "test_summary" then
+    local failed = payload and (payload.failed or payload.Failed or 0) or 0
+    if failed > 0 and state_mod.should_auto_open(M._state, M.is_open()) then
+      M.open()
+    end
+  end
+
   if not M.is_open() then return end
 
   -- O(1) lookup: which sections need re-rendering?
@@ -228,6 +244,14 @@ function M.render(dirty_set)
     pcall(vim.api.nvim_buf_add_highlight,
       M._bufnr, M._ns_id, hl.hl_group, hl.line, hl.col_start, hl.col_end)
   end
+
+  -- Dynamic height: adjust window size to content
+  local ideal_height = compositor.compute_height(
+    composed,
+    vim.g.sagefs_dashboard_max_height or M.config.max_height,
+    M.config.min_height
+  )
+  pcall(vim.api.nvim_win_set_height, M._winnr, ideal_height)
 end
 
 --- Toggle visibility of a specific section.
@@ -238,7 +262,7 @@ function M.toggle_section(section_id)
 
   -- Persist visible sections if configured
   if M.config.persist_sections then
-    vim.g.sagefs_dashboard_sections = vim.deepcopy(M._state.visible_sections)
+    state_mod.persist_visible_sections(M._state)
   end
 
   -- Invalidate cache for toggled section
@@ -376,6 +400,16 @@ function M._action_at_cursor()
   local cursor = vim.api.nvim_win_get_cursor(M._winnr)
   local cur_line = cursor[1] - 1
 
+  -- Try jump-to-source first (file/line navigation)
+  local source = compositor.resolve_source_at_line(M._last_composed, cur_line)
+  if source then
+    -- Jump to the previous window and open the file
+    vim.cmd("wincmd p")
+    vim.cmd("edit +" .. source.line .. " " .. vim.fn.fnameescape(source.file))
+    return
+  end
+
+  -- Fall back to dispatch action
   for _, km in ipairs(M._last_composed.keymaps) do
     if km.line == cur_line and km.key == "<CR>" then
       M._dispatch_action(km.action)

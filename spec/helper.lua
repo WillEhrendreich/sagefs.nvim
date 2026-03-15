@@ -82,6 +82,19 @@ if not vim then
     tbl_isempty = function(t)
       return next(t) == nil
     end,
+    -- vim.deepcopy
+    deepcopy = function(orig)
+      if type(orig) ~= "table" then return orig end
+      local copy = {}
+      for k, v in pairs(orig) do
+        if type(v) == "table" then
+          copy[k] = vim.deepcopy(v)
+        else
+          copy[k] = v
+        end
+      end
+      return copy
+    end,
     -- vim.g stub
     g = {},
     -- vim.b stub (buffer-local vars)

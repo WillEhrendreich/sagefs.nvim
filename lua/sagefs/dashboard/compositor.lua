@@ -85,4 +85,37 @@ function M.section_at_line(section_ranges, line)
   return nil
 end
 
+--- Resolve a source location from a composed output at a given line.
+--- Looks for <CR> keymaps with jump_to_source or jump_to_test actions that
+--- carry file/line metadata.
+--- @param composed table ComposedOutput from compose()
+--- @param line number 0-based line number
+--- @return table|nil { file: string, line: number } or nil
+function M.resolve_source_at_line(composed, line)
+  for _, km in ipairs(composed.keymaps or {}) do
+    if km.line == line and km.key == "<CR>" and km.action then
+      local a = km.action
+      if (a.type == "jump_to_source" or a.type == "jump_to_test")
+        and a.file and a.line then
+        return { file = a.file, line = a.line }
+      end
+    end
+  end
+  return nil
+end
+
+--- Compute the ideal panel height from rendered content.
+--- @param composed table ComposedOutput with .lines
+--- @param max_height number|nil maximum height (default 40)
+--- @param min_height number|nil minimum height (default 5)
+--- @return number
+function M.compute_height(composed, max_height, min_height)
+  max_height = max_height or 40
+  min_height = min_height or 5
+  local content_lines = #(composed.lines or {})
+  if content_lines < min_height then return min_height end
+  if content_lines > max_height then return max_height end
+  return content_lines
+end
+
 return M
