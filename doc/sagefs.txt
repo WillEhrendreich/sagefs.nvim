@@ -531,7 +531,7 @@ Event reference ~
     Fired when an evaluation completes (success or error). Payload contains
     evaluation result data.
 
-*SageFsEvalResult*                                       *SageFsEvalResult*
+*SageFsEvalResult*
     Fired when an eval result is received from the daemon. Payload: >
 
       { filePath, blockStartLine, output, success }
