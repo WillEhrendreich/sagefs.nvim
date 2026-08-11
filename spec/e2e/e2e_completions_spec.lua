@@ -14,10 +14,9 @@ H.run_suite({
 
   fn = function(sagefs, temp, handle)
 
-    -- Note: /api/completions uses a fixed "http" agent without working_directory,
-    -- so session resolution may fail. Pre-warm by doing an eval first (sets up
-    -- the "cli-integrated" agent, but not "http"). If completions returns a
-    -- session error, the test documents this known limitation.
+    -- The editor completion endpoint always returns the shared JSON contract.
+    -- A missing session is represented by an empty completions array, never by
+    -- a plain-text error that would break an editor JSON parser.
 
     H.describe("POST /api/completions", function()
       H.it("returns completions for System.String", function()
@@ -26,13 +25,9 @@ H.run_suite({
           cursorPosition = 14,
         })
         local resp = H.http_post("/api/completions", body, handle.port)
-        -- Accept 200 (success) or 200 with error about session
         H.assert_eq(200, resp.status, "completions status")
-        H.assert_truthy(
-          resp.body:find("Length") or resp.body:find("Concat") or resp.body:find("Empty")
-            or resp.body:find("No active session"),
-          "should return String members or session error"
-        )
+        local ok, data = pcall(vim.fn.json_decode, resp.body)
+        H.assert_truthy(ok and type(data.completions) == "table", "must return the JSON completion contract")
       end)
 
       H.it("returns completions for F# List module", function()
@@ -42,11 +37,8 @@ H.run_suite({
         })
         local resp = H.http_post("/api/completions", body, handle.port)
         H.assert_eq(200, resp.status, "completions status")
-        H.assert_truthy(
-          resp.body:find("map") or resp.body:find("filter") or resp.body:find("fold")
-            or resp.body:find("No active session"),
-          "should return List functions or session error"
-        )
+        local ok, data = pcall(vim.fn.json_decode, resp.body)
+        H.assert_truthy(ok and type(data.completions) == "table", "must return the JSON completion contract")
       end)
 
       H.it("returns completions for project module", function()
@@ -56,11 +48,8 @@ H.run_suite({
         })
         local resp = H.http_post("/api/completions", body, handle.port)
         H.assert_eq(200, resp.status, "completions status")
-        H.assert_truthy(
-          resp.body:find("add") or resp.body:find("greet") or resp.body:find("factorial")
-            or resp.body:find("No active session"),
-          "should return Library module members or session error"
-        )
+        local ok, data = pcall(vim.fn.json_decode, resp.body)
+        H.assert_truthy(ok and type(data.completions) == "table", "must return the JSON completion contract")
       end)
     end)
 

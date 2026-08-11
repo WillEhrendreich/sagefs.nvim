@@ -828,13 +828,15 @@ function M.omnifunc(findstart, base)
   end
   offset = offset + cursor[2]
 
-  local sid = M.active_session and M.active_session.id or ""
-  local body = completions.build_request_body(text, offset, sid)
+  local working_directory = (M.active_session and M.active_session.workingDirectory) or vim.fn.getcwd()
+  local body = completions.build_request_body(text, offset, working_directory)
   local col = (M._completion_col or 0) + 1
 
   transport.http_json({
     method = "POST",
-    url = dashboard_url() .. "/dashboard/completions",
+    -- /dashboard/completions streams an SSE DOM patch. Omnifunc consumes the
+    -- JSON editor contract served by the MCP HTTP API instead.
+    url = base_url() .. "/api/completions",
     body = body,
     timeout = 5,
     callback = function(ok, raw)
