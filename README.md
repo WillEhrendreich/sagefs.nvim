@@ -10,14 +10,10 @@ Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs) — a li
 
 **Eval Loop** — evaluate F# cells and see results inline as ghost text
 
-![Eval Loop](docs/demo-eval-loop.gif)
-
 </td>
 <td align="center" width="50%">
 
 **Live Testing** — tests run automatically as you type, results in the gutter
-
-![Live Testing](docs/demo-live-testing.gif)
 
 </td>
 </tr>
@@ -25,8 +21,6 @@ Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs) — a li
 <td align="center" width="50%">
 
 **Coverage** — line-level coverage with branch annotations in the gutter
-
-![Coverage](docs/demo-coverage.gif)
 
 </td>
 <td align="center" width="50%">
