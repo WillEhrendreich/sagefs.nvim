@@ -121,6 +121,8 @@ function M.classify_event(event)
     -- Coverage
     CoverageUpdated = "coverage_updated",
     CoverageCleared = "coverage_cleared",
+    -- Coverage view: per-function aggregate badge
+    coverage_view = "coverage_view",
     -- File annotations (inline feedback: CodeLens, failures, coverage detail)
     file_annotations = "file_annotations",
     FileAnnotationsUpdated = "file_annotations",

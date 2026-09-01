@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 36 event names", function()
-      assert.are.equal(36, #events.EVENT_NAMES)
+    it("contains 37 event names", function()
+      assert.are.equal(37, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -45,6 +45,14 @@ describe("events", function()
       end
       assert.is_true(has_source_locations)
       assert.is_true(has_failure_narratives)
+    end)
+
+    it("contains coverage_view event", function()
+      local found = false
+      for _, name in ipairs(events.EVENT_NAMES) do
+        if name == "SageFsCoverageView" then found = true; break end
+      end
+      assert.is_true(found)
     end)
   end)
 

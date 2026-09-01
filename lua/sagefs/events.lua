@@ -41,6 +41,7 @@ local EVENT_CATALOG = {
   { "warmup_completed", "SageFsWarmupCompleted" },
   { "file_reloaded", "SageFsFileReloaded" },
   { "system_alarm", "SageFsSystemAlarm" },
+  { "coverage_view", "SageFsCoverageView" },
 }
 
 -- ─── Event Names ──────────────────────────────────────────────────────────────

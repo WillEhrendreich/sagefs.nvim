@@ -77,6 +77,11 @@ describe("sse.classify_event — coverage events [RED]", function()
     local result = sse.classify_event({ type = "CoverageCleared", data = "{}" })
     assert.are.equal("coverage_cleared", result.action)
   end)
+
+  it("classifies coverage_view", function()
+    local result = sse.classify_event({ type = "coverage_view", data = "{}" })
+    assert.are.equal("coverage_view", result.action)
+  end)
 end)
 
 describe("sse.classify_event — session events [RED]", function()

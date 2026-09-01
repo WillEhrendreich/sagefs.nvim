@@ -169,6 +169,8 @@ local SSE_HANDLER_DEFS = {
   { action = "eval_result", event = "eval_result" },
   -- Failure narrative context for tests that transitioned Passed→Failed
   { action = "failure_narratives", fn = "handle_failure_narratives", target = "testing", event = "failure_narratives" },
+  -- Coverage view: per-function aggregate badge (one per CoverageView)
+  { action = "coverage_view", event = "coverage_view" },
 }
 
 -- State target → { state_key, module }
@@ -867,6 +869,22 @@ function M.list_sessions(callback)
       end
     end
     if callback then callback(result) end
+  end)
+end
+
+function M.post_buffer_changed(buf, callback)
+  local file_path = vim.api.nvim_buf_get_name(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local content = table.concat(lines, "\n")
+  local request = sessions.build_buffer_change_request(M.session_list, M.active_session, file_path, content)
+
+  if not request then
+    if callback then callback(false, nil) end
+    return
+  end
+
+  session_http("POST", request.path, request.body, function(ok, raw)
+    if callback then callback(ok, raw) end
   end)
 end
 
