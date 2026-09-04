@@ -16,7 +16,7 @@ Developer documentation for the sagefs.nvim Neovim plugin — the Neovim fronten
 
 ## Architecture Overview
 
-sagefs.nvim is structured as **37 pure Lua modules** (zero vim API dependencies) plus an integration layer:
+sagefs.nvim is structured as **pure Lua modules** (zero vim API dependencies, testable under busted) plus an integration layer and a dashboard:
 
 ```
 lua/sagefs/
@@ -40,21 +40,24 @@ lua/sagefs/
 │   ├── notebook.lua       — Literate notebook export (markdown + fsx)
 │   ├── diff.lua           — Semantic diff between evaluations
 │   ├── density.lua        — Display density presets (minimal/normal/full)
-│   ├── cell_highlight.lua — Dynamic eval region visuals (4 styles)
+│   ├── cell_highlight.lua — Dynamic eval region visuals (4 styles; uses vim.api/uv — integration-tested)
 │   ├── daemon.lua         — Daemon lifecycle state machine
-│   ├── events.lua         — 28 User autocmd event definitions
-│   ├── health.lua         — :checkhealth sagefs validation
-│   └── ...more pure modules
+│   ├── events.lua         — 37 User autocmd event definitions
+│   ├── health.lua         — :checkhealth sagefs validation (uses vim.health)
+│   └── ...more pure modules (config, daemon_discovery, telescope_picker, treesitter_cells, ...)
 │
 ├── Integration layer (requires Neovim APIs)
 │   ├── init.lua           — Coordinator: SSE dispatch, eval, session API
-│   ├── commands.lua       — 46 commands, keymaps, autocmds
+│   ├── commands.lua       — 51 user commands, keymaps, autocmds
 │   ├── transport.lua      — HTTP via curl, SSE with exponential backoff
 │   ├── render.lua         — Extmarks, gutter signs, floating windows
-│   └── hotreload.lua      — Hot reload file toggle API
+│   ├── hotreload.lua      — Hot reload file toggle API
+│   └── dashboard/         — Floating dashboard (SageFsDashboard) + sections
 │
 └── version.lua            — Plugin version (synced from SageFs)
 ```
+
+Modules that touch `vim` APIs (`cell_highlight.lua`, `treesitter_cells.lua`, `health.lua`, and the `vim.NIL` guard in `annotations.lua`) are integration-tested through the headless-Neovim harness rather than busted.
 
 ## Communication Protocol
 
@@ -69,9 +72,9 @@ All state flows from daemon to plugin via SSE. POST responses carry only acknowl
 
 | Suite | Runner | Count | Description |
 |-------|--------|-------|-------------|
-| Busted | `busted` (LuaRocks) | 1107 | Pure module logic — state machines, parsing, formatting |
-| Integration | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — commands, extmarks, keymaps |
-| E2E | Neovim + real SageFs | 27 | Full daemon lifecycle — eval, SSE, sessions, testing |
+| Busted | `busted` (LuaRocks) | 1372 passed / 0 failed / 4 pending (latest run) | Pure module logic — state machines, parsing, formatting |
+| Integration | Headless Neovim (`nvim -l`) | 56 passed / 0 failed (latest run) | Real vim APIs — commands, extmarks, keymaps |
+| E2E | Neovim + real SageFs | 28 cases across 6 spec files (requires running daemon) | Full daemon lifecycle — eval, SSE, sessions, testing |
 
 Run with:
 ```cmd

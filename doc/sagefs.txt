@@ -38,10 +38,11 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 - Hot reload controls
 - SSE live updates from the daemon
 
-Architecture: 37 pure Lua modules with zero vim API dependencies (fully
+Architecture: pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
-1160 tests, zero failures.
+1428 tests passing (1372 busted + 56 headless-Neovim integration, latest
+green run); 51 user commands registered.
 
 ==============================================================================
 2. QUICKSTART                                            *sagefs-quickstart*
@@ -397,7 +398,8 @@ Density presets control information density: ~
 ==============================================================================
 7. LIVE TESTING                                          *sagefs-testing*
 
-SageFs provides a three-speed live testing pipeline:
+SageFs provides a three-speed live testing pipeline (timings are design
+goals — the engine's own docs cite 300–800ms typical on the hot path):
 
 1. Tree-sitter detects tests in ~50ms (even in broken code)
 2. F# Compiler Service builds dependency graph in ~350ms

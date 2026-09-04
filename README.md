@@ -65,20 +65,20 @@ SageFs is a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/too
 
 **Key SageFs capabilities:**
 
-- **Sub-second hot reload** — Save a `.fs` file and your running web server picks up the change in ~100ms. [Harmony](https://github.com/pardeike/Harmony) patches method pointers at runtime — no restart, no rebuild. Browsers auto-refresh via SSE.
-- **Live unit testing** — A three-speed pipeline: tree-sitter detects tests in ~50ms (even in broken code), F# Compiler Service type-checks and builds a dependency graph in ~350ms, then affected tests execute in ~500ms total. Gutter markers show pass/fail inline. Covers xUnit, NUnit, MSTest, TUnit, and Expecto via a two-tier provider system. Configurable run policies per test category (unit tests on every keystroke, integration on save, browser on demand). Free — no VS Enterprise license needed.
-- **FCS-based coverage + IL branch coverage** — Line-level code coverage computed from F# Compiler Service typed AST symbol graph (lightweight, no IL instrumentation for basic coverage), plus IL-instrumented branch-level coverage showing which branches within a line are hit. Both streamed as SSE events with per-file and per-line annotations.
+- **Sub-second hot reload** — Save a `.fs` file and your running web server picks up the change in ~100ms (design target; the engine README cites 300–800ms typical on the current FSI-driven hot path). [Harmony](https://github.com/pardeike/Harmony) patches method pointers at runtime — no restart, no rebuild ([`SageFs.Core/Middleware/HotReloading.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Middleware/HotReloading.fs#L375-L377)). Browsers auto-refresh via SSE/DevReload ([`SageFs.Host/DevReloadInjector.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Host/DevReloadInjector.fs)).
+- **Live unit testing** — A three-speed pipeline (design-goal timings ~50ms detect / ~350ms analyze / ~500ms execute): [tree-sitter](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/TestTreeSitter.fs) detects tests even in broken code, F# Compiler Service type-checks and builds a dependency graph, then affected tests execute. Gutter markers show pass/fail inline. Covers xUnit, xUnit v3, NUnit, MSTest, TUnit, and Expecto via the executors in [`LiveTestingExecutors.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/LiveTestingExecutors.fs#L247-L302). Configurable run policies per test category. Free — no VS Enterprise license needed.
+- **FCS-based coverage + IL branch coverage** — Line-level code coverage computed from F# Compiler Service typed AST symbol graph (lightweight, no IL instrumentation for basic coverage), plus IL-instrumented branch-level coverage ([`SageFs.Core/Features/CoverageInstrumenter.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/CoverageInstrumenter.fs)). Both streamed as SSE events with per-file and per-line annotations.
 - **Full project context in the REPL** — All NuGet packages, project references, and namespaces loaded automatically. No `#r` directives.
-- **Affordance-driven MCP** — AI tools (Copilot, Claude, etc.) can execute F# code, type-check, explore .NET APIs, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state — agents see `get_fsi_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
+- **Affordance-driven MCP** — AI tools (Copilot, Claude, etc.) can execute F# code, type-check, explore .NET APIs, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)) — agents see `get_fsi_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
 - **Multi-session isolation** — Run multiple FSI sessions simultaneously across different projects, each in an isolated worker sub-process. A standby pool of pre-warmed sessions makes hard resets near-instant.
-- **Crash-proof supervisor** — Erlang-style auto-restart with exponential backoff (`sagefs --supervised`). Watchdog state exposed via API and shown in editor status bars.
-- **Binary session persistence** — Session state and test caches saved to compact binary files (`.sagefs` v3, `.sagetc` v1) for near-instant cold starts. Raw binary with CRC-32C integrity checking — no JSON parsing, no database.
+- **Crash-proof supervisor** — Erlang-style auto-restart with exponential backoff (`sagefs --supervised`, implemented in [`SageFs/Program.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs/Program.fs#L115-L116)). Watchdog state exposed via API and shown in editor status bars.
+- **Binary session persistence** — Session state and test caches saved to compact binary files (`.sagefs` v3, `.sagetc` v1) for near-instant cold starts. Raw binary with CRC-32C integrity checking — no JSON parsing, no database ([`SageFs.Core/Features/TestCachePersistence.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/TestCachePersistence.fs)).
 
 See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full details, including CLI reference, per-directory config (`.SageFs/config.fsx`), startup profiles, and the full [frontend feature matrix](https://github.com/WillEhrendreich/SageFs#frontend-feature-matrix).
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests, zero failures.**
+This plugin provides the Neovim integration layer. **59 Lua modules under `lua/sagefs/` (60 under `lua/`), 1428 passing tests (1372 busted + 56 headless-Neovim integration) as of the latest run, 51 user commands.**
 
 ### New in Latest
 
@@ -133,7 +133,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests,
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | 28 event types fired via `User` autocmds for scripting integration. |
+| **User autocmd events** | 37 event types fired via `User` autocmds for scripting integration. |
 | **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
@@ -185,7 +185,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests,
 {
   "WillEhrendreich/sagefs.nvim",
   dev = true,
-  dir = "C:/Code/Repos/sagefs.nvim",
+  dir = "C:/Code/Repos/sagefs-nvim",
   ft = { "fsharp" },
   opts = {
     port = 37749,
@@ -197,7 +197,7 @@ This plugin provides the Neovim integration layer. **37 Lua modules, 1160 tests,
 
 ## ⌨️ Keymaps
 
-All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace.
+Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace. Test-run keymaps additionally use `<leader>t` (`<leader>tf` filter, `<leader>tF` run-all, `<leader>tp` pick-test).
 
 | Key | Mode | Description |
 |-----|------|-------------|
@@ -225,9 +225,9 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `<leader>rtd` | n | Disable live testing |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
-| `<C-g>` | n | Explicit jump to source (warns if no location) |
-| `<C-r>` | n | Run selected test |
-| `<C-d>` | n | Show failure narrative floating window |
+| `<C-g>` | n | Explicit jump to source — telescope picker only (warns if no location) |
+| `<C-r>` | n | Run selected test — telescope picker only |
+| `<C-d>` | n | Show failure narrative floating window — test panel only (not mapped in telescope) |
 | **Browse & explore** | | |
 | `<leader>rb` | n | Bindings |
 | `<leader>rd` | n | Eval diff |
@@ -282,6 +282,10 @@ All keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVi
 | `:SageFsTestPolicy` | Configure test run policies per category |
 | `:SageFsEnableTesting` | Enable live testing |
 | `:SageFsDisableTesting` | Disable live testing |
+| `:SageFsWorkflow [live\|repl]` | Switch workflow mode (creates a new session) |
+| `:SageFsPickTest` | Pick a test to run/jump-to via Telescope |
+| `:SageFsSwitchProject` | Switch the active project for a session |
+| `:SageFsDashboard` | Toggle the floating SageFS dashboard |
 | `:SageFsTestTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
 | `:SageFsTypeExplorer` | Browse namespaces → types → members via completions |
@@ -385,61 +389,87 @@ Run `:checkhealth sagefs` to verify:
 
 ## Architecture
 
+> Interactive diagrams (self-contained HTML — open in any browser; pan/zoom/focus/theme included):
+> - [One SageFS daemon, every client](docs/diagrams/d1-daemon-clients.html) — daemon, ports, session workers, standby pool, supervisor
+> - [Save → Green: the test feedback pipeline](docs/diagrams/d2-save-green.html) — tree-sitter → FCS → affected-test exec → SSE → gutter
+> - [MCP eval round-trip](docs/diagrams/d3-mcp-sequence.html) — agent → affordance gate → FSI worker → result
+
 Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) outside Neovim) + a thin integration layer:
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `cells.lua` | ~270 | `;;` boundary detection, cell finding, treesitter boundary support |
-| `format.lua` | ~390 | Result formatting, status report builder, `build_render_options` |
-| `model.lua` | ~205 | Elmish state machine with validated transitions (idle→running→success/error→stale) |
-| `sse.lua` | ~165 | SSE parser, event classification, dispatch table, pcall batch dispatch |
-| `sessions.lua` | ~100 | Session response parsing, context-sensitive action filtering |
-| `diagnostics.lua` | ~90 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
-| `testing.lua` | ~1200 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
-| `coverage.lua` | ~110 | Line-level coverage state, file/total summaries, gutter signs, statusline |
-| `type_explorer.lua` | ~100 | Assembly/namespace/type/member formatting for pickers and floats |
-| `type_explorer_cache.lua` | ~30 | In-memory cache for type explorer data, invalidated on hard reset |
-| `history.lua` | ~60 | FSI event history formatting for picker and preview |
-| `export.lua` | ~20 | Session export to .fsx format |
-| `events.lua` | ~80 | User autocmd event definitions (28 event types) |
-| `completions.lua` | ~25 | Omnifunc completion parsing and formatting |
-| `util.lua` | ~50 | Shared utilities (json_decode) |
-| `hotreload_model.lua` | ~55 | Pure hot reload URL builder, state, picker formatting |
-| `daemon.lua` | ~70 | Daemon lifecycle state machine (idle→starting→running→stopped) |
-| `test_trace.lua` | ~65 | Test trace parsing and formatting |
-| `annotations.lua` | ~240 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
-| `density.lua` | ~55 | Display density presets (minimal/normal/full), layer visibility control |
-| `cell_highlight.lua` | ~265 | Dynamic eval region visuals — `╭│╰` bracket, 4 styles, eval-state color hints |
-| `diff.lua` | ~75 | Semantic diff between cell evaluation results |
-| `depgraph.lua` | ~95 | Cross-cell dependency graph with reactive staleness tracking |
-| `depgraph_viz.lua` | ~125 | ASCII arrow rendering for dependency visualization |
-| `timeline.lua` | ~90 | Eval timeline recording and flame-chart formatting |
-| `time_travel.lua` | ~105 | Cell history recording with snapshot management |
-| `scope_map.lua` | ~75 | Binding scope map — tracks what each cell defines |
-| `notebook.lua` | ~105 | Literate notebook export (markdown + fsx formats) |
-| `type_flow.lua` | ~105 | Cross-cell type propagation analysis and visualization |
-| `health.lua` | ~70 | Health check module for `:checkhealth sagefs` |
-| `treesitter_cells.lua` | ~195 | Tree-sitter based cell detection for F# (inferred mode) |
+| `cells.lua` | 312 | `;;` boundary detection, cell finding, treesitter boundary support |
+| `format.lua` | 439 | Result formatting, status report builder, `build_render_options` |
+| `model.lua` | 232 | Elmish state machine with validated transitions (idle→running→success/error→stale) |
+| `sse.lua` | 208 | SSE parser, event classification, dispatch table, pcall batch dispatch |
+| `sessions.lua` | 128 | Session response parsing, context-sensitive action filtering |
+| `diagnostics.lua` | 99 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
+| `testing.lua` | 1368 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
+| `coverage.lua` | 132 | Line-level coverage state, file/total summaries, gutter signs, statusline |
+| `type_explorer.lua` | 94 | Assembly/namespace/type/member formatting for pickers and floats |
+| `type_explorer_cache.lua` | 37 | In-memory cache for type explorer data, invalidated on hard reset |
+| `history.lua` | 69 | FSI event history formatting for picker and preview |
+| `export.lua` | 25 | Session export to .fsx format |
+| `events.lua` | 73 | User autocmd event definitions (37 event types) |
+| `completions.lua` | 30 | Omnifunc completion parsing and formatting |
+| `util.lua` | 52 | Shared utilities (json_decode) |
+| `hotreload_model.lua` | 66 | Pure hot reload URL builder, state, picker formatting |
+| `daemon.lua` | 77 | Daemon lifecycle state machine (idle→starting→running→stopped) |
+| `test_trace.lua` | 75 | Test trace parsing and formatting |
+| `annotations.lua` | 263 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
+| `density.lua` | 63 | Display density presets (minimal/normal/full), layer visibility control |
+| `diff.lua` | 81 | Semantic diff between cell evaluation results |
+| `depgraph.lua` | 101 | Cross-cell dependency graph with reactive staleness tracking |
+| `depgraph_viz.lua` | 134 | ASCII arrow rendering for dependency visualization |
+| `timeline.lua` | 106 | Eval timeline recording and flame-chart formatting |
+| `time_travel.lua` | 115 | Cell history recording with snapshot management |
+| `scope_map.lua` | 81 | Binding scope map — tracks what each cell defines |
+| `notebook.lua` | 112 | Literate notebook export (markdown + fsx formats) |
+| `type_flow.lua` | 114 | Cross-cell type propagation analysis and visualization |
+| `config.lua` | 36 | Plugin defaults and user options |
+| `daemon_discovery.lua` | 154 | Daemon discovery via `/health` + `/version` probes |
+| `telescope_picker.lua` | 256 | Telescope picker with source-jump / run / failure-narrative actions |
 | `version.lua` | 1 | Plugin version string |
+| **Pure modules using vim APIs (integration-tested)** | | |
+| `cell_highlight.lua` | 308 | Dynamic eval region visuals — `╭│╰` bracket, 4 styles, eval-state color hints (uses `vim.api`/`vim.uv`) |
+| `treesitter_cells.lua` | 215 | Tree-sitter based cell detection for F# (inferred mode; requires `vim.treesitter`) |
+| `health.lua` | 231 | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
+| `annotations.lua` | 263 | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | | |
-| `init.lua` | ~970 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
-| `transport.lua` | ~215 | HTTP via curl, SSE connections with exponential backoff reconnect |
-| `render.lua` | ~380 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | ~1245 | All 46 commands, keymaps, autocmds |
-| `hotreload.lua` | ~110 | Hot reload file toggle API |
+| `init.lua` | 1441 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
+| `transport.lua` | 237 | HTTP via curl, SSE connections with exponential backoff reconnect |
+| `render.lua` | 454 | Extmarks, test/coverage gutter signs, floating windows |
+| `commands.lua` | 1595 | All 51 commands, keymaps, autocmds |
+| `hotreload.lua` | 130 | Hot reload file toggle API |
+| **Dashboard** | | |
+| `dashboard/init.lua` | 460 | Floating dashboard (SageFsDashboard) |
+| `dashboard/compositor.lua` | 121 | Dashboard layout compositor |
+| `dashboard/state.lua` | 279 | Dashboard state |
+| `dashboard/event_index.lua` | 56 | SSE event index |
+| `dashboard/section.lua` | 88 | Dashboard section base |
+| `dashboard/highlights.lua` | 59 | Dashboard highlight groups |
+| `dashboard/statusline.lua` | 59 | Dashboard statusline |
+| `dashboard/sections/*.lua` | ~600 total | 12 dashboard sections (alarms, bindings, coverage, diagnostics, failures, filmstrip, health, help, hot_reload, output, session, tests) |
+| **Telescope extension** | | |
+| `lua/telescope/_extensions/sagefs.lua` | 188 | Telescope extension source-jump/run integration |
 
-All pure modules have zero vim API dependencies — they are testable under busted without a running Neovim instance.
+Pure modules (the ones without a `vim` note) have zero vim API dependencies — they are testable under busted without a running Neovim instance. Modules noted above as using vim APIs (`cell_highlight.lua`, `treesitter_cells.lua`, `health.lua`, and the `vim.NIL` guard in `annotations.lua`) are integration-tested through the headless-Neovim harness instead.
 
 ### How it communicates with SageFs
 
 - **POST `/exec`** — Send F# code for evaluation (via curl jobstart)
 - **POST `/diagnostics`** — Fire-and-forget type-check (results arrive via SSE)
 - **GET `/events`** — SSE stream for live updates (connection state, test results, coverage, etc.)
-- **GET `/health`** — Health check with session status
+- **GET `/health`**, **GET `/version`** — Health/version probes for daemon discovery
 - **`/api/status`** — Rich JSON status (session state, eval stats, projects, pipeline)
 - **`/api/sessions/*`** — Session management (list, create, switch, stop)
 - **`/api/sessions/{id}/hotreload/*`** — Hot reload file management
 - **`/api/sessions/{id}/warmup-context`** — Session context (assemblies, namespaces)
+- **`/api/cancel-eval`** — Cancel a running evaluation
+- **`/api/history`** — Eval history for the cell under cursor
+- **`/api/callers`** / **`/api/callees`** — Call-graph queries
+- **`/api/completions`** — Omnifunc code completions
+- **`/api/sessions/{id}/export-fsx`** — Export session history as `.fsx`
 - **POST `/dashboard/completions`** — Code completions at cursor position
 - **POST `/reset`**, **POST `/hard-reset`** — Session reset endpoints
 - **POST `/api/live-testing/enable`** — Enable live testing
@@ -461,10 +491,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1107 | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 53 | Real vim APIs — plugin setup, 46 command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
-| **E2E** | Headless Neovim + real SageFs | 27 | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1187** | 1160 unit+integration (all passing), 27 E2E (requires running SageFs) |
+| **Busted (pure)** | `busted` via LuaRocks | 1372 (latest run: 1372 passed, 0 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 56 (latest run: 56 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
+| **Total** | | **1428 unit+integration passing** | 1372 busted + 56 headless-Neovim integration (latest green run); E2E suite requires a running SageFs daemon |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
@@ -511,41 +541,69 @@ vim.api.nvim_create_autocmd("User", {
 | `SageFsHotReloadTriggered` | Hot reload event received | file path |
 | `SageFsHotReloadSnapshot` | Full hot-reload snapshot arrives | all watched files |
 | `SageFsWarmupContext` | Session warmup context data arrives | assemblies, namespaces |
-| `SageFsProvidersDetected` | Test providers reported | xUnit, NUnit, Expecto, etc. |
+| `SageFsProvidersDetected` | Test providers reported | xUnit, xUnit v3, NUnit, MSTest, TUnit, Expecto, etc. |
 | `SageFsBindingsSnapshot` | All active FSI bindings snapshot | name → type_sig map |
 | `SageFsBindingScopeMap` | Binding scope map data | cell → bindings |
 | `SageFsCellDependencies` | Dependency graph data for buffer cells | edges |
+| `SageFsTestSourceLocations` | Test→file/line source-location mapping arrives | test id → file/line |
+| `SageFsFailureNarratives` | Enriched failure context for failing tests | summary, time since last pass, causal changes |
+| `SageFsWarmupProgress` | Warmup progress updates | stage, percent |
+| `SageFsSessionFaulted` | Session entered faulted state | session id |
+| `SageFsWarmupCompleted` | Session warmup finished | assemblies, namespaces |
+| `SageFsFileReloaded` | A watched file was reloaded | file path |
+| `SageFsSystemAlarm` | System alarm raised | alarm payload |
+| `SageFsCoverageView` | Coverage view event | coverage view payload |
+
+The full catalog (37 event types) is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
 
 ## SageFs MCP Tools Reference
 
-These are the MCP tools exposed by SageFs. The server uses **affordance-driven tool exposure** — only tools valid for the current session state are presented. During warmup you see `get_fsi_status`; once ready, the full tool set appears.
+SageFs exposes an MCP server with an **affordance-driven tool surface** — only tools valid for the current session state are presented ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)). During warmup you see `get_fsi_status`/`list_sessions`/`get_available_projects`; once the session is `Ready`, the full state-gated set appears. The canonical, always-current list is the engine's [MCP Tools Reference](https://github.com/WillEhrendreich/SageFs/blob/master/docs/mcp-tools.md) — the tool set has grown well past the original ~24, so treat the tables below as the highlights and the engine doc as the source of truth.
+
+**Code execution & status**
 
 | Tool | Description |
 |------|-------------|
 | `send_fsharp_code` | Execute F# code (each `;;` is a transaction — failures are isolated) |
 | `check_fsharp_code` | Type-check without executing (pre-validate before committing) |
-| `get_completions` | Code completions at cursor position |
 | `cancel_eval` | Cancel a running evaluation (recover from infinite loops) |
 | `load_fsharp_script` | Load an `.fsx` file with partial progress |
 | `get_recent_fsi_events` | Recent evals, errors, and loads with timestamps |
 | `get_fsi_status` | Session health, loaded projects, statistics, affordances |
 | `get_startup_info` | Projects, features, CLI arguments |
 | `get_available_projects` | Discover `.fsproj`/`.sln`/`.slnx` in working directory |
-| `explore_namespace` | Browse types and functions in a .NET namespace |
-| `explore_type` | Browse members and properties of a .NET type |
+| `get_completions` | Code completions at cursor position |
+| `explore_namespace` / `explore_type` | Browse types/members in a .NET namespace/type |
 | `get_elm_state` | Current UI render state (editor, output, diagnostics) |
-| `reset_fsi_session` | Soft reset — clear definitions, keep DLL locks |
-| `hard_reset_fsi_session` | Full reset — rebuild, reload, fresh session |
-| `create_session` | Create a new isolated FSI session |
-| `list_sessions` | List all active sessions |
-| `stop_session` | Stop a session by ID |
-| `switch_session` | Switch active session by ID |
-| `get_live_test_status` | Query live test state (with optional file filter) |
-| `enable_live_testing` | Enable the live test pipeline |
-| `disable_live_testing` | Disable the live test pipeline |
-| `set_run_policy` | Control when test categories auto-run (every/save/demand/disabled) |
-| `get_test_trace` | Debug the three-speed test pipeline waterfall |
+
+**Sessions**
+
+| Tool | Description |
+|------|-------------|
+| `create_session` / `list_sessions` / `switch_session` / `stop_session` | Create, list, switch, stop isolated FSI sessions |
+| `reset_fsi_session` / `hard_reset_fsi_session` | Soft reset (clear definitions, keep DLLs) / full reset (rebuild, reload) |
+| `switch_workflow` | Switch between REPL and Live workflows |
+
+**Testing & analysis (state-gated on a Ready session)**
+
+| Tool | Description |
+|------|-------------|
+| `list_tests` | List discovered tests with source locations |
 | `run_tests` | Run tests on demand with name/category filters |
+| `explain_test_run` | Why a test was selected to run (trigger reason, changed symbols) |
+| `explain_test_failure` | Enriched failure context for a Passed→Failed test |
+| `targeted_verify` | Plan a trustworthy verification pass for one changed behavior |
+| `get_file_coverage` / `query_test_coverage` | Per-line / per-symbol coverage queries |
+| `decompose_pipeline` | Decompose an F# pipeline into stages with purity classification |
+| `diagnose`, `coverage_intel`, `impact_forecast`, `suggest_next_action`, `plan_ripple`, `preview_what_if`, `suggest_next_cell`, `suggest_repair`, `discover_features`, `get_cell_dependencies` | Feature-analysis surface |
+
+**Friction telemetry (always available, local)**
+
+| Tool | Description |
+|------|-------------|
+| `report_friction` / `get_friction_report` / `get_friction_summary` | Record/read structured feedback about confusing tool calls |
+
+The affordance gate itself is a declaration table in [`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs#L137-L185): every registered MCP tool is declared either `AlwaysAvailable` or `StateGated`, and `tools/call` fails closed against it — agents never see a tool that would fail in the current session state.
 
 ## License
 

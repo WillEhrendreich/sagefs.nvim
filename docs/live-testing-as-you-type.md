@@ -4,11 +4,11 @@ Live testing in sagefs.nvim gives you pass/fail feedback in the gutter as you wo
 
 ## How It Works
 
-SageFs's daemon runs a three-speed pipeline that detects, analyzes, and executes tests automatically:
+SageFs's daemon runs a three-speed pipeline that detects, analyzes, and executes tests automatically (the ms figures are the engine's design goals — the engine README cites 300–800ms typical on the current hot path):
 
 1. **Tree-sitter detection** (~50ms) — Finds `[<Test>]`, `[<Fact>]`, `[<Property>]` attributes even in broken code
 2. **F# Compiler Service analysis** (~350ms) — Builds a dependency graph to determine which tests are affected by your change
-3. **Test execution** (~500ms) — Runs only the affected tests via the appropriate framework (Expecto, xUnit, NUnit, MSTest, TUnit)
+3. **Test execution** (~500ms) — Runs only the affected tests via the appropriate framework (Expecto, xUnit, xUnit v3, NUnit, MSTest, TUnit)
 
 The plugin receives results through the SSE event stream and renders them as gutter signs.
 
