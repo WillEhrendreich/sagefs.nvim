@@ -74,6 +74,7 @@ M.system_alarm = nil       -- Latest SystemAlarm payload (for statusline ⚠ ind
 M.last_reload_file = nil   -- Last file reloaded by hot reload (path string)
 M.last_reload_ms = nil     -- Elapsed ms for last file reload
 M.workflow_label = nil     -- Current workflow label (e.g. "REPL", "Live")
+M.app_run_state = nil      -- Latest AppRunState from run-app/stop-app (for statusline)
 
 -- Eval watchdog: monotonic ID tracks which eval is in flight.
 -- 0 = idle; >0 = eval in flight (generation counter).
@@ -1321,6 +1322,9 @@ function M.statusline()
 
   local timeline_sl = require("sagefs.timeline").format_statusline(M.timeline_stats)
   if timeline_sl ~= "" then table.insert(parts, timeline_sl) end
+
+  local app_sl = require("sagefs.app_run").format_statusline(M.app_run_state)
+  if app_sl ~= "" then table.insert(parts, app_sl) end
 
   -- Phase 7C: system alarm indicator (highest visibility — always last in bar)
   if M.system_alarm then

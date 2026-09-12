@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **59 Lua modules under `lua/sagefs/` (60 under `lua/`), 1428 passing tests (1372 busted + 56 headless-Neovim integration) as of the latest run, 51 user commands.**
+This plugin provides the Neovim integration layer. **60 Lua modules under `lua/sagefs/` (61 under `lua/`), 1474 passing tests (1418 busted + 56 headless-Neovim integration) as of the latest run, 53 user commands.**
 
 ### New in Latest
 
@@ -243,6 +243,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rR` | n | Hard reset |
 | `<leader>rS` | n | Start server |
 | `<leader>rQ` | n | Stop server |
+| `<leader>ru` | n | Run app |
+| `<leader>rU` | n | Stop app |
 | `<leader>rD` | n | Cycle display density (minimal/normal/full) |
 | **Misc** | | |
 | `<leader>rp` | n | Playground |
@@ -267,6 +269,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsConfig` | Create or open `.SageFs/config.fsx` and disable warmup namespace auto-open |
 | `:SageFsStart` | Start SageFs daemon from Neovim |
 | `:SageFsStop` | Stop the managed SageFs daemon |
+| `:SageFsRunApp [project]` | Run the session's application (optional project name; default target otherwise) |
+| `:SageFsStopApp` | Stop the session's running application |
 | `:SageFsHotReload` | Hot reload file picker |
 | `:SageFsWatchAll` | Watch all project files for hot reload |
 | `:SageFsUnwatchAll` | Unwatch all files |
@@ -416,6 +420,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `hotreload_model.lua` | 66 | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | 77 | Daemon lifecycle state machine (idle→starting→running→stopped) |
 | `test_trace.lua` | 75 | Test trace parsing and formatting |
+| `app_run.lua` | 166 | Run/stop the session's application — request building, `AppStateView` parsing, notify/statusline formatting |
 | `annotations.lua` | 263 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | 63 | Display density presets (minimal/normal/full), layer visibility control |
 | `diff.lua` | 81 | Semantic diff between cell evaluation results |
@@ -436,10 +441,10 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `health.lua` | 231 | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
 | `annotations.lua` | 263 | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | | |
-| `init.lua` | 1441 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
+| `init.lua` | 1445 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | 237 | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | 454 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | 1595 | All 51 commands, keymaps, autocmds |
+| `commands.lua` | 1656 | All 53 commands, keymaps, autocmds |
 | `hotreload.lua` | 130 | Hot reload file toggle API |
 | **Dashboard** | | |
 | `dashboard/init.lua` | 460 | Floating dashboard (SageFsDashboard) |

@@ -366,6 +366,63 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Run tests (optional pattern filter)", nargs = "?" })
 
+  -- ─── Application Run/Stop ────────────────────────────────────────────────
+
+  local app_run = require("sagefs.app_run")
+
+  local function resolve_session_id()
+    local sid = plugin.active_session and plugin.active_session.id or nil
+    if not sid then
+      helpers.notify("No active session", vim.log.levels.WARN)
+    end
+    return sid
+  end
+
+  vim.api.nvim_create_user_command("SageFsRunApp", function(opts)
+    local sid = resolve_session_id()
+    if not sid then return end
+    local req = app_run.build_run_request(sid, opts.args ~= "" and opts.args or nil)
+    transport.http_json({
+      method = req.method,
+      url = helpers.base_url() .. req.path,
+      body = req.body,
+      timeout = 30,
+      callback = function(ok, raw)
+        local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if not ok then
+          helpers.notify(app_run.format_error(parsed, raw), vim.log.levels.WARN)
+          return
+        end
+        local state = app_run.parse_state(parsed)
+        plugin.app_run_state = state
+        local level = app_run.is_failure(state) and vim.log.levels.WARN or vim.log.levels.INFO
+        helpers.notify(app_run.format_run_notify(state), level)
+      end,
+    })
+  end, { desc = "Run the session's application (optional project name)", nargs = "?" })
+
+  vim.api.nvim_create_user_command("SageFsStopApp", function()
+    local sid = resolve_session_id()
+    if not sid then return end
+    local req = app_run.build_stop_request(sid)
+    transport.http_json({
+      method = req.method,
+      url = helpers.base_url() .. req.path,
+      body = req.body,
+      timeout = 15,
+      callback = function(ok, raw)
+        local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
+        if not ok then
+          helpers.notify(app_run.format_error(parsed, raw), vim.log.levels.WARN)
+          return
+        end
+        local state = app_run.parse_state(parsed)
+        plugin.app_run_state = state
+        helpers.notify(app_run.format_stop_notify(state))
+      end,
+    })
+  end, { desc = "Stop the session's application" })
+
   vim.api.nvim_create_user_command("SageFsTestPolicy", function()
     local items = testing.format_picker_items(plugin.testing_state)
     if #items == 0 then
@@ -1469,6 +1526,10 @@ function M.register_keymaps(plugin, helpers)
     { desc = "SageFs: Start server", silent = true })
   vim.keymap.set("n", "<leader>rQ", "<cmd>SageFsStop<CR>",
     { desc = "SageFs: Stop server", silent = true })
+  vim.keymap.set("n", "<leader>ru", "<cmd>SageFsRunApp<CR>",
+    { desc = "SageFs: Run app", silent = true })
+  vim.keymap.set("n", "<leader>rU", "<cmd>SageFsStopApp<CR>",
+    { desc = "SageFs: Stop app", silent = true })
   vim.keymap.set("n", "<leader>rD", function()
     local dens = require("sagefs.density")
     plugin.density_state = dens.cycle(plugin.density_state)
