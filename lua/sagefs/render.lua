@@ -41,6 +41,7 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsCovPending", { default = true, fg = "#45475a" })
   vim.api.nvim_set_hl(0, "SageFsCovFailing", { default = true, fg = "#f38ba8" })
   vim.api.nvim_set_hl(0, "SageFsCovPartial", { default = true, fg = "#fab387" })
+  vim.api.nvim_set_hl(0, "SageFsCovHits", { default = true, fg = "#585b70", italic = true })
   -- Branch coverage highlights (shape + color for accessibility)
   vim.api.nvim_set_hl(0, "SageFsBranchFull", { default = true, fg = "#a6e3a1" })    -- green ▐
   vim.api.nvim_set_hl(0, "SageFsBranchPartial", { default = true, fg = "#f9e2af" }) -- yellow ◐
@@ -263,6 +264,11 @@ end
 
 -- ─── Coverage Gutter Signs ──────────────────────────────────────────────────
 
+-- Field separator for the delta-cache key below. Uses a control byte (not the
+-- ASCII "|") so it can never collide with a sign glyph, highlight group name,
+-- or formatted hit count.
+local COV_KEY_SEP = "\1"
+
 function M.render_coverage_signs(buf, coverage_state)
   local cns = get_cov_ns()
 
@@ -273,8 +279,11 @@ function M.render_coverage_signs(buf, coverage_state)
     return
   end
 
+  -- `coverage.get_file_lines` returns a sparse line-number → hit-count MAP
+  -- (e.g. { [5] = 3, [10] = 0 }), never an array — always walk it with
+  -- `pairs`, not `ipairs` (ipairs on a sparse, non-1-based map yields nothing).
   local lines = coverage.get_file_lines(coverage_state, file)
-  if not lines then
+  if not lines or next(lines) == nil then
     -- Clear if we had signs before
     if _prev_signs[buf] and _prev_signs[buf].cov_signs then
       vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
@@ -283,12 +292,13 @@ function M.render_coverage_signs(buf, coverage_state)
     return
   end
 
-  -- Build desired state
+  -- Build desired state: line_0indexed → "sign_text\1sign_hl\1hit_count_text"
   local desired = {}
-  for _, entry in ipairs(lines) do
-    if entry.line and entry.line > 0 then
-      local sign = coverage.gutter_sign(entry.hits)
-      desired[entry.line - 1] = sign.text .. "|" .. sign.hl
+  for line, hits in pairs(lines) do
+    if type(line) == "number" and line > 0 then
+      local sign = coverage.gutter_sign(hits)
+      local hit_text = (type(hits) == "number" and hits > 0) and (" " .. tostring(hits) .. "×") or ""
+      desired[line - 1] = sign.text .. COV_KEY_SEP .. sign.hl .. COV_KEY_SEP .. hit_text
     end
   end
 
@@ -307,16 +317,32 @@ function M.render_coverage_signs(buf, coverage_state)
 
   vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
   for line_0, key in pairs(desired) do
-    local text, hl = key:match("^(.+)|(.+)$")
-    pcall(vim.api.nvim_buf_set_extmark, buf, cns, line_0, 0, {
+    local text, hl, hit_text = key:match("^(.-)" .. COV_KEY_SEP .. "(.-)" .. COV_KEY_SEP .. "(.*)$")
+    local opts = {
       sign_text = text,
       sign_hl_group = hl,
       priority = 150,
-    })
+    }
+    if hit_text and hit_text ~= "" then
+      -- Hit-count as virtual text, on the same extmark as the sign so the
+      -- gutter and the count can never drift apart.
+      opts.virt_text = { { hit_text, "SageFsCovHits" } }
+      opts.virt_text_pos = "eol"
+    end
+    pcall(vim.api.nvim_buf_set_extmark, buf, cns, line_0, 0, opts)
   end
 
   if not _prev_signs[buf] then _prev_signs[buf] = {} end
   _prev_signs[buf].cov_signs = desired
+end
+
+--- Clear the coverage gutter signs for a buffer (used by the coverage
+--- signs toggle to hide the overlay without touching other namespaces).
+---@param buf number
+function M.clear_coverage_signs(buf)
+  local cns = get_cov_ns()
+  vim.api.nvim_buf_clear_namespace(buf, cns, 0, -1)
+  if _prev_signs[buf] then _prev_signs[buf].cov_signs = nil end
 end
 
 -- ─── File Annotations (CodeLens + Inline Failures) ─────────────────────────

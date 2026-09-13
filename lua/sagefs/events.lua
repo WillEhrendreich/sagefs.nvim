@@ -42,6 +42,7 @@ local EVENT_CATALOG = {
   { "file_reloaded", "SageFsFileReloaded" },
   { "system_alarm", "SageFsSystemAlarm" },
   { "coverage_view", "SageFsCoverageView" },
+  { "coverage_cleared", "SageFsCoverageCleared" },
 }
 
 -- ─── Event Names ──────────────────────────────────────────────────────────────

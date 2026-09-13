@@ -106,6 +106,7 @@ function M.register_commands(plugin, helpers)
   local model = require("sagefs.model")
   local testing = require("sagefs.testing")
   local coverage = require("sagefs.coverage")
+  local coverage_review = require("sagefs.coverage_review")
   local type_explorer = require("sagefs.type_explorer")
   local te_cache = require("sagefs.type_explorer_cache")
   local history = require("sagefs.history")
@@ -996,18 +997,36 @@ function M.register_commands(plugin, helpers)
   -- ─── Coverage Commands ───────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsCoverage", function()
-    local summary = coverage.compute_total_summary(plugin.coverage_state)
-    local lines = { coverage.format_summary(summary) }
+    local review = coverage.build_review(plugin.coverage_state)
+    if #review.files == 0 then
+      render.show_float({ "  " .. coverage_review.empty_message() }, { title = "Coverage" })
+      return
+    end
+    local lines = { coverage.format_summary(review.total) }
     table.insert(lines, "")
-    for path, _ in pairs(plugin.coverage_state.files) do
-      local fs = coverage.compute_file_summary(plugin.coverage_state, path)
-      table.insert(lines, coverage.format_summary(fs) .. "  " .. path)
+    for _, f in ipairs(review.files) do
+      table.insert(lines, coverage.format_summary(f.summary) .. "  " .. f.path)
     end
-    if #lines == 2 then
-      table.insert(lines, "(no coverage data yet)")
-    end
+    table.insert(lines, "")
+    table.insert(lines, "Use :SageFsCoverageReview to browse and jump to uncovered lines.")
     render.show_float(lines, { title = "Coverage" })
   end, { desc = "Show coverage summary" })
+
+  vim.api.nvim_create_user_command("SageFsCoverageReview", function()
+    coverage_review.open(plugin.coverage_state)
+  end, { desc = "Browse files → uncovered lines in a quickfix list (jump with <CR> or :cnext)" })
+
+  vim.api.nvim_create_user_command("SageFsCoverageToggle", function()
+    plugin.coverage_signs_enabled = not plugin.coverage_signs_enabled
+    local buf = vim.api.nvim_get_current_buf()
+    if plugin.coverage_signs_enabled then
+      render.render_coverage_signs(buf, plugin.coverage_state)
+      helpers.notify("Coverage signs: on")
+    else
+      render.clear_coverage_signs(buf)
+      helpers.notify("Coverage signs: off")
+    end
+  end, { desc = "Toggle in-buffer coverage gutter signs" })
 
   -- ─── Type Explorer Command ───────────────────────────────────────────────
 

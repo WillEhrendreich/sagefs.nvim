@@ -118,7 +118,8 @@ describe("plugin setup", function()
       "SageFsCreateSession", "SageFsConfig", "SageFsHotReload", "SageFsWatchAll",
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
       "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel", "SageFsTestsHere",
-      "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage", "SageFsTypeExplorer",
+      "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage",
+      "SageFsCoverageReview", "SageFsCoverageToggle", "SageFsTypeExplorer",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
       "SageFsCancel", "SageFsTestTrace", "SageFsLoadScript",
       "SageFsStart", "SageFsStop",
@@ -1128,10 +1129,14 @@ describe("test gutter sign rendering", function()
     vim.api.nvim_buf_set_name(buf, cov_file)
     local resolved = vim.api.nvim_buf_get_name(buf)
 
+    -- Go through apply_coverage_response, exactly like the coverage_updated
+    -- SSE handler does, so this exercises the real sparse line→hits MAP
+    -- shape (not a hand-rolled array-of-entries convenience shape).
     local state = cov.new()
-    state = cov.update_file(state, resolved, {
-      { line = 1, hits = 5 },
-      { line = 3, hits = 0 },
+    state = cov.apply_coverage_response(state, {
+      files = {
+        { path = resolved, lines = { { line = 1, hits = 5 }, { line = 3, hits = 0 } } },
+      },
     })
 
     render.render_coverage_signs(buf, state)
@@ -1140,6 +1145,102 @@ describe("test gutter sign rendering", function()
     assert_eq(2, #marks, "should have 2 coverage signs")
     assert_eq("SageFsCovered", marks[1][4].sign_hl_group, "covered line")
     assert_eq("SageFsUncovered", marks[2][4].sign_hl_group, "uncovered line")
+  end)
+
+  it("shows hit count as virtual text on covered lines", function()
+    local render = require("sagefs.render")
+    local cov = require("sagefs.coverage")
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "line1", "line2" })
+    local cov_file = "/tmp/cov_hits_" .. tostring(buf) .. ".fs"
+    vim.api.nvim_buf_set_name(buf, cov_file)
+    local resolved = vim.api.nvim_buf_get_name(buf)
+
+    local state = cov.new()
+    state = cov.apply_coverage_response(state, {
+      files = { { path = resolved, lines = { { line = 1, hits = 7 } } } },
+    })
+
+    render.render_coverage_signs(buf, state)
+    local cns = vim.api.nvim_create_namespace("sagefs_coverage")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, cns, 0, -1, { details = true })
+    assert_eq(1, #marks, "should have 1 coverage sign")
+    local vt = marks[1][4].virt_text
+    assert_truthy(vt and vt[1] and vt[1][1]:find("7"), "hit count virtual text should mention 7")
+  end)
+
+  it("clear_coverage_signs removes the coverage namespace contents", function()
+    local render = require("sagefs.render")
+    local cov = require("sagefs.coverage")
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "line1" })
+    local cov_file = "/tmp/cov_clear_" .. tostring(buf) .. ".fs"
+    vim.api.nvim_buf_set_name(buf, cov_file)
+    local resolved = vim.api.nvim_buf_get_name(buf)
+
+    local state = cov.new()
+    state = cov.apply_coverage_response(state, {
+      files = { { path = resolved, lines = { { line = 1, hits = 1 } } } },
+    })
+    render.render_coverage_signs(buf, state)
+
+    render.clear_coverage_signs(buf)
+    local cns = vim.api.nvim_create_namespace("sagefs_coverage")
+    local marks = vim.api.nvim_buf_get_extmarks(buf, cns, 0, -1, {})
+    assert_eq(0, #marks, "coverage signs should be cleared")
+  end)
+end)
+
+-- ─── Coverage Review (quickfix) ───────────────────────────────────────────────
+
+describe("coverage_review", function()
+  it("open() populates the quickfix list with uncovered lines", function()
+    local coverage_review = require("sagefs.coverage_review")
+    local cov = require("sagefs.coverage")
+
+    local state = cov.new()
+    state = cov.apply_coverage_response(state, {
+      files = {
+        { path = "/tmp/review_a.fs", lines = { { line = 1, hits = 1 }, { line = 2, hits = 0 } } },
+      },
+    })
+
+    coverage_review.open(state)
+    assert_truthy(coverage_review.is_active(), "coverage quickfix should be the active list")
+    local qf = vim.fn.getqflist()
+    local found_uncovered = false
+    for _, item in ipairs(qf) do
+      if item.lnum == 2 and item.text == "uncovered" then found_uncovered = true end
+    end
+    assert_truthy(found_uncovered, "quickfix should contain the uncovered line entry")
+    vim.cmd("cclose")
+  end)
+
+  it("refresh() only updates the list when it is the active one", function()
+    local coverage_review = require("sagefs.coverage_review")
+    local cov = require("sagefs.coverage")
+
+    -- Open some unrelated quickfix list first.
+    vim.fn.setqflist({}, " ", { title = "Something else", items = {} })
+    assert_falsy(coverage_review.is_active(), "unrelated list should not read as active")
+
+    local state = cov.new()
+    state = cov.apply_coverage_response(state, {
+      files = { { path = "/tmp/review_b.fs", lines = { { line = 1, hits = 0 } } } },
+    })
+    -- Should be a no-op: the active list is the unrelated one, not ours.
+    coverage_review.refresh(state)
+    local qf = vim.fn.getqflist({ title = 1 })
+    assert_eq("Something else", qf.title, "refresh should not clobber an unrelated active list")
+  end)
+
+  it("build_qflist_items is empty for a fresh coverage state", function()
+    local coverage_review = require("sagefs.coverage_review")
+    local cov = require("sagefs.coverage")
+    local items = coverage_review.build_qflist_items(cov.new())
+    assert_eq(0, #items, "no coverage data yet should produce no items")
   end)
 end)
 

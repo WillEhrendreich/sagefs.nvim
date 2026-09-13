@@ -290,6 +290,13 @@ Analysis ~
 :SageFsCoverage                                         *:SageFsCoverage*
     Show coverage summary with per-file breakdown.
 
+:SageFsCoverageReview                                   *:SageFsCoverageReview*
+    Browse files → uncovered lines in a quickfix list. Jump with <CR> or
+    :cnext/:cprev. Live-updates while open as new coverage data arrives.
+
+:SageFsCoverageToggle                                   *:SageFsCoverageToggle*
+    Show/hide in-buffer coverage gutter signs (and hit-count virtual text).
+
 :SageFsTestPolicy                                       *:SageFsTestPolicy*
     Configure test run policies per category.
 
@@ -589,6 +596,11 @@ Event reference ~
 
 *SageFsCoverageUpdated*
     Fired when coverage data is updated. Triggers gutter sign refresh.
+
+*SageFsCoverageCleared*
+    Fired when coverage data is cleared (explicit clear, reconnect, or
+    session fault). Clears in-buffer signs and the coverage review
+    quickfix list if it is open.
 
 *SageFsHotReloadTriggered*
     Fired when a hot reload event is received from the daemon.

@@ -185,6 +185,69 @@ describe("coverage", function()
     end)
   end)
 
+  -- ─── uncovered_lines ─────────────────────────────────────────────────────
+  describe("uncovered_lines", function()
+    it("returns sorted line numbers with zero hits", function()
+      local s = coverage.new()
+      coverage.update_file(s, "a.fs", { [10] = 0, [3] = 1, [7] = 0, [1] = 2 })
+      local lines = coverage.uncovered_lines(s, "a.fs")
+      assert.are.same({ 7, 10 }, lines)
+    end)
+
+    it("returns empty for a fully covered file", function()
+      local s = coverage.new()
+      coverage.update_file(s, "a.fs", { [1] = 1, [2] = 3 })
+      assert.are.same({}, coverage.uncovered_lines(s, "a.fs"))
+    end)
+
+    it("returns empty for an unknown file", function()
+      local s = coverage.new()
+      assert.are.same({}, coverage.uncovered_lines(s, "nope.fs"))
+    end)
+  end)
+
+  -- ─── sorted_paths ────────────────────────────────────────────────────────
+  describe("sorted_paths", function()
+    it("returns file paths in sorted order", function()
+      local s = coverage.new()
+      coverage.update_file(s, "z.fs", {})
+      coverage.update_file(s, "a.fs", {})
+      coverage.update_file(s, "m.fs", {})
+      assert.are.same({ "a.fs", "m.fs", "z.fs" }, coverage.sorted_paths(s))
+    end)
+
+    it("returns empty list for empty state", function()
+      local s = coverage.new()
+      assert.are.same({}, coverage.sorted_paths(s))
+    end)
+  end)
+
+  -- ─── build_review ────────────────────────────────────────────────────────
+  describe("build_review", function()
+    it("builds per-file summaries, uncovered lines, and an overall total", function()
+      local s = coverage.new()
+      coverage.update_file(s, "b.fs", { [1] = 1, [2] = 0 })
+      coverage.update_file(s, "a.fs", { [1] = 0 })
+      local review = coverage.build_review(s)
+
+      assert.are.equal(3, review.total.total)
+      assert.are.equal(1, review.total.covered)
+
+      assert.are.equal(2, #review.files)
+      assert.are.equal("a.fs", review.files[1].path)
+      assert.are.same({ 1 }, review.files[1].uncovered)
+      assert.are.equal("b.fs", review.files[2].path)
+      assert.are.same({ 2 }, review.files[2].uncovered)
+      assert.are.equal(1, review.files[2].summary.covered)
+    end)
+
+    it("returns no files for an empty state", function()
+      local review = coverage.build_review(coverage.new())
+      assert.are.equal(0, #review.files)
+      assert.are.equal(0, review.total.total)
+    end)
+  end)
+
   -- ─── clear ───────────────────────────────────────────────────────────────
   describe("clear", function()
     it("removes all file data", function()

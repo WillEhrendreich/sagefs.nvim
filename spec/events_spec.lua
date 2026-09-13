@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 37 event names", function()
-      assert.are.equal(37, #events.EVENT_NAMES)
+    it("contains 38 event names", function()
+      assert.are.equal(38, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -51,6 +51,14 @@ describe("events", function()
       local found = false
       for _, name in ipairs(events.EVENT_NAMES) do
         if name == "SageFsCoverageView" then found = true; break end
+      end
+      assert.is_true(found)
+    end)
+
+    it("contains coverage_cleared event", function()
+      local found = false
+      for _, name in ipairs(events.EVENT_NAMES) do
+        if name == "SageFsCoverageCleared" then found = true; break end
       end
       assert.is_true(found)
     end)
@@ -160,6 +168,12 @@ describe("events", function()
       assert.are.equal("SageFsSystemAlarm", result.pattern)
       assert.are.equal("eval", result.data.phase)
       assert.are.equal("kaboom", result.data.message)
+    end)
+
+    it("maps coverage_cleared to SageFsCoverageCleared", function()
+      local result = events.build_autocmd_data("coverage_cleared", {})
+      assert.is_table(result)
+      assert.are.equal("SageFsCoverageCleared", result.pattern)
     end)
 
     it("EVENT_NAMES contains all 4 new Phase 7C names", function()

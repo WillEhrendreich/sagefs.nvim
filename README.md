@@ -123,7 +123,8 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
-| **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
+| **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph, plus hit-count virtual text. `:SageFsCoverageToggle` shows/hides them. |
+| **Coverage review** | `:SageFsCoverageReview` → quickfix list of every file's uncovered lines (with per-file/overall %); jump with `<CR>` or `:cnext`/`:cprev`. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
 | **Type explorer** | `:SageFsTypeExplorer` → completions-based namespace/type drill-down. |
@@ -292,6 +293,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsDashboard` | Toggle the floating SageFS dashboard |
 | `:SageFsTestTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
+| `:SageFsCoverageReview` | Browse files → uncovered lines in a quickfix list |
+| `:SageFsCoverageToggle` | Show/hide in-buffer coverage gutter signs |
 | `:SageFsTypeExplorer` | Browse namespaces → types → members via completions |
 | `:SageFsHistory` | Eval history for cell under cursor |
 | `:SageFsExport` | Export session history as `.fsx` file |
@@ -409,12 +412,13 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `sessions.lua` | 128 | Session response parsing, context-sensitive action filtering |
 | `diagnostics.lua` | 99 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
 | `testing.lua` | 1368 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
-| `coverage.lua` | 132 | Line-level coverage state, file/total summaries, gutter signs, statusline |
+| `coverage.lua` | 181 | Line-level coverage state, file/total summaries, gutter signs, statusline, uncovered-line/review data |
+| `coverage_review.lua` | 109 | Navigable coverage review: quickfix item construction, open/refresh live-updating quickfix list |
 | `type_explorer.lua` | 94 | Assembly/namespace/type/member formatting for pickers and floats |
 | `type_explorer_cache.lua` | 37 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | 69 | FSI event history formatting for picker and preview |
 | `export.lua` | 25 | Session export to .fsx format |
-| `events.lua` | 73 | User autocmd event definitions (37 event types) |
+| `events.lua` | 74 | User autocmd event definitions (38 event types) |
 | `completions.lua` | 30 | Omnifunc completion parsing and formatting |
 | `util.lua` | 52 | Shared utilities (json_decode) |
 | `hotreload_model.lua` | 66 | Pure hot reload URL builder, state, picker formatting |
@@ -441,10 +445,10 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `health.lua` | 231 | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
 | `annotations.lua` | 263 | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | | |
-| `init.lua` | 1445 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
+| `init.lua` | 1460 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | 237 | HTTP via curl, SSE connections with exponential backoff reconnect |
-| `render.lua` | 454 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | 1656 | All 53 commands, keymaps, autocmds |
+| `render.lua` | 480 | Extmarks, test/coverage gutter signs (+ hit-count virtual text), floating windows |
+| `commands.lua` | 1675 | All 55 commands, keymaps, autocmds |
 | `hotreload.lua` | 130 | Hot reload file toggle API |
 | **Dashboard** | | |
 | `dashboard/init.lua` | 460 | Floating dashboard (SageFsDashboard) |
@@ -558,6 +562,7 @@ vim.api.nvim_create_autocmd("User", {
 | `SageFsFileReloaded` | A watched file was reloaded | file path |
 | `SageFsSystemAlarm` | System alarm raised | alarm payload |
 | `SageFsCoverageView` | Coverage view event | coverage view payload |
+| `SageFsCoverageCleared` | Coverage data cleared (session change, explicit clear) | — |
 
 The full catalog (37 event types) is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
 

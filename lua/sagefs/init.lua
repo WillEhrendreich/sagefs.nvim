@@ -10,6 +10,7 @@ local hotreload = require("sagefs.hotreload")
 local diagnostics = require("sagefs.diagnostics")
 local testing = require("sagefs.testing")
 local coverage = require("sagefs.coverage")
+local coverage_review = require("sagefs.coverage_review")
 local annotations = require("sagefs.annotations")
 local events = require("sagefs.events")
 local completions = require("sagefs.completions")
@@ -51,6 +52,7 @@ M.config = {
 M.state = model.new()
 M.testing_state = testing.new()
 M.coverage_state = coverage.new()
+M.coverage_signs_enabled = true  -- SageFsCoverageToggle flips this
 M.annotations_state = annotations.new()
 M.density_state = density.new()
 M.daemon_state = daemon.new()
@@ -215,6 +217,8 @@ local function build_handlers()
   end
   handlers.coverage_cleared = function(_raw)
     M.coverage_state = coverage.clear(M.coverage_state)
+    coverage_review.refresh(M.coverage_state)
+    fire_user_event("coverage_cleared", {})
   end
   handlers.diagnostics_updated = function(raw)
     local data = decode_event_data(raw)
@@ -299,6 +303,7 @@ local function build_handlers()
     -- Clear all session-specific state so stale results don't linger
     M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
     M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    coverage_review.refresh(M.coverage_state)
     notify(string.format("Session faulted [%s]: %s", sid, reason), vim.log.levels.ERROR)
     fire_user_event("session_faulted", data)
   end
@@ -394,8 +399,13 @@ local function schedule_render()
       last_rendered_cov_version = cov_v
       last_rendered_file = file
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
-      render.render_coverage_signs(buf, M.coverage_state)
+      if M.coverage_signs_enabled then
+        render.render_coverage_signs(buf, M.coverage_state)
+      else
+        render.clear_coverage_signs(buf)
+      end
       render.render_annotations(buf, M.annotations_state, M.density_state)
+      coverage_review.refresh(M.coverage_state)
       if file ~= "" then
         if not test_diag_ns then
           test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
@@ -470,6 +480,7 @@ local function start_sse()
       M.testing_state = testing.new()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
+      coverage_review.refresh(M.coverage_state)
       fire_user_event("connected")
       -- Forward connection to dashboard
       if M._dashboard then M._dashboard.on_event("connected") end
@@ -1379,7 +1390,11 @@ function M.setup(opts)
     end,
     render_signs = function(buf)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
-      render.render_coverage_signs(buf, M.coverage_state)
+      if M.coverage_signs_enabled then
+        render.render_coverage_signs(buf, M.coverage_state)
+      else
+        render.clear_coverage_signs(buf)
+      end
       render.render_annotations(buf, M.annotations_state, M.density_state)
     end,
     check_on_save = function() return M.config.check_on_save end,

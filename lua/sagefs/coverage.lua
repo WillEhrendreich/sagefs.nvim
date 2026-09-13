@@ -94,6 +94,55 @@ function M.format_statusline(state)
   return string.format("☂ %d%%", summary.percent)
 end
 
+-- ─── Review / Uncovered Line Extraction ─────────────────────────────────────
+
+--- Sorted line numbers with zero hits for a file (empty if file unknown).
+---@param state table
+---@param path string
+---@return number[]
+function M.uncovered_lines(state, path)
+  local lines = state.files[path]
+  if not lines then return {} end
+  local out = {}
+  for line, hits in pairs(lines) do
+    if hits == 0 then table.insert(out, line) end
+  end
+  table.sort(out)
+  return out
+end
+
+--- Deterministically sorted list of tracked file paths.
+---@param state table
+---@return string[]
+function M.sorted_paths(state)
+  local paths = {}
+  for path in pairs(state.files) do
+    table.insert(paths, path)
+  end
+  table.sort(paths)
+  return paths
+end
+
+--- Build a full navigable review: per-file summaries and uncovered lines,
+--- plus the overall total. Pure data — the vim layer (coverage_review.lua)
+--- turns this into a quickfix list or scratch buffer.
+---@param state table
+---@return { total: table, files: { path: string, summary: table, uncovered: number[] }[] }
+function M.build_review(state)
+  local files = {}
+  for _, path in ipairs(M.sorted_paths(state)) do
+    table.insert(files, {
+      path = path,
+      summary = M.compute_file_summary(state, path),
+      uncovered = M.uncovered_lines(state, path),
+    })
+  end
+  return {
+    total = M.compute_total_summary(state),
+    files = files,
+  }
+end
+
 -- ─── Clear ────────────────────────────────────────────────────────────────────
 
 function M.clear(state)
