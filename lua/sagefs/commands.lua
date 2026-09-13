@@ -3,8 +3,10 @@
 
 local M = {}
 
-local function register_simple_command(create_user_command, name, desc, handler)
-  create_user_command(name, handler, { desc = desc })
+local function register_simple_command(create_user_command, name, desc, handler, opts)
+  local command_opts = opts or {}
+  command_opts.desc = desc
+  create_user_command(name, handler, command_opts)
 end
 
 function M.register_simple_commands(plugin, helpers, create_user_command)
@@ -63,9 +65,17 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
     },
     {
       name = "SageFsCreateSession",
-      desc = "Create new SageFs session",
-      handler = function()
-        plugin.discover_and_create()
+      desc = "Create new SageFs session (optionally pass a project path to skip the picker)",
+      -- Optional project argument: with one, create the session directly
+      -- (non-interactive — for scripting, CI, and demo automation); with none,
+      -- fall back to the interactive project picker (the default UX).
+      opts = { nargs = "?", complete = "file" },
+      handler = function(cmd)
+        if cmd and cmd.fargs and #cmd.fargs > 0 then
+          plugin.create_session({ cmd.fargs[1] })
+        else
+          plugin.discover_and_create()
+        end
       end,
     },
     {
@@ -92,7 +102,7 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
   }
 
   for _, command in ipairs(simple_commands) do
-    register_simple_command(create_user_command, command.name, command.desc, command.handler)
+    register_simple_command(create_user_command, command.name, command.desc, command.handler, command.opts)
   end
 end
 

@@ -25,6 +25,7 @@ describe("commands.register_simple_commands", function()
       eval_current_line = function() table.insert(calls, "eval_current_line") end,
       session_picker = function() table.insert(calls, "session_picker") end,
       discover_and_create = function() table.insert(calls, "discover_and_create") end,
+      create_session = function(projects) table.insert(calls, "create_session:" .. (projects and projects[1] or "")) end,
       configure_warmup_auto_open = function() table.insert(calls, "configure_warmup_auto_open") end,
       reset_session = function() table.insert(calls, "reset_session") end,
       show_session_context = function() table.insert(calls, "show_session_context") end,
@@ -57,7 +58,7 @@ describe("commands.register_simple_commands", function()
       { name = "SageFsClear", desc = "Clear all cell results" },
       { name = "SageFsDisconnect", desc = "Disconnect from SageFs" },
       { name = "SageFsSessions", desc = "Manage SageFs sessions" },
-      { name = "SageFsCreateSession", desc = "Create new SageFs session" },
+      { name = "SageFsCreateSession", desc = "Create new SageFs session (optionally pass a project path to skip the picker)" },
       { name = "SageFsConfig", desc = "Create or open .SageFs/config.fsx for warmup auto-open" },
       { name = "SageFsReset", desc = "Reset active FSI session" },
       { name = "SageFsContext", desc = "Show session context (assemblies, namespaces, warmup)" },
@@ -65,7 +66,9 @@ describe("commands.register_simple_commands", function()
 
     for _, command in ipairs(expected) do
       assert.is_not_nil(registered[command.name], "missing command: " .. command.name)
-      assert.same({ desc = command.desc }, registered[command.name].opts)
+      -- Assert the description without requiring exact opts equality — some
+      -- commands (e.g. SageFsCreateSession) carry extra opts like nargs.
+      assert.equals(command.desc, registered[command.name].opts.desc)
       registered[command.name].handler()
     end
 
@@ -83,5 +86,19 @@ describe("commands.register_simple_commands", function()
       "reset_session",
       "show_session_context",
     }, calls)
+  end)
+
+  it("SageFsCreateSession creates directly (skips the picker) when given a project argument", function()
+    commands.register_simple_commands(plugin, helpers, function(name, handler, opts)
+      registered[name] = { handler = handler, opts = opts }
+    end)
+
+    -- With a project argument: create the session directly, no picker.
+    registered["SageFsCreateSession"].handler({ fargs = { "MyProject.fsproj" } })
+    -- With no argument: fall back to the interactive picker (the default UX).
+    registered["SageFsCreateSession"].handler({ fargs = {} })
+
+    assert.same({ "create_session:MyProject.fsproj", "discover_and_create" }, calls)
+    assert.equals("?", registered["SageFsCreateSession"].opts.nargs)
   end)
 end)
