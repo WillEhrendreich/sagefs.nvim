@@ -108,3 +108,34 @@ describe("sagefs.health", function()
     assert.is_true(found_fallback_message)
   end)
 end)
+
+-- Pure version-drift check: catches the "plugin a minor behind the daemon" class
+-- of bug (the 0.5 -> 0.6 SSE unification) loudly in :checkhealth. No vim needed.
+describe("sagefs.health.version_drift", function()
+  local health = require("sagefs.health")
+
+  it("reports behind when the daemon minor is ahead", function()
+    assert.are.equal("behind", health.version_drift("0.5.543", "0.6.551"))
+  end)
+
+  it("reports behind across a major bump", function()
+    assert.are.equal("behind", health.version_drift("0.5.543", "1.0.0"))
+  end)
+
+  it("reports same on equal major.minor (patch ignored)", function()
+    assert.are.equal("same", health.version_drift("0.6.1", "0.6.999"))
+  end)
+
+  it("reports ahead when the plugin is newer", function()
+    assert.are.equal("ahead", health.version_drift("0.7.0", "0.6.999"))
+  end)
+
+  it("tolerates a build suffix on the daemon version", function()
+    assert.are.equal("behind", health.version_drift("0.5.543", "0.6.551+abc123"))
+  end)
+
+  it("returns unknown for unparseable input", function()
+    assert.are.equal("unknown", health.version_drift(nil, "0.6.0"))
+    assert.are.equal("unknown", health.version_drift("0.6.0", "garbage"))
+  end)
+end)

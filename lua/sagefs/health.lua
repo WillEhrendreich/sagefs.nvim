@@ -60,6 +60,26 @@ local function check_daemon_port(port)
   return false, probe and probe.code or nil, nil
 end
 
+--- Compare plugin vs daemon versions by (major, minor). Pure — no vim.
+--- Patch level is ignored; the wire protocol changes on minor bumps.
+---@param plugin_version string|nil
+---@param daemon_version string|nil
+---@return string "behind" | "ahead" | "same" | "unknown"
+function M.version_drift(plugin_version, daemon_version)
+  local function mm(v)
+    if type(v) ~= "string" then return nil end
+    local maj, min = v:match("(%d+)%.(%d+)")
+    if not maj then return nil end
+    return tonumber(maj), tonumber(min)
+  end
+  local pmaj, pmin = mm(plugin_version)
+  local dmaj, dmin = mm(daemon_version)
+  if not pmaj or not dmaj then return "unknown" end
+  if dmaj > pmaj or (dmaj == pmaj and dmin > pmin) then return "behind" end
+  if dmaj < pmaj or (dmaj == pmaj and dmin < pmin) then return "ahead" end
+  return "same"
+end
+
 function M.check()
   vim.health.start("sagefs")
 
@@ -84,6 +104,24 @@ function M.check()
   end
 
   vim.health.ok("sagefs.nvim loaded (plugin v" .. (sagefs.version or "?") .. ")")
+
+  -- Warn loudly if the daemon is a minor version ahead — that is the drift class
+  -- (0.5 -> 0.6 SSE unification) that silently breaks event handling.
+  if cli_version and cli_version ~= "" and sagefs.version then
+    local drift = M.version_drift(sagefs.version, cli_version)
+    if drift == "behind" then
+      vim.health.warn(
+        string.format("Plugin v%s is behind the SageFs daemon (%s)", sagefs.version, cli_version),
+        {
+          "The daemon may emit wire-protocol changes this plugin does not handle yet.",
+          "Update the plugin (git pull), or run ./sync-version.sh to re-sync.",
+        })
+    elseif drift == "ahead" then
+      vim.health.info(
+        string.format("Plugin v%s is ahead of the SageFs daemon (%s) — update the daemon: dotnet tool update -g SageFs",
+          sagefs.version, cli_version))
+    end
+  end
 
   -- ── 3. Plugin configuration ─────────────────────────────────────────────
   local cfg = sagefs.config or {}
