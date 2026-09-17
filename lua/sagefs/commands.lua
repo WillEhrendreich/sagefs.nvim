@@ -1114,28 +1114,41 @@ function M.register_commands(plugin, helpers)
   -- ─── Export Command ──────────────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("SageFsExportFile", function()
+    -- Uses the session-scoped export-fsx endpoint on the MCP port (the old
+    -- /api/history endpoint was removed). The server returns { evalCount,
+    -- content }; we just write content to disk.
+    local sid = plugin.active_session and plugin.active_session.id or nil
+    if not sid then
+      helpers.notify("No active session", vim.log.levels.WARN)
+      return
+    end
+    local port = plugin.config and plugin.config.port or 37749
     transport.http_json({
       method = "GET",
-      url = helpers.dashboard_url() .. "/api/history",
+      url = string.format("http://localhost:%d/api/sessions/%s/export-fsx", port, sid),
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
-          helpers.notify("Failed to fetch history" .. err_detail(raw), vim.log.levels.ERROR)
+          helpers.notify("Failed to export session" .. err_detail(raw), vim.log.levels.ERROR)
           return
         end
         local parse_ok, data = pcall(vim.json.decode, raw)
         if not parse_ok or not data then return end
-        local content = export.format_fsx(data)
+        if (data.evalCount or 0) == 0 then
+          helpers.notify("No evaluations to export", vim.log.levels.INFO)
+          return
+        end
+        local content = data.content or ""
         local filename = "sagefs-session-" .. os.date("%Y%m%d-%H%M%S") .. ".fsx"
         local path = vim.fn.getcwd() .. "/" .. filename
         local f = io.open(path, "w")
         if f then
           f:write(content)
           f:close()
-          helpers.notify("Exported to " .. filename)
+          helpers.notify(string.format("Exported %d evaluations to %s", data.evalCount, filename))
           vim.cmd("edit " .. vim.fn.fnameescape(path))
         else
-          helpers.notify("Failed to write " .. path .. err_detail(raw), vim.log.levels.ERROR)
+          helpers.notify("Failed to write " .. path, vim.log.levels.ERROR)
         end
       end,
     })
