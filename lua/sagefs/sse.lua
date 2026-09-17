@@ -161,6 +161,27 @@ function M.classify_event(event)
   return { action = action, data = event.data }
 end
 
+--- Classify a decoded `state` SSE envelope into a specific action.
+--- Daemon 0.6 folds most lifecycle changes into a single `state` event whose real
+--- discriminant is the field present in the JSON (see SageFs/SseEvent.fs `State` channel).
+--- This maps that decoded table to the action so the impure handler can route it to the
+--- existing per-event handler instead of dropping the whole envelope. Pure: no JSON, no vim.
+---@param data table|nil decoded JSON of a `state` event's data
+---@return string action
+function M.classify_state_event(data)
+  if type(data) ~= "table" then return "state_update" end
+  if data.sessionFaulted ~= nil then return "session_faulted" end
+  if data.fileReloaded ~= nil then return "file_reloaded" end
+  if data.systemAlarm ~= nil then return "system_alarm" end
+  if data.hotReloadChanged ~= nil then return "hot_reload_changed" end
+  if data.warmupProgress ~= nil then return "warmup_progress" end
+  if data.sessionReady ~= nil then return "session_ready" end
+  if data.sessionSwitched ~= nil then return "session_switched" end
+  if data.outputCount ~= nil then return "model_changed" end
+  -- sessionProgress and anything unrecognized are keepalive-only: no state to apply.
+  return "state_update"
+end
+
 --- Build a dispatch table from a handlers map
 ---@param handlers table<string, function> action string → handler function
 ---@return table<string, function>

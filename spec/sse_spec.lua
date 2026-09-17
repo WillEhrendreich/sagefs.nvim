@@ -481,3 +481,55 @@ describe("sse.classify_event — Phase 7C lifecycle events", function()
     assert.truthy(classified.data:find("Exception in user code"))
   end)
 end)
+
+-- Daemon 0.6 folds most lifecycle changes into one `state` SSE event whose real
+-- discriminant is a field inside the JSON (SageFs/SseEvent.fs). classify_state_event
+-- maps a DECODED state-envelope table to the specific action, so the impure handler
+-- can route it to the right existing handler instead of dropping the whole envelope.
+describe("sse.classify_state_event (0.6 state envelope)", function()
+  it("routes a faulted state to session_faulted", function()
+    assert.are.equal("session_faulted",
+      sse.classify_state_event({ sessionFaulted = "abc12345", error = "OutOfMemory" }))
+  end)
+
+  it("routes a file-reloaded state to file_reloaded", function()
+    assert.are.equal("file_reloaded",
+      sse.classify_state_event({ fileReloaded = "Domain.fs", sessionId = "abc12345" }))
+  end)
+
+  it("routes a system alarm to system_alarm", function()
+    assert.are.equal("system_alarm",
+      sse.classify_state_event({ systemAlarm = true, phase = "eval", message = "boom" }))
+  end)
+
+  it("routes a hot-reload-changed state to hot_reload_changed", function()
+    assert.are.equal("hot_reload_changed",
+      sse.classify_state_event({ hotReloadChanged = true, sessionId = "abc12345" }))
+  end)
+
+  it("routes a warmup-progress state to warmup_progress", function()
+    assert.are.equal("warmup_progress",
+      sse.classify_state_event({ warmupProgress = true, sessionId = "a", step = 2, total = 5 }))
+  end)
+
+  it("routes session-ready to session_ready", function()
+    assert.are.equal("session_ready",
+      sse.classify_state_event({ sessionReady = "abc12345" }))
+  end)
+
+  it("routes session-switched to session_switched", function()
+    assert.are.equal("session_switched",
+      sse.classify_state_event({ sessionSwitched = "abc12345" }))
+  end)
+
+  it("routes a model-changed state to model_changed", function()
+    assert.are.equal("model_changed",
+      sse.classify_state_event({ outputCount = 3, diagCount = 1 }))
+  end)
+
+  it("falls back to state_update for a progress heartbeat or empty payload", function()
+    assert.are.equal("state_update", sse.classify_state_event({ sessionProgress = true }))
+    assert.are.equal("state_update", sse.classify_state_event({}))
+    assert.are.equal("state_update", sse.classify_state_event(nil))
+  end)
+end)

@@ -204,8 +204,17 @@ local function build_handlers()
   end
 
   -- Custom handlers that don't fit the pattern
-  handlers.state_update = function(_raw)
+  -- Daemon 0.6 folds most lifecycle changes into a single `state` SSE event whose
+  -- real discriminant is a field inside the JSON. Decode the envelope, classify it,
+  -- and route to the specific handler; unrecognized/heartbeat states are keepalive.
+  handlers.state_update = function(raw)
     M.state = model.set_status(M.state, "connected")
+    local data = decode_event_data(raw)
+    if not data then return end
+    local action = sse_parser.classify_state_event(data)
+    if action ~= "state_update" and handlers[action] then
+      handlers[action](raw)
+    end
   end
   handlers.live_testing_enabled = function(raw)
     local data = decode_event_data(raw)
@@ -298,8 +307,9 @@ local function build_handlers()
   handlers.session_faulted = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
-    local sid = data.session_id or data.SessionId or "?"
-    local reason = data.reason or data.Reason or "unknown"
+    -- 0.6 wire: { sessionFaulted = <sid>, error = <msg> }; older: session_id/reason.
+    local sid = data.sessionFaulted or data.session_id or data.SessionId or "?"
+    local reason = data.error or data.reason or data.Reason or "unknown"
     -- Clear all session-specific state so stale results don't linger
     M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
     M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
@@ -325,7 +335,8 @@ local function build_handlers()
   handlers.file_reloaded = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
-    M.last_reload_file = data.file or data.File
+    -- 0.6 wire: { fileReloaded = <path>, sessionId = <sid> }; older: file/elapsed_ms.
+    M.last_reload_file = data.fileReloaded or data.file or data.File
     M.last_reload_ms = data.elapsed_ms or data.ElapsedMs
     fire_user_event("file_reloaded", data)
   end
