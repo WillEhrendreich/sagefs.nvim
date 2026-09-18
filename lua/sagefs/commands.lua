@@ -1563,7 +1563,8 @@ end
 
 --- Register autocmds
 ---@param plugin table  The sagefs plugin module
----@param helpers table  { mark_stale_and_render: fun(buf), render_all: fun(buf) }
+---@param helpers table  { mark_stale_and_render: fun(buf), render_all: fun(buf),
+---  has_active_session: fun(): boolean, post_buffer_changed: fun(buf) }
 function M.register_autocmds(plugin, helpers)
   local group = vim.api.nvim_create_augroup("SageFs", { clear = true })
 
@@ -1662,6 +1663,36 @@ function M.register_autocmds(plugin, helpers)
     callback = function(ev)
       local render = require("sagefs.render")
       render.clear_sign_cache(ev.buf)
+    end,
+  })
+
+  -- Live-testing as-you-type: send unsaved buffer edits to the daemon,
+  -- debounced ~300ms — mirrors the VS Code extension's
+  -- Workspace.onDidChangeTextDocument debounce (sagefs-vscode/src/Extension.fs,
+  -- staleDebounceTimer, 300ms). Without this, Neovim users only got
+  -- save-driven live-testing (BufWritePost) even though the daemon's
+  -- live-testing pipeline reacts to /api/sessions/{sid}/buffer-changed on
+  -- every keystroke-debounced edit. Gated on an active session so edits in a
+  -- buffer with no SageFs session never schedule a timer or HTTP call.
+  local buffer_changed_timer = nil
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = group,
+    pattern = { "*.fs", "*.fsx" },
+    callback = function(ev)
+      if not helpers.has_active_session() then return end
+
+      if buffer_changed_timer then
+        pcall(vim.fn.timer_stop, buffer_changed_timer)
+      end
+
+      local buf = ev.buf
+      buffer_changed_timer = vim.fn.timer_start(300, function()
+        buffer_changed_timer = nil
+        if vim.api.nvim_buf_is_valid(buf) then
+          helpers.post_buffer_changed(buf)
+        end
+      end)
     end,
   })
 end

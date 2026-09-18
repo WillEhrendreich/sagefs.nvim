@@ -320,4 +320,69 @@ describe("sagefs.sessions", function()
       assert.equals("", sessions.normalize_path(nil))
     end)
   end)
+
+  -- ─── build_buffer_change_request ─────────────────────────────────────────
+  -- Routing logic for POST /api/sessions/{sid}/buffer-changed — mirrors
+  -- sagefs-vscode's BufferBridge.resolveSessionOwnership.
+
+  describe("build_buffer_change_request", function()
+    local session_a = { id = "sess-a", working_directory = "C:\\Code\\ProjA" }
+    local session_b = { id = "sess-b", working_directory = "C:\\Code\\ProjB" }
+
+    it("returns nil for a non-F# file", function()
+      local req = sessions.build_buffer_change_request(
+        { session_a }, session_a, "C:\\Code\\ProjA\\Readme.md", "content")
+      assert.is_nil(req)
+    end)
+
+    it("returns nil for an empty file path", function()
+      local req = sessions.build_buffer_change_request({ session_a }, session_a, "", "content")
+      assert.is_nil(req)
+    end)
+
+    it("routes to the unique session whose working directory contains the file", function()
+      local req = sessions.build_buffer_change_request(
+        { session_a, session_b }, nil, "C:\\Code\\ProjA\\Hello.fs", "let x = 1")
+
+      assert.is_not_nil(req)
+      assert.equals("/api/sessions/sess-a/buffer-changed", req.path)
+      assert.same({ filePath = "C:\\Code\\ProjA\\Hello.fs", content = "let x = 1" }, req.body)
+    end)
+
+    it("matches .fsx and .fsi files too", function()
+      local reqx = sessions.build_buffer_change_request(
+        { session_a }, nil, "C:\\Code\\ProjA\\script.fsx", "1 + 1")
+      assert.equals("/api/sessions/sess-a/buffer-changed", reqx.path)
+
+      local reqi = sessions.build_buffer_change_request(
+        { session_a }, nil, "C:\\Code\\ProjA\\Hello.fsi", "val x: int")
+      assert.equals("/api/sessions/sess-a/buffer-changed", reqi.path)
+    end)
+
+    it("returns nil when the file is ambiguous across multiple sessions", function()
+      local nested_a = { id = "sess-a", working_directory = "C:\\Code" }
+      local nested_b = { id = "sess-b", working_directory = "C:\\Code\\ProjA" }
+      local req = sessions.build_buffer_change_request(
+        { nested_a, nested_b }, nil, "C:\\Code\\ProjA\\Hello.fs", "let x = 1")
+      assert.is_nil(req)
+    end)
+
+    it("falls back to the active session when no session_list entry matches", function()
+      local req = sessions.build_buffer_change_request(
+        {}, session_a, "C:\\Code\\ProjA\\Hello.fs", "let x = 1")
+      assert.is_not_nil(req)
+      assert.equals("/api/sessions/sess-a/buffer-changed", req.path)
+    end)
+
+    it("returns nil when neither session_list nor the active session own the file", function()
+      local req = sessions.build_buffer_change_request(
+        { session_b }, session_b, "C:\\Code\\ProjA\\Hello.fs", "let x = 1")
+      assert.is_nil(req)
+    end)
+
+    it("returns nil when there are no sessions at all", function()
+      local req = sessions.build_buffer_change_request({}, nil, "C:\\Code\\ProjA\\Hello.fs", "let x = 1")
+      assert.is_nil(req)
+    end)
+  end)
 end)

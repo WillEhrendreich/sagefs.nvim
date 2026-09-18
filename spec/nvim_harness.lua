@@ -668,6 +668,84 @@ describe("autocmd registration", function()
     assert_truthy(ok, "SageFs augroup should exist after setup")
     assert_truthy(#aus > 0, "should have BufWritePost autocmd in SageFs group")
   end)
+
+  it("has TextChanged/TextChangedI autocmds for buffer-changed as-you-type", function()
+    local ok, aus = pcall(vim.api.nvim_get_autocmds, { group = "SageFs", event = "TextChanged" })
+    assert_truthy(ok, "SageFs augroup should exist after setup")
+    assert_truthy(#aus > 0, "should have TextChanged autocmd in SageFs group")
+
+    local ok2, aus2 = pcall(vim.api.nvim_get_autocmds, { group = "SageFs", event = "TextChangedI" })
+    assert_truthy(ok2, "SageFs augroup should exist after setup")
+    assert_truthy(#aus2 > 0, "should have TextChangedI autocmd in SageFs group")
+  end)
+end)
+
+-- ─── Live-testing as-you-type: debounced buffer-changed POST ─────────────────
+-- Covers the bug this suite exists to catch: M.post_buffer_changed was
+-- defined but never wired to any autocmd, so Neovim users only got
+-- save-driven live-testing. Stubs sagefs.post_buffer_changed itself (rather
+-- than the HTTP transport) so these tests never touch the network, and drive
+-- the real vim.fn.timer_start debounce via vim.wait — this runs inside a
+-- real headless Neovim, not the busted mocks, so timers actually fire.
+
+describe("buffer-changed as-you-type (debounced)", function()
+  local sagefs = require("sagefs")
+  local original_post_buffer_changed = sagefs.post_buffer_changed
+  local original_active_session = sagefs.active_session
+
+  local function fresh_fs_buffer()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_name(buf, "/tmp/sagefs_harness_" .. buf .. "_" .. os.time() .. ".fs")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "let add a b = a + b" })
+    return buf
+  end
+
+  it("does NOT call post_buffer_changed on edit when there is no active session", function()
+    sagefs.active_session = nil
+    local calls = {}
+    sagefs.post_buffer_changed = function(buf) table.insert(calls, buf) end
+
+    local buf = fresh_fs_buffer()
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+    vim.wait(400, function() return #calls > 0 end)
+
+    assert_eq(0, #calls, "post_buffer_changed should not be scheduled without an active session")
+  end)
+
+  it("calls post_buffer_changed ~300ms after an edit when a session is active", function()
+    sagefs.active_session = { id = "harness-session", working_directory = "/tmp" }
+    local calls = {}
+    sagefs.post_buffer_changed = function(buf) table.insert(calls, buf) end
+
+    local buf = fresh_fs_buffer()
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+
+    assert_eq(0, #calls, "post_buffer_changed should be debounced, not called synchronously")
+
+    vim.wait(600, function() return #calls > 0 end)
+
+    assert_eq(1, #calls, "post_buffer_changed should fire exactly once after the debounce")
+    assert_eq(buf, calls[1], "post_buffer_changed should receive the edited buffer")
+  end)
+
+  it("coalesces a burst of rapid edits into a single debounced call", function()
+    sagefs.active_session = { id = "harness-session", working_directory = "/tmp" }
+    local calls = {}
+    sagefs.post_buffer_changed = function(buf) table.insert(calls, buf) end
+
+    local buf = fresh_fs_buffer()
+    for _ = 1, 5 do
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+      vim.wait(50)
+    end
+    vim.wait(600, function() return #calls > 0 end)
+
+    assert_eq(1, #calls, "a burst of edits within the debounce window should produce exactly one call")
+
+    sagefs.post_buffer_changed = original_post_buffer_changed
+    sagefs.active_session = original_active_session
+  end)
 end)
 
 -- ─── init.lua known bug: stale cells get success formatting ──────────────────

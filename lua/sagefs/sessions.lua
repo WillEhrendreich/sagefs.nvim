@@ -105,6 +105,65 @@ function M.find_session_for_dir(sessions_list, dir)
   return nil
 end
 
+-- ─── Buffer-changed request routing ─────────────────────────────────────────
+-- Mirrors the VS Code extension's BufferBridge.resolveSessionOwnership
+-- (sagefs-vscode/src/BufferBridge.fs): route an edited buffer to whichever
+-- known session's working directory contains it, falling back to the active
+-- session only when no session_list entry matches (e.g. session_list hasn't
+-- been refreshed since the session was created). An ambiguous match — more
+-- than one session's working directory contains the file — is dropped rather
+-- than guessed at, same as the VS Code client.
+
+local function has_supported_extension(file_path)
+  local lower = file_path:lower()
+  return lower:match("%.fs$") ~= nil
+    or lower:match("%.fsx$") ~= nil
+    or lower:match("%.fsi$") ~= nil
+end
+
+local function is_within_directory(dir, file_path)
+  if not dir or dir == "" then return false end
+  local norm_dir = M.normalize_path(dir)
+  local norm_file = M.normalize_path(file_path)
+  if norm_dir == "" then return false end
+  return norm_file == norm_dir or norm_file:sub(1, #norm_dir + 1) == (norm_dir .. "/")
+end
+
+--- Build the { path, body } request for POST /api/sessions/{sid}/buffer-changed,
+--- or nil if the edit should not be sent (unsupported file, no owning session,
+--- or an ambiguous match across multiple sessions).
+function M.build_buffer_change_request(sessions_list, active_session, file_path, content)
+  if not file_path or file_path == "" or not has_supported_extension(file_path) then
+    return nil
+  end
+
+  local matches = {}
+  local seen = {}
+  for _, s in ipairs(sessions_list or {}) do
+    if s.id and s.id ~= "" and is_within_directory(s.working_directory, file_path) and not seen[s.id] then
+      seen[s.id] = true
+      table.insert(matches, s.id)
+    end
+  end
+
+  local session_id = nil
+  if #matches == 1 then
+    session_id = matches[1]
+  elseif #matches == 0 and active_session and active_session.id
+    and is_within_directory(active_session.working_directory, file_path) then
+    session_id = active_session.id
+  end
+
+  if not session_id or session_id == "" then
+    return nil
+  end
+
+  return {
+    path = string.format("/api/sessions/%s/buffer-changed", session_id),
+    body = { filePath = file_path, content = content },
+  }
+end
+
 -- ─── Available actions per session ───────────────────────────────────────────
 
 function M.session_actions(s, is_active)

@@ -1395,6 +1395,8 @@ function M.setup(opts)
     end,
     check_on_save = function() return M.config.check_on_save end,
     check_code = check_code,
+    has_active_session = function() return M.active_session ~= nil end,
+    post_buffer_changed = function(buf) M.post_buffer_changed(buf) end,
   }
 
   commands.register_commands(M, helpers)
