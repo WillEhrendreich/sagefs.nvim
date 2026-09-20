@@ -9,6 +9,8 @@
 -- This module owns request construction and response interpretation;
 -- commands.lua wires it to the transport and to vim.notify.
 
+local util = require("sagefs.util")
+
 local M = {}
 
 -- ─── Request building ────────────────────────────────────────────────────────
@@ -151,18 +153,7 @@ end
 ---@param raw string|nil the raw response text, used as a fallback
 ---@return string
 function M.format_error(parsed, raw)
-  if type(parsed) == "table" then
-    local msg = parsed.message or parsed.Message or "Unknown error"
-    local action = parsed.suggestedAction or parsed.SuggestedAction or ""
-    if action ~= "" then
-      return msg .. " → " .. action
-    end
-    return msg
-  end
-  if raw and raw ~= "" then
-    return raw
-  end
-  return "Unknown error"
+  return util.format_server_error(parsed, raw)
 end
 
 -- ─── Statusline ───────────────────────────────────────────────────────────────
