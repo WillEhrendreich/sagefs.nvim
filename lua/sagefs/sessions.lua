@@ -4,7 +4,8 @@ local M = {}
 
 -- ─── JSON decode helper ──────────────────────────────────────────────────────
 
-local json_decode = require("sagefs.util").json_decode
+local util = require("sagefs.util")
+local json_decode = util.json_decode
 
 -- ─── Path normalization ──────────────────────────────────────────────────────
 
@@ -82,7 +83,11 @@ function M.parse_action_response(json_str)
       session_id = data.sessionId,
     }
   else
-    return { ok = false, error = data.error or "unknown error" }
+    -- §5.8: /api/sessions/create|switch|stop errors are the daemon's
+    -- structuredErrorBody: `{success=false, error=<describe>,
+    -- errorDetails={message, suggestedAction}}`. The remedy lives in
+    -- `errorDetails.suggestedAction` — surface it instead of discarding it.
+    return { ok = false, error = util.format_server_error(data, json_str) }
   end
 end
 

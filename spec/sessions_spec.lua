@@ -148,6 +148,29 @@ describe("sagefs.sessions", function()
       assert.is_true(result.ok)
       assert.equals("abc-123", result.session_id)
     end)
+
+    -- §5.8: /api/sessions/create|switch|stop errors actually come back as
+    -- `{success=false, error=<describe>, errorDetails={message,
+    -- suggestedAction}}` (McpServer.fs's structuredErrorBody) — the daemon
+    -- DOES send a remedy on these routes, and parse_action_response threw
+    -- it away.
+    it("appends suggestedAction from errorDetails to the error message", function()
+      local json = vim.json.encode({
+        success = false,
+        error = "Session not found",
+        errorDetails = { case = "NotFound", message = "Session not found", suggestedAction = "Run :SageFsSessions to see live sessions" },
+      })
+      local result = sessions.parse_action_response(json)
+      assert.is_false(result.ok)
+      assert.is_truthy(result.error:find("Session not found", 1, true))
+      assert.is_truthy(result.error:find("Run :SageFsSessions", 1, true))
+    end)
+
+    it("still works when errorDetails is absent", function()
+      local json = vim.json.encode({ success = false, error = "Session not found" })
+      local result = sessions.parse_action_response(json)
+      assert.equals("Session not found", result.error)
+    end)
   end)
 
   -- ─── format_session_line ─────────────────────────────────────────────────

@@ -113,13 +113,20 @@ function M.register_commands(plugin, helpers)
   local render = require("sagefs.render")
   local transport = require("sagefs.transport")
   local format = require("sagefs.format")
+  local util = require("sagefs.util")
 
-  -- Truncate raw server response for error messages
+  -- §5.8: this used to slice the RAW JSON to 200 bytes before anyone parsed
+  -- it. Since `suggestedAction` serializes last (SageFsError.toJson), that
+  -- truncation reliably cut off exactly the remedy. Parse first, prefer
+  -- `message → suggestedAction`, and only bound the final human-readable
+  -- string (generous enough that a real message+action always fits; still a
+  -- backstop against an oversized non-JSON body, e.g. a raw stack dump).
   local function err_detail(raw)
     if not raw or raw == "" then return "" end
-    local detail = raw:sub(1, 200)
-    if #raw > 200 then detail = detail .. "…" end
-    return ": " .. detail
+    local decode_ok, parsed = util.json_decode(raw)
+    local msg = util.format_server_error(decode_ok and parsed or nil, raw)
+    if #msg > 300 then msg = msg:sub(1, 300) .. "…" end
+    return ": " .. msg
   end
 
   vim.api.nvim_create_user_command("SageFsCellStyle", function(cmd)
@@ -376,8 +383,7 @@ function M.register_commands(plugin, helpers)
         if resp and resp.success then
           helpers.notify("Tests triggered")
         else
-          local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
-          helpers.notify("SageFs: test run failed — " .. reason, vim.log.levels.ERROR)
+          helpers.notify("SageFs: test run failed — " .. util.format_server_error(resp, raw), vim.log.levels.ERROR)
         end
       end,
     })
@@ -803,8 +809,7 @@ function M.register_commands(plugin, helpers)
         end
         local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
         if resp and resp.success == false then
-          local reason = (resp.message or resp.reason) or "Unknown error"
-          helpers.notify("SageFs: failed to enable live testing — " .. reason, vim.log.levels.ERROR)
+          helpers.notify("SageFs: failed to enable live testing — " .. util.format_server_error(resp, raw), vim.log.levels.ERROR)
         else
           helpers.notify("Live testing enabled")
         end
@@ -824,8 +829,7 @@ function M.register_commands(plugin, helpers)
         end
         local resp = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
         if resp and resp.success == false then
-          local reason = (resp.message or resp.reason) or "Unknown error"
-          helpers.notify("SageFs: failed to disable live testing — " .. reason, vim.log.levels.ERROR)
+          helpers.notify("SageFs: failed to disable live testing — " .. util.format_server_error(resp, raw), vim.log.levels.ERROR)
         else
           helpers.notify("Live testing disabled")
         end
@@ -1139,14 +1143,17 @@ function M.register_commands(plugin, helpers)
         local content = data.content or ""
         local filename = "sagefs-session-" .. os.date("%Y%m%d-%H%M%S") .. ".fsx"
         local path = vim.fn.getcwd() .. "/" .. filename
-        local f = io.open(path, "w")
+        local f, open_err = io.open(path, "w")
         if f then
           f:write(content)
           f:close()
           helpers.notify(string.format("Exported %d evaluations to %s", data.evalCount, filename))
           vim.cmd("edit " .. vim.fn.fnameescape(path))
         else
-          helpers.notify("Failed to write " .. path, vim.log.levels.ERROR)
+          -- io.open's second return value was discarded here — a
+          -- permissions error or a bad path both surfaced as the identical
+          -- unhelpful "Failed to write <path>" with no reason.
+          helpers.notify("Failed to write " .. path .. (open_err and (": " .. open_err) or ""), vim.log.levels.ERROR)
         end
       end,
     })
@@ -1420,12 +1427,15 @@ function M.register_keymaps(plugin, helpers)
   local hotreload = require("sagefs.hotreload")
   local transport = require("sagefs.transport")
   local testing = require("sagefs.testing")
+  local util = require("sagefs.util")
 
+  -- See the identical helper (and its rationale) in register_commands above.
   local function err_detail(raw)
     if not raw or raw == "" then return "" end
-    local detail = raw:sub(1, 200)
-    if #raw > 200 then detail = detail .. "…" end
-    return ": " .. detail
+    local decode_ok, parsed = util.json_decode(raw)
+    local msg = util.format_server_error(decode_ok and parsed or nil, raw)
+    if #msg > 300 then msg = msg:sub(1, 300) .. "…" end
+    return ": " .. msg
   end
 
   -- Alt-Enter keymaps (no prefix, always available)
@@ -1493,8 +1503,7 @@ function M.register_keymaps(plugin, helpers)
             local label = (pattern ~= "") and ("'" .. pattern .. "'") or "all tests"
             helpers.notify("SageFs: running tests matching " .. label)
           else
-            local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
-            helpers.notify("SageFs: test filter failed — " .. reason, vim.log.levels.ERROR)
+            helpers.notify("SageFs: test filter failed — " .. util.format_server_error(resp, raw), vim.log.levels.ERROR)
           end
         end,
       })
@@ -1516,8 +1525,7 @@ function M.register_keymaps(plugin, helpers)
         if resp and resp.success then
           helpers.notify("SageFs: running all tests")
         else
-          local reason = (resp and (resp.message or resp.reason)) or raw or "Unknown error"
-          helpers.notify("SageFs: run all tests failed — " .. reason, vim.log.levels.ERROR)
+          helpers.notify("SageFs: run all tests failed — " .. util.format_server_error(resp, raw), vim.log.levels.ERROR)
         end
       end,
     })

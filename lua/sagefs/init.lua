@@ -952,16 +952,24 @@ end
 
 function M.reset_session(callback)
   session_http("POST", "/reset", {}, function(ok, raw)
-    if ok then notify("Session reset")
-    else notify("Failed to reset session", vim.log.levels.ERROR) end
+    if ok then
+      notify("Session reset")
+    else
+      local decode_ok, parsed = util.json_decode(raw)
+      notify("Failed to reset session: " .. util.format_server_error(decode_ok and parsed or nil, raw), vim.log.levels.ERROR)
+    end
     if callback then callback(ok) end
   end)
 end
 
 function M.hard_reset(callback)
   session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
-    if ok then notify("Hard reset complete (rebuild)")
-    else notify("Failed to hard reset", vim.log.levels.ERROR) end
+    if ok then
+      notify("Hard reset complete (rebuild)")
+    else
+      local decode_ok, parsed = util.json_decode(raw)
+      notify("Failed to hard reset: " .. util.format_server_error(decode_ok and parsed or nil, raw), vim.log.levels.ERROR)
+    end
     if callback then callback(ok) end
   end, { timeout = 60 })
 end
@@ -981,7 +989,8 @@ function M.show_session_context()
     timeout = 5,
     callback = function(ok, raw)
       if not ok or raw == "" then
-        notify("Failed to fetch session context", vim.log.levels.ERROR)
+        local decode_ok, parsed = util.json_decode(raw)
+        notify("Failed to fetch session context: " .. util.format_server_error(decode_ok and parsed or nil, raw), vim.log.levels.ERROR)
         return
       end
       local parse_ok, ctx = pcall(vim.json.decode, raw)
