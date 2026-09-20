@@ -1191,6 +1191,18 @@ local function smart_eval_with_session_check(eval_fn)
         end
       end
 
+      -- §5.6: `result.ok == false` (the transport/daemon itself is
+      -- unreachable) and "the daemon answered with zero sessions" used to
+      -- collapse into the identical "No active session for this directory"
+      -- message — the plugin HAD the transport failure in hand and rendered
+      -- the opposite of the truth, sending the user to "Create session now"
+      -- against a daemon that was never going to answer. Say what's
+      -- actually wrong and name the one command that fixes it.
+      if not result.ok then
+        notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
+        return
+      end
+
       notify("No active session for this directory", vim.log.levels.WARN)
       vim.ui.select({ "Create session now", "Cancel" }, {
         prompt = "No SageFs session found. Create one?",
@@ -1202,6 +1214,9 @@ local function smart_eval_with_session_check(eval_fn)
     end)
   end
 end
+
+-- Exposed for tests — see the start_sse/stop_sse note above.
+M.smart_eval_with_session_check = smart_eval_with_session_check
 
 -- ─── Health Check & Statusline ────────────────────────────────────────────────
 

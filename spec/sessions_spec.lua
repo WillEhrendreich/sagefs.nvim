@@ -132,9 +132,14 @@ describe("sagefs.sessions", function()
       assert.equals("Session not found", result.error)
     end)
 
+    -- §5.6: a nil/empty response used to surface the literal internal
+    -- string "empty response" as the user's final message with no context
+    -- and no next step — e.g. after choosing "Create session now" against a
+    -- dead daemon (init.lua's smart_eval_with_session_check flow).
     it("returns error for nil input", function()
       local result = sessions.parse_action_response(nil)
       assert.is_false(result.ok)
+      assert.is_truthy(result.error:find(":SageFsStart", 1, true), "should name the fix, not just say 'empty response'")
     end)
 
     it("returns error for invalid JSON", function()

@@ -190,6 +190,65 @@ describe("command reference integrity (§5.7)", function()
   end)
 end)
 
+-- §5.6: transport failure vs. zero-sessions-returned must produce different
+-- messages. Previously both collapsed into "No active session for this
+-- directory" even when the plugin had `result.ok == false` (the daemon is
+-- unreachable) in hand — the opposite of the truth, and it sent the user to
+-- "Create session now" against a daemon that would never answer.
+
+describe("smart eval session check (§5.6)", function()
+  it("tells the user the daemon is unreachable when the transport itself failed, not 'no session'", function()
+    local sagefs = require("sagefs")
+    local original_list_sessions = sagefs.list_sessions
+    local original_ui_select = vim.ui.select
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+    local select_called = false
+    vim.ui.select = function() select_called = true end
+
+    sagefs.active_session = nil
+    sagefs.list_sessions = function(cb) cb({ ok = false, error = "empty response" }) end
+
+    local guarded = sagefs.smart_eval_with_session_check(function() end)
+    guarded()
+
+    vim.notify = original_notify
+    vim.ui.select = original_ui_select
+    sagefs.list_sessions = original_list_sessions
+
+    assert_falsy(select_called, "must not offer 'Create session now' against an unreachable daemon")
+    assert_truthy(#notifications > 0, "should notify")
+    assert_truthy(notifications[#notifications].msg:find("not available on port", 1, true),
+      "should say the daemon is unreachable, not 'no active session': " .. notifications[#notifications].msg)
+    assert_truthy(notifications[#notifications].msg:find(":SageFsStart", 1, true), "should name the fix")
+  end)
+
+  it("still offers to create a session when the daemon answered with zero sessions", function()
+    local sagefs = require("sagefs")
+    local original_list_sessions = sagefs.list_sessions
+    local original_ui_select = vim.ui.select
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+    local select_called = false
+    vim.ui.select = function() select_called = true end
+
+    sagefs.active_session = nil
+    sagefs.list_sessions = function(cb) cb({ ok = true, sessions = {} }) end
+
+    local guarded = sagefs.smart_eval_with_session_check(function() end)
+    guarded()
+
+    vim.notify = original_notify
+    vim.ui.select = original_ui_select
+    sagefs.list_sessions = original_list_sessions
+
+    assert_truthy(select_called, "a genuinely empty session list should still offer to create one")
+    assert_truthy(notifications[#notifications].msg:find("No active session for this directory", 1, true))
+  end)
+end)
+
 describe("health check discovery", function()
   it("falls back to /version when /health is unavailable", function()
     local sagefs = require("sagefs")

@@ -48,7 +48,9 @@ end
 
 function M.parse_sessions_response(json_str)
   if not json_str or json_str == "" then
-    return { ok = false, error = "empty response" }
+    -- §5.6: surfaced directly as "Failed to list sessions: empty response"
+    -- by :SageFsSessions — say what's actually wrong instead.
+    return { ok = false, error = "No response from the daemon. Run :SageFsStart or check it's running." }
   end
 
   local ok, data = json_decode(json_str)
@@ -68,7 +70,11 @@ end
 
 function M.parse_action_response(json_str)
   if not json_str or json_str == "" then
-    return { ok = false, error = "empty response" }
+    -- §5.6: this used to be the bare internal string "empty response" —
+    -- the user's final message after e.g. choosing "Create session now"
+    -- against a dead daemon. Empty is what a failed/refused connection
+    -- looks like from here; say so and name the fix.
+    return { ok = false, error = "No response from the daemon. Run :SageFsStart or check it's running." }
   end
 
   local ok, data = json_decode(json_str)
