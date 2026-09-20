@@ -152,6 +152,44 @@ describe("plugin setup", function()
   end)
 end)
 
+-- ─── §5.7: every :SageFsX command name referenced in the source must exist ───
+-- Two user-facing messages named `:SageFsReconnect` (the real command is
+-- `:SageFsConnect`) and `:SageFsLiveTestStatus` (never registered at all) —
+-- both produce E492 if a user actually types them. Static grep caught this;
+-- this test catches it mechanically, in the real command registry, so it
+-- can never silently regress again.
+
+describe("command reference integrity (§5.7)", function()
+  it("every :SageFsX string in lua/ names an actually-registered command", function()
+    local cmds = vim.api.nvim_get_commands({})
+    local files = vim.fn.glob(plugin_root .. "/lua/**/*.lua", false, true)
+    assert_truthy(#files > 10, "expected to find plugin source files, found " .. #files)
+
+    local referenced = {}
+    for _, path in ipairs(files) do
+      local f = io.open(path, "r")
+      if f then
+        local content = f:read("*a")
+        f:close()
+        for name in content:gmatch(":(SageFs%w+)") do
+          referenced[name] = referenced[name] or {}
+          table.insert(referenced[name], path)
+        end
+      end
+    end
+
+    local unregistered = {}
+    for name, sites in pairs(referenced) do
+      if not cmds[name] then
+        table.insert(unregistered, name .. " (referenced in " .. table.concat(sites, ", ") .. ")")
+      end
+    end
+    table.sort(unregistered)
+
+    assert_eq(0, #unregistered, "phantom command reference(s): " .. table.concat(unregistered, "; "))
+  end)
+end)
+
 describe("health check discovery", function()
   it("falls back to /version when /health is unavailable", function()
     local sagefs = require("sagefs")
@@ -486,6 +524,52 @@ describe("SSE to model cycle", function()
     local events2, _ = sse.parse_chunk(rem1 .. part2)
     assert_eq(1, #events2, "complete after accumulation")
     assert_eq("state", events2[1].type)
+  end)
+end)
+
+-- ─── §5.4: session-scoped SSE filtering must apply to ALL per-session state ──
+-- Drives the real dispatch pipeline (sagefs.start_sse → transport.connect_sse
+-- → on_sse_events → build_handlers) by stubbing only transport.connect_sse to
+-- capture its on_events callback, then feeding it fabricated raw SSE events —
+-- exactly the shape transport hands to init.lua. Previously `providers_detected`
+-- (and 5 siblings) had no session_scoped flag, so session B's data merged into
+-- the client's single state even while B's results/summary were correctly
+-- filtered — session B's provider list wearing session A's view.
+
+describe("SSE session-scoping (§5.4)", function()
+  it("providers_detected from a non-active session is dropped, not merged", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_connect_sse = transport.connect_sse
+    local captured_on_events
+
+    transport.connect_sse = function(_url, opts)
+      captured_on_events = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+
+    sagefs.active_session = { id = "session-A" }
+    sagefs.testing_state.providers = nil
+
+    sagefs.start_sse()
+    assert_truthy(captured_on_events, "start_sse should have called transport.connect_sse")
+
+    -- Session B's event must NOT merge into session A's active view.
+    captured_on_events({
+      { type = "ProvidersDetected", data = vim.json.encode({ SessionId = "session-B", providers = { "xUnit" } }) },
+    })
+    assert_falsy(sagefs.testing_state.providers, "a non-active session's providers must not merge in")
+
+    -- Session A's own event must still apply.
+    captured_on_events({
+      { type = "ProvidersDetected", data = vim.json.encode({ SessionId = "session-A", providers = { "Expecto" } }) },
+    })
+    assert_truthy(sagefs.testing_state.providers, "the active session's own event must still apply")
+    assert_eq("Expecto", sagefs.testing_state.providers[1])
+
+    transport.connect_sse = original_connect_sse
+    sagefs.active_session = nil
+    sagefs.testing_state.providers = nil
   end)
 end)
 

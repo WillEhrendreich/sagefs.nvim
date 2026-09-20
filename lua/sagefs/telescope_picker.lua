@@ -59,6 +59,7 @@ local previewers    = require("telescope.previewers")
 local function run_tests_by_pattern(pattern, port)
   local transport   = require("sagefs.transport")
   local testing_mod = require("sagefs.testing")
+  local util        = require("sagefs.util")
   local req = testing_mod.build_run_request({
     pattern = (pattern and pattern ~= "") and pattern or nil,
   })
@@ -69,7 +70,13 @@ local function run_tests_by_pattern(pattern, port)
     timeout = 10,
     callback = function(ok, raw)
       if not ok then
-        vim.notify("SageFs: failed to trigger tests. Try: :SageFsLiveTestStatus for details", vim.log.levels.ERROR)
+        -- §5.7: this used to point at "SageFsLiveTestStatus", a command
+        -- that was never registered — a failing user was told to run
+        -- something that produces E492. `:SageFsTests` ("Show live test
+        -- results") is the real command that exists.
+        local decode_ok, parsed = util.json_decode(raw)
+        vim.notify("SageFs: failed to trigger tests — " .. util.format_server_error(decode_ok and parsed or nil, raw)
+          .. " Try: :SageFsTests for details", vim.log.levels.ERROR)
         return
       end
       local parse_ok, resp = pcall(vim.json.decode, raw)

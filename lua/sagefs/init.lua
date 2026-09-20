@@ -140,19 +140,26 @@ local dispatch_table
 -- Data-driven SSE handler definitions (Muratori semantic compression, R10).
 -- Each entry: { action, handler_fn, target ("testing"|"coverage"|"annotations"), session_scoped, event_name }
 -- Custom handlers are closures that don't fit the pattern.
+-- §5.4: `session_scoped` was applied to 5 of 11 testing/coverage handlers.
+-- With two sessions on one daemon, session B's discovered test set, run
+-- policy, source locations, providers and coverage merged into the
+-- client's single state while only B's results/summaries were correctly
+-- filtered out — session B's test list wearing session A's results. Every
+-- handler that mutates per-session testing/coverage state now filters on
+-- `session_matches`, matching the ones that already did.
 local SSE_HANDLER_DEFS = {
   -- Testing cycle (decode + state update ± session check ± event)
-  { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing" },
+  { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing", session_scoped = true },
   { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
   { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
   { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed" },
-  { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing" },
-  { action = "test_locations_detected", fn = "handle_test_locations", target = "testing" },
-  { action = "test_source_locations", fn = "handle_source_locations", target = "testing", event = "test_source_locations" },
-  { action = "providers_detected", fn = "handle_providers_detected", target = "testing", event = "providers_detected" },
+  { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing", session_scoped = true },
+  { action = "test_locations_detected", fn = "handle_test_locations", target = "testing", session_scoped = true },
+  { action = "test_source_locations", fn = "handle_source_locations", target = "testing", session_scoped = true, event = "test_source_locations" },
+  { action = "providers_detected", fn = "handle_providers_detected", target = "testing", session_scoped = true, event = "providers_detected" },
   { action = "test_summary", fn = "handle_test_summary", target = "testing", session_scoped = true, event = "test_summary" },
   -- Coverage
-  { action = "coverage_updated", fn = "apply_coverage_response", target = "coverage", event = "coverage_updated" },
+  { action = "coverage_updated", fn = "apply_coverage_response", target = "coverage", session_scoped = true, event = "coverage_updated" },
   -- Annotations
   { action = "file_annotations", fn = "handle_file_annotations", target = "annotations", session_scoped = true, event = "file_annotations" },
   -- Fire-event-only (decode + fire, no state update)
@@ -437,7 +444,7 @@ local function on_sse_events(raw_events)
   local errors = sse_parser.safe_dispatch_batch(dispatch_table, classified)
   for _, e in ipairs(errors) do
     vim.schedule(function()
-      vim.notify(string.format("[SageFs] SSE handler error (%s): %s. Connection may be lost. Try: :SageFsReconnect to re-establish", e.action, tostring(e.err)),
+      vim.notify(string.format("[SageFs] SSE handler error (%s): %s. Connection may be lost. Try: :SageFsConnect to re-establish", e.action, tostring(e.err)),
         vim.log.levels.WARN)
     end)
   end
@@ -489,7 +496,15 @@ local function start_sse()
       end)
     end,
     on_disconnect = function(code)
+      -- §5.1: this used to set status and fire an autocmd with NO
+      -- notification at all — a user with an active session got no signal
+      -- whatsoever that the daemon died (the statusline fix above covers
+      -- the passive case; this covers the active one).
+      local was_connected = M.state.status == "connected"
       M.state = model.set_status(M.state, "disconnected")
+      if was_connected then
+        notify("Disconnected from SageFs daemon" .. (code and (" (code " .. tostring(code) .. ")") or ""), vim.log.levels.WARN)
+      end
       fire_user_event("disconnected")
       -- Forward disconnection to dashboard
       if M._dashboard then M._dashboard.on_event("disconnected") end
@@ -504,7 +519,7 @@ local function start_sse()
           if eval_id == watchdog_eval_id then
             eval_id = 0
             vim.schedule(function()
-              notify("⚠ Evaluation interrupted: daemon connection lost. Try :SageFsReconnect", vim.log.levels.WARN)
+              notify("⚠ Evaluation interrupted: daemon connection lost. Try :SageFsConnect", vim.log.levels.WARN)
             end)
           end
         end)
@@ -527,6 +542,12 @@ local function stop_sse()
   M.state = model.set_status(M.state, "disconnected")
   fire_user_event("disconnected")
 end
+
+-- Exposed directly on M (in addition to the `helpers` closure below that
+-- commands/keymaps use) so tests can drive the real SSE dispatch pipeline
+-- end-to-end without reaching into private locals.
+M.start_sse = start_sse
+M.stop_sse = stop_sse
 
 -- ─── Diagnostics ─────────────────────────────────────────────────────────────
 

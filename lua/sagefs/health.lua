@@ -157,7 +157,7 @@ function M.check()
   elseif status == "reconnecting" then
     vim.health.warn("SSE event stream: reconnecting", {
       "Check that the daemon is running: sagefs --proj <your.fsproj>",
-      "Or run :SageFsReconnect to re-establish the connection",
+      "Or run :SageFsConnect to re-establish the connection",
     })
   else
     vim.health.warn("SSE event stream: " .. status, {
