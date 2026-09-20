@@ -34,6 +34,9 @@ M.config = {
   dashboard_port = 37750,
   auto_connect = true,
   check_on_save = false,
+  -- Override for the one-time-welcome marker file (mainly for tests).
+  -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
+  welcome_marker_path = nil,
   highlight = {
     success = { fg = "#a6e3a1", italic = true },
     error = { fg = "#f38ba8", italic = true },
@@ -1477,7 +1480,8 @@ function M.setup(opts)
   }
 
   commands.register_commands(M, helpers)
-  commands.register_keymaps(M, helpers)
+  -- register_keymaps is invoked per-F#-buffer from inside register_autocmds
+  -- (roast item 13 / §5.6): <A-CR> and <leader>r* must not be global.
   commands.register_autocmds(M, helpers)
 
   -- Dashboard panel (opt-in via config.dashboard or :SageFsDashboard command)
@@ -1521,9 +1525,15 @@ function M.setup(opts)
     end, 500)
   end
 
-  -- One-time welcome hint for new users
-  if not vim.g.sagefs_welcomed then
-    vim.g.sagefs_welcomed = true
+  -- One-time welcome hint for new users. `vim.g` globals only survive a
+  -- restart via shada when the name is ALL-CAPS with no lowercase letter
+  -- AND the shada '!' flag is set (:help shada-g) — `sagefs_welcomed` is
+  -- lowercase, so it never persisted: this fired on every single launch,
+  -- forever, for every user. A marker file under stdpath("data") persists
+  -- regardless of the user's shada configuration.
+  local welcome_marker = M.config.welcome_marker_path or (vim.fn.stdpath("data") .. "/sagefs_welcomed")
+  if vim.fn.filereadable(welcome_marker) == 0 then
+    vim.fn.writefile({}, welcome_marker)
     vim.defer_fn(function()
       vim.notify("[SageFs] Welcome! Run :SageFsStart to begin, or :checkhealth sagefs for setup guide.", vim.log.levels.INFO)
     end, 1000)

@@ -76,6 +76,26 @@ describe("sagefs.sessions", function()
       assert.same({}, result.sessions[1].loaded_projects)
     end)
 
+    -- roast §5.14: the server never sends a `name` field, but `sess.name`
+    -- was read at two call sites (:SageFsStatus, :SageFsNotebook's project
+    -- header) — both dead reads, always nil, forever. normalize_session
+    -- must now derive one.
+    it("derives name from the first project, stripping .fsproj", function()
+      local json = vim.json.encode({
+        sessions = { { id = "abc-123", status = "Ready", projects = { "MyApp.fsproj" }, workingDirectory = "", evalCount = 0, avgDurationMs = 0 } },
+      })
+      local result = sessions.parse_sessions_response(json)
+      assert.equals("MyApp", result.sessions[1].name)
+    end)
+
+    it("falls back to the session id when there are no projects", function()
+      local json = vim.json.encode({
+        sessions = { { id = "abc-123", status = "Ready", projects = {}, workingDirectory = "", evalCount = 0, avgDurationMs = 0 } },
+      })
+      local result = sessions.parse_sessions_response(json)
+      assert.equals("abc-123", result.sessions[1].name)
+    end)
+
     it("returns error for nil input", function()
       local result = sessions.parse_sessions_response(nil)
       assert.is_false(result.ok)

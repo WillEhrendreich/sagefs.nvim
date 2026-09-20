@@ -137,18 +137,41 @@ describe("plugin setup", function()
     end
   end)
 
-  it("sets global keymaps for eval", function()
-    -- Keymaps are global (not buffer-local), registered in setup()
+  -- roast item 13 / §5.6: <A-CR> and <leader>r* used to be registered
+  -- globally in setup() — once any F# file was opened in the session the
+  -- plugin permanently owned those keys in EVERY buffer, F# or not (a
+  -- plain Markdown buffer's <A-CR> was silently hijacked). They must be
+  -- buffer-local, present only in fsharp/fsx buffers.
+  it("does not set SageFs eval keymaps globally", function()
     local maps = vim.api.nvim_get_keymap("n")
-    local found_leader_se = false
-    local found_alt_enter = false
     for _, m in ipairs(maps) do
+      assert_falsy(m.desc and m.desc:find("SageFs"),
+        "found a global (non-buffer-local) SageFs keymap: " .. tostring(m.lhs))
+    end
+  end)
+
+  it("scopes eval keymaps to F# buffers, not a plain-text buffer", function()
+    local fsharp_buf = make_buffer({ "let x = 1" })
+    vim.bo[fsharp_buf].filetype = "fsharp"
+
+    local found_leader_re = false
+    local found_alt_enter = false
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(fsharp_buf, "n")) do
       if m.lhs and m.desc and m.desc:find("SageFs") then
-        if m.lhs:find("se") then found_leader_se = true end
-        if m.lhs:find("CR") or m.lhs:find("Enter") then found_alt_enter = true end
+        if m.lhs:find("re", 1, true) then found_leader_re = true end
+        if m.lhs:find("CR", 1, true) or m.lhs:find("Enter", 1, true) then found_alt_enter = true end
       end
     end
-    assert_truthy(found_leader_se or found_alt_enter, "expected SageFs keymaps registered globally")
+    assert_truthy(found_leader_re or found_alt_enter,
+      "expected SageFs keymaps registered on the fsharp buffer")
+
+    local text_buf = make_buffer({ "hello" })
+    vim.bo[text_buf].filetype = "text"
+    local leaked = false
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(text_buf, "n")) do
+      if m.desc and m.desc:find("SageFs") then leaked = true end
+    end
+    assert_falsy(leaked, "SageFs keymaps must not appear in a non-F# buffer")
   end)
 end)
 
@@ -1456,6 +1479,76 @@ describe("statusline integration", function()
 
     sagefs.active_session = prev_active_session
     sagefs.state = prev_state
+  end)
+end)
+
+-- ─── Welcome hint persistence (roast item 13) ─────────────────────────────────
+-- `vim.g.sagefs_welcomed` never survives a restart (shada only auto-persists
+-- ALL-CAPS-with-no-lowercase globals, and only with the '!' flag set) — the
+-- welcome notification fired on every single launch, forever. It must now
+-- persist via a marker file so it fires at most once ever.
+
+describe("welcome hint persistence (roast item 13)", function()
+  it("notifies the first time the marker file does not exist, and never again", function()
+    local sagefs = require("sagefs")
+    local marker = vim.fn.tempname()
+    os.remove(marker)  -- tempname() creates the file; we want it absent first
+
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+
+    sagefs.setup({ auto_connect = false, welcome_marker_path = marker })
+    vim.wait(1500, function() return #notifications > 0 end, 20)
+
+    assert_truthy(vim.fn.filereadable(marker) == 1, "setup() must create the marker file")
+    assert_truthy(#notifications > 0, "should welcome a first-time user")
+    assert_contains(notifications[1].msg, "Welcome", "should be the welcome message")
+
+    -- Second launch (marker now exists): must NOT welcome again.
+    notifications = {}
+    sagefs.setup({ auto_connect = false, welcome_marker_path = marker })
+    vim.wait(300, function() return #notifications > 0 end, 20)
+
+    vim.notify = original_notify
+    os.remove(marker)
+
+    assert_truthy(#notifications == 0, "must not welcome a returning user a second time")
+  end)
+end)
+
+-- ─── which-key group registration (roast §5.13 / item 13) ────────────────────
+-- 53 commands, no which-key group — pressing <leader> showed a bare
+-- "+prefix" instead of "+SageFs". Best-effort: registers a group label for
+-- the <leader>r/<leader>t prefixes when which-key.nvim is installed, and
+-- must never error when it isn't.
+
+describe("which-key group registration (roast item 13)", function()
+  it("registers a SageFs group for <leader>r and <leader>t when which-key is present", function()
+    local wk_path = vim.fn.stdpath("data") .. "/lazy/which-key.nvim"
+    if vim.fn.isdirectory(wk_path) == 0 then
+      io.write("    (skipped: which-key.nvim not installed at " .. wk_path .. ")\n")
+      return
+    end
+    vim.opt.rtp:prepend(wk_path)
+    package.loaded["sagefs"] = nil
+    package.loaded["which-key"] = nil
+    local sagefs = require("sagefs")
+    local wk = require("which-key")
+
+    sagefs.setup({ auto_connect = false })
+    local buf = make_buffer({ "let x = 1" })
+    vim.bo[buf].filetype = "fsharp"
+
+    local found_r, found_t = false, false
+    for _, item in ipairs(wk._queue) do
+      for _, entry in ipairs(item.spec) do
+        if entry[1] == "<leader>r" and entry.group then found_r = true end
+        if entry[1] == "<leader>t" and entry.group then found_t = true end
+      end
+    end
+    assert_truthy(found_r, "expected a which-key group for <leader>r")
+    assert_truthy(found_t, "expected a which-key group for <leader>t")
   end)
 end)
 

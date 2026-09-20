@@ -21,6 +21,25 @@ end
 
 -- ─── Parse GET /api/sessions response ────────────────────────────────────────
 
+--- Derive a human-friendly session name. The daemon's `/api/sessions`
+--- response (SageFs/McpServer.fs:2478-2528) never sends a `name` field —
+--- `normalize_session` used to produce none, but `sess.name` was still read
+--- at two call sites (`:SageFsStatus`, and `:SageFsNotebook`'s exported
+--- project header) that could therefore never render anything but a bare
+--- 8-hex id or an empty string (roast §5.14). Mirrors
+--- `format_statusline`'s own project-name derivation, so both surfaces
+--- agree on what a session is "called".
+---@param raw table raw session entry from /api/sessions
+---@return string|nil
+local function derive_name(raw)
+  local proj = raw.projects and raw.projects[1]
+  if proj and proj ~= "" then
+    local base = proj:gsub("%.fsproj$", "")
+    if base ~= "" then return base end
+  end
+  return nil
+end
+
 local function normalize_session(raw)
   -- `health` is passed through as-is (never invented): `nil` means the
   -- server didn't send a verdict, which callers must treat the same as
@@ -35,6 +54,7 @@ local function normalize_session(raw)
   end
   return {
     id = raw.id or "",
+    name = derive_name(raw) or raw.id or "",
     status = raw.status or "",
     projects = raw.projects or {},
     working_directory = raw.workingDirectory or "",
