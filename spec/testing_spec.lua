@@ -634,6 +634,30 @@ describe("testing.apply_status_response", function()
     s = testing.apply_status_response(s, nil)
     assert.are.equal(0, testing.test_count(s))
   end)
+
+  -- roast §5.3: GET /api/live-testing/status (Mcp.fs:2200-2202) nests
+  -- DiscoveryState as a SIBLING of Summary, not inside it — merge it in.
+  it("merges the sibling top-level DiscoveryState into the normalized summary", function()
+    local s = testing.new()
+    s = testing.apply_status_response(s, {
+      Enabled = true,
+      Summary = { Total = 0, Passed = 0, Failed = 0, Stale = 0, Running = 0, Disabled = 0, Enabled = true },
+      DiscoveryState = "ready_zero_tests",
+    })
+    assert.are.equal("ready_zero_tests", s.summary.discovery_state)
+    assert.is_true(s.summary.ready_zero_tests)
+  end)
+
+  it("distinguishes discovering from ready_zero_tests via the sibling DiscoveryState", function()
+    local s = testing.new()
+    s = testing.apply_status_response(s, {
+      Enabled = true,
+      Summary = { Total = 0, Passed = 0, Failed = 0, Stale = 0, Running = 0, Disabled = 0, Enabled = true },
+      DiscoveryState = "discovering",
+    })
+    assert.are.equal("discovering", s.summary.discovery_state)
+    assert.is_false(s.summary.ready_zero_tests)
+  end)
 end)
 
 -- ─── format_summary: human-readable test summary ─────────────────────────────
@@ -1781,6 +1805,80 @@ describe("testing.parse_completion", function()
   end)
 end)
 
+-- ─── normalize_summary: discovery fields (roast §5.3) ─────────────────────────
+-- Server contract (SageFs.Core/SseWriter.fs:114-117,129-130): clients MUST
+-- reject a summary whose DiscoveryGeneration is older than the last one
+-- applied; DiscoveryState/ready_zero_tests distinguishes "discovery hasn't
+-- run" from "discovery ran, genuinely zero tests"; ActivityText is the
+-- one human-readable current-activity string to render as-is.
+
+describe("testing.normalize_summary discovery fields", function()
+  it("threads DiscoveryGeneration, DiscoveryState, and ActivityText through", function()
+    local n = testing.normalize_summary({
+      Total = 0, Passed = 0, Failed = 0, Stale = 0, Running = 0, Disabled = 0,
+      DiscoveryGeneration = 7,
+      DiscoveryState = "discovering",
+      ActivityText = "Discovering tests...",
+    })
+    assert.are.equal(7, n.discovery_generation)
+    assert.are.equal("discovering", n.discovery_state)
+    assert.are.equal("Discovering tests...", n.activity_text)
+  end)
+
+  it("derives ready_zero_tests true only for the ready_zero_tests DiscoveryState", function()
+    local zero = testing.normalize_summary({ Total = 0, DiscoveryState = "ready_zero_tests" })
+    assert.is_true(zero.ready_zero_tests)
+
+    local discovering = testing.normalize_summary({ Total = 0, DiscoveryState = "discovering" })
+    assert.is_false(discovering.ready_zero_tests)
+
+    local with_tests = testing.normalize_summary({ Total = 5, DiscoveryState = "ready_with_tests" })
+    assert.is_false(with_tests.ready_zero_tests)
+  end)
+
+  it("leaves discovery_generation nil (not 0) when the payload carries none", function()
+    -- TestResultsBatchPayload.Summary is the bare 7-field TestSummary record
+    -- with no discovery context at all (SseWriter.fs:150-155) — defaulting
+    -- to 0 here would make should_accept_summary treat every later real
+    -- generation as "older" and reject it forever.
+    local n = testing.normalize_summary({ Total = 3, Passed = 3, Failed = 0, Stale = 0, Running = 0, Disabled = 0 })
+    assert.is_nil(n.discovery_generation)
+  end)
+end)
+
+describe("testing.should_accept_summary (DiscoveryGeneration replacement gate)", function()
+  it("accepts when the state has never seen a generation before", function()
+    local s = testing.new()
+    local incoming = testing.normalize_summary({ Total = 1, DiscoveryGeneration = 3 })
+    assert.is_true(testing.should_accept_summary(s, incoming))
+  end)
+
+  it("rejects a summary older than the last applied generation", function()
+    local s = testing.new()
+    s.summary = testing.normalize_summary({ Total = 5, DiscoveryGeneration = 10 })
+    local stale = testing.normalize_summary({ Total = 1, DiscoveryGeneration = 4 })
+    assert.is_false(testing.should_accept_summary(s, stale))
+  end)
+
+  it("accepts a summary at the same or a newer generation", function()
+    local s = testing.new()
+    s.summary = testing.normalize_summary({ Total = 5, DiscoveryGeneration = 10 })
+    assert.is_true(testing.should_accept_summary(s, testing.normalize_summary({ Total = 5, DiscoveryGeneration = 10 })))
+    assert.is_true(testing.should_accept_summary(s, testing.normalize_summary({ Total = 6, DiscoveryGeneration = 11 })))
+  end)
+
+  it("accepts unconditionally when the incoming summary carries no generation", function()
+    local s = testing.new()
+    s.summary = testing.normalize_summary({ Total = 5, DiscoveryGeneration = 10 })
+    local no_gen = testing.normalize_summary({ Total = 99 })
+    assert.is_true(testing.should_accept_summary(s, no_gen))
+  end)
+
+  it("rejects nil", function()
+    assert.is_false(testing.should_accept_summary(testing.new(), nil))
+  end)
+end)
+
 -- ─── handle_test_summary (new SSE event from SageFs) ─────────────────────────
 
 describe("testing.handle_test_summary", function()
@@ -1818,6 +1916,34 @@ describe("testing.handle_test_summary", function()
     s.summary.total = 42
     s = testing.handle_test_summary(s, nil)
     assert.are.equal(42, s.summary.total)
+  end)
+
+  it("rejects a test_summary event older than the last applied DiscoveryGeneration", function()
+    local s = testing.new()
+    s = testing.handle_test_summary(s, {
+      Total = 5, Passed = 5, Failed = 0, Stale = 0, Running = 0, Disabled = 0,
+      DiscoveryGeneration = 10, DiscoveryState = "ready_with_tests",
+    })
+    assert.are.equal(5, s.summary.total)
+    -- A stale push (older generation) must not overwrite the newer state.
+    s = testing.handle_test_summary(s, {
+      Total = 0, Passed = 0, Failed = 0, Stale = 0, Running = 0, Disabled = 0,
+      DiscoveryGeneration = 3, DiscoveryState = "discovering",
+    })
+    assert.are.equal(5, s.summary.total, "a stale DiscoveryGeneration must not replace a newer summary")
+    assert.are.equal("ready_with_tests", s.summary.discovery_state)
+  end)
+
+  it("accepts a newer DiscoveryGeneration", function()
+    local s = testing.new()
+    s = testing.handle_test_summary(s, {
+      Total = 5, DiscoveryGeneration = 1, DiscoveryState = "ready_with_tests",
+    })
+    s = testing.handle_test_summary(s, {
+      Total = 0, DiscoveryGeneration = 2, DiscoveryState = "ready_zero_tests",
+    })
+    assert.are.equal(0, s.summary.total)
+    assert.is_true(s.summary.ready_zero_tests)
   end)
 end)
 

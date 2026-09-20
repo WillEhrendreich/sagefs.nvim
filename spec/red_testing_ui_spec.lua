@@ -362,6 +362,26 @@ describe("testing.format_statusline [RED T2]", function()
     assert.is_string(line)
     assert.is_true(#line > 0)
   end)
+
+  -- roast §5.3: "Tests: 0" used to render identically for "discovery hasn't
+  -- run yet" and "discovery ran, genuinely zero tests" — distinguish them
+  -- via discovery_state now that normalize_summary threads it through.
+  it("shows a distinct message while discovery is still running", function()
+    local state = testing.new()
+    state = testing.set_enabled(state, true)
+    state = testing.handle_test_summary(state, { Total = 0, DiscoveryState = "discovering" })
+    local line = testing.format_statusline(state)
+    assert.is_truthy(line:find("discover", 1, true))
+  end)
+
+  it("shows a distinct message when discovery completed with genuinely zero tests", function()
+    local state = testing.new()
+    state = testing.set_enabled(state, true)
+    state = testing.handle_test_summary(state, { Total = 0, DiscoveryState = "ready_zero_tests" })
+    local line = testing.format_statusline(state)
+    assert.is_falsy(line:find("discover", 1, true))
+    assert.is_true(#line > 0)
+  end)
 end)
 
 -- =============================================================================

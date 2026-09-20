@@ -216,7 +216,21 @@ function M.check()
         vim.health.ok("Live testing: " .. total .. " tests (" .. status_str .. ")" .. phase_str)
       end
     elseif ts.enabled then
-      vim.health.info("Live testing: enabled, no tests discovered yet")
+      -- roast §5.3: this used to say "no tests discovered yet" for BOTH
+      -- "discovery hasn't run" and "discovery ran, genuinely zero tests" —
+      -- the difference between a spinner and a truthful empty state.
+      -- discovery_state (and, when the server sent one, its own
+      -- human-readable activity_text) now tells them apart.
+      local discovery_state = summary.discovery_state
+      if summary.activity_text and summary.activity_text ~= "" then
+        vim.health.info("Live testing: " .. summary.activity_text)
+      elseif discovery_state == "ready_zero_tests" or summary.ready_zero_tests then
+        vim.health.info("Live testing: enabled, discovery complete — no tests found in this project")
+      elseif discovery_state == "discovering" then
+        vim.health.info("Live testing: enabled, discovery in progress...")
+      else
+        vim.health.info("Live testing: enabled, no tests discovered yet")
+      end
     else
       vim.health.info("Live testing: not enabled. Run :SageFsRunTests to trigger discovery")
     end

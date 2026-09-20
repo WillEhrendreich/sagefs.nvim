@@ -204,6 +204,95 @@ describe("sagefs.health", function()
     assert.is_true(found_correct_drift, "drift warning should cite the live daemon version (0.6.708)")
     assert.is_false(found_stale_drift, "drift warning must not cite the stale installed CLI version (0.6.283)")
   end)
+
+  -- roast §5.3: "Live testing: enabled, no tests discovered yet" used to
+  -- render for BOTH "discovery hasn't run" and "discovery ran, genuinely
+  -- zero tests" — the only surface that even tried to make this
+  -- distinction (§5.13) still couldn't, because normalize_summary dropped
+  -- DiscoveryState/ActivityText before they ever reached testing_state.
+  local function base_sagefs(testing_state)
+    return {
+      version = "test",
+      state = { status = "connected" },
+      config = { port = 37749, dashboard_port = 37750, auto_connect = false, check_on_save = false },
+      session_list = {},
+      active_session = nil,
+      testing_state = testing_state,
+    }
+  end
+
+  local function no_probe_system(cmd)
+    vim.v.shell_error = 1
+    return ""
+  end
+
+  it("shows a distinct message while discovery is still running", function()
+    local info_messages = {}
+    package.loaded["sagefs"] = base_sagefs({
+      enabled = true,
+      summary = { total = 0, discovery_state = "discovering" },
+      run_phase = "Idle",
+    })
+    vim.health = {
+      start = function(_) end, ok = function(_) end, warn = function(_) end,
+      info = function(msg) table.insert(info_messages, msg) end, error = function(_) end,
+    }
+    vim.fn.system = no_probe_system
+
+    require("sagefs.health").check()
+
+    local found = false
+    for _, msg in ipairs(info_messages) do
+      if msg:find("discover", 1, true) and msg:find("progress", 1, true) then found = true end
+    end
+    assert.is_true(found, "expected a 'discovery in progress' message")
+  end)
+
+  it("shows a distinct message when discovery completed with genuinely zero tests", function()
+    local info_messages = {}
+    package.loaded["sagefs"] = base_sagefs({
+      enabled = true,
+      summary = { total = 0, discovery_state = "ready_zero_tests", ready_zero_tests = true },
+      run_phase = "Idle",
+    })
+    vim.health = {
+      start = function(_) end, ok = function(_) end, warn = function(_) end,
+      info = function(msg) table.insert(info_messages, msg) end, error = function(_) end,
+    }
+    vim.fn.system = no_probe_system
+
+    require("sagefs.health").check()
+
+    local found_zero, found_progress = false, false
+    for _, msg in ipairs(info_messages) do
+      if msg:find("no tests found", 1, true) then found_zero = true end
+      if msg:find("progress", 1, true) then found_progress = true end
+    end
+    assert.is_true(found_zero, "expected a 'no tests found' message")
+    assert.is_false(found_progress, "must not say discovery is still running")
+  end)
+
+  it("renders the server's own ActivityText verbatim when present", function()
+    local info_messages = {}
+    package.loaded["sagefs"] = base_sagefs({
+      enabled = true,
+      summary = { total = 0, discovery_state = "discovering", activity_text = "Compiling test assembly..." },
+      run_phase = "Idle",
+    })
+    vim.health = {
+      start = function(_) end, ok = function(_) end, warn = function(_) end,
+      info = function(msg) table.insert(info_messages, msg) end, error = function(_) end,
+    }
+    vim.fn.system = no_probe_system
+
+    require("sagefs.health").check()
+
+    local found = false
+    for _, msg in ipairs(info_messages) do
+      if msg:find("Compiling test assembly...", 1, true) then found = true end
+    end
+    assert.is_true(found, "expected the server's ActivityText to be rendered")
+  end)
 end)
 
 -- Pure version-drift check: catches the "plugin a minor behind the daemon" class

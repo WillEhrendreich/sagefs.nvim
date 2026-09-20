@@ -301,13 +301,30 @@ function M.parse_freshness(fresh)
   return nil
 end
 
---- Normalize a TestSummary from PascalCase to lowercase keys
+--- Normalize a TestSummary from PascalCase to lowercase keys.
+---
+--- roast §5.3 [HIGH]: this used to keep only the six counts and silently
+--- drop DiscoveryGeneration, DiscoveryState, ActivityText (and Enabled,
+--- NotYetRun, Activity, ActivityShort, LastDecision — see note below). The
+--- server states the contract at SageFs.Core/SseWriter.fs:114-117,129-130:
+---   "Discovery is REPLACEMENT state: clients must reject summaries whose
+---   DiscoveryGeneration is older than the last one they applied, and
+---   ReadyZeroTests/ready_zero_tests is how a completed discovery with zero
+---   tests becomes observable" — distinct from "discovery hasn't run yet".
+---   "The activity is the session's one state; clients render its words
+---   instead of rebuilding a state from the counts."
+--- discovery_generation is left nil (not defaulted to 0) when absent —
+--- some callers only ever get the bare 7-field TestSummary record with no
+--- discovery context at all (e.g. TestResultsBatchPayload.Summary,
+--- SseWriter.fs:150-155), and defaulting to 0 there would make
+--- should_accept_summary wrongly reject every later push as "older".
 ---@param summary table
 ---@return table normalized summary
 function M.normalize_summary(summary)
   if not summary then return nil end
   -- If already lowercase, return as-is
   if summary.total ~= nil then return summary end
+  local discovery_state = summary.DiscoveryState or summary.discoveryState
   return {
     total = summary.Total or 0,
     passed = summary.Passed or 0,
@@ -315,7 +332,36 @@ function M.normalize_summary(summary)
     stale = summary.Stale or 0,
     running = summary.Running or 0,
     disabled = summary.Disabled or 0,
+    discovery_generation = summary.DiscoveryGeneration or summary.discoveryGeneration,
+    discovery_state = discovery_state,
+    -- "ready_zero_tests" is not its own wire field — it's one of
+    -- DiscoveryState's four values (LiveTestingTypes.fs:1500-1511:
+    -- Disabled | Discovering | ReadyZeroTests | ReadyWithTests) — derived
+    -- here so callers get a plain boolean for the one case they actually
+    -- care to distinguish.
+    ready_zero_tests = discovery_state == "ready_zero_tests",
+    activity_text = summary.ActivityText or summary.activityText,
   }
+end
+
+--- Whether a newly-received TestSummary should replace the current one.
+--- Discovery is REPLACEMENT state (SseWriter.fs:114-117): the server states
+--- clients MUST reject a summary whose DiscoveryGeneration is older than
+--- the last one they applied. A summary with no discovery_generation
+--- (older daemon builds, or a call site whose payload never carries
+--- discovery context — see normalize_summary) carries nothing to compare
+--- against, so it is always accepted; this guard only fires when both
+--- sides know their generation.
+---@param state table current live-testing state
+---@param normalized table|nil a normalize_summary(...) result
+---@return boolean
+function M.should_accept_summary(state, normalized)
+  if not normalized then return false end
+  local incoming = normalized.discovery_generation
+  if incoming == nil then return true end
+  local current = state.summary and state.summary.discovery_generation
+  if current == nil then return true end
+  return incoming >= current
 end
 
 -- ─── Staleness ───────────────────────────────────────────────────────────────
@@ -539,7 +585,20 @@ function M.apply_status_response(state, data)
   end
   local summary = data.summary or data.Summary
   if summary then
-    state.summary = M.normalize_summary(summary)
+    local normalized = M.normalize_summary(summary)
+    -- GET /api/live-testing/status (Mcp.fs:2200-2202) nests DiscoveryState
+    -- as a SIBLING of Summary, not embedded inside it the way the
+    -- incremental test_summary SSE event does (SseWriter.fs:130-143) — the
+    -- bare TestSummary record has no discovery fields at all. Merge it in
+    -- here so every consumer of state.summary sees one shape regardless of
+    -- which endpoint it came from. This is a full authoritative snapshot
+    -- (not an incremental push), so it always applies — no generation guard.
+    local discovery_state = data.DiscoveryState or data.discoveryState
+    if discovery_state then
+      normalized.discovery_state = discovery_state
+      normalized.ready_zero_tests = discovery_state == "ready_zero_tests"
+    end
+    state.summary = normalized
   end
   local tests = data.tests or data.Tests
   if tests then
@@ -673,7 +732,10 @@ function M.handle_results_batch(state, data)
     end
     local summary = data.Summary or data.summary
     if summary then
-      state.summary = M.normalize_summary(summary)
+      local normalized = M.normalize_summary(summary)
+      if M.should_accept_summary(state, normalized) then
+        state.summary = normalized
+      end
     end
     state.generation = M.parse_generation(data.Generation or data.generation) or state.generation
     state.freshness = M.parse_freshness(data.Freshness or data.freshness)
@@ -845,7 +907,10 @@ end
 ---@return table state
 function M.handle_test_summary(state, data)
   if not data then return state end
-  state.summary = M.normalize_summary(data)
+  local normalized = M.normalize_summary(data)
+  if M.should_accept_summary(state, normalized) then
+    state.summary = normalized
+  end
   return state
 end
 
@@ -1089,7 +1154,19 @@ end
 function M.format_statusline(state)
   if not state.enabled then return "" end
   local s = M.compute_summary(state)
-  if s.total == 0 then return "Tests: 0" end
+  if s.total == 0 then
+    -- roast §5.3: "Tests: 0" rendered identically whether discovery hadn't
+    -- run yet or genuinely found nothing — the client-side twin of the
+    -- server's own zero-test-suppression defect. discovery_state (when the
+    -- server sent one) tells them apart; unknown falls back to the old text.
+    local discovery_state = state.summary and state.summary.discovery_state
+    if discovery_state == "discovering" then
+      return "Tests: discovering…"
+    elseif discovery_state == "ready_zero_tests" then
+      return "Tests: none found"
+    end
+    return "Tests: 0"
+  end
   local parts = {}
   if s.passed > 0 then table.insert(parts, s.passed .. " ✓") end
   if s.failed > 0 then table.insert(parts, s.failed .. " ✖") end
