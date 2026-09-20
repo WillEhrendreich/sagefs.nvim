@@ -13,6 +13,13 @@ local dashboard_port = 37750
 
 -- ─── API ─────────────────────────────────────────────────────────────────────
 
+-- §5.2: every mutating call here used to invoke `callback` identically on
+-- success and failure — the caller had no way to tell them apart, so
+-- commands.lua's :SageFsWatchAll/:SageFsUnwatchAll reported success
+-- unconditionally, even on a rejected request. `callback` is now always
+-- invoked with an explicit `ok` boolean; a failure NEVER refetches state
+-- (there is nothing new to fetch) and NEVER looks like success.
+
 function M.fetch_state(session_id, callback)
   transport.http_json({
     method = "GET",
@@ -24,7 +31,7 @@ function M.fetch_state(session_id, callback)
       else
         M.state = hr_model.new()
       end
-      if callback then callback() end
+      if callback then callback(ok) end
     end,
   })
 end
@@ -38,7 +45,7 @@ function M.toggle(session_id, path, callback)
       if ok then
         M.fetch_state(session_id, callback)
       elseif callback then
-        callback()
+        callback(false)
       end
     end,
   })
@@ -52,7 +59,7 @@ function M.watch_all(session_id, callback)
       if ok then
         M.fetch_state(session_id, callback)
       elseif callback then
-        callback()
+        callback(false)
       end
     end,
   })
@@ -66,7 +73,7 @@ function M.unwatch_all(session_id, callback)
       if ok then
         M.fetch_state(session_id, callback)
       elseif callback then
-        callback()
+        callback(false)
       end
     end,
   })
@@ -105,16 +112,28 @@ function M.picker(session_id)
       if not sel then return end
 
       if sel.action == "watch_all" then
-        M.watch_all(session_id, function()
-          vim.notify(string.format("[SageFs] Watching all %d files", #M.state.files))
+        M.watch_all(session_id, function(ok)
+          if ok then
+            vim.notify(string.format("[SageFs] Watching all %d files", #M.state.files))
+          else
+            vim.notify("[SageFs] Failed to watch all files — check the daemon connection", vim.log.levels.ERROR)
+          end
         end)
       elseif sel.action == "unwatch_all" then
-        M.unwatch_all(session_id, function()
-          vim.notify("[SageFs] Unwatched all files")
+        M.unwatch_all(session_id, function(ok)
+          if ok then
+            vim.notify("[SageFs] Unwatched all files")
+          else
+            vim.notify("[SageFs] Failed to unwatch all files — check the daemon connection", vim.log.levels.ERROR)
+          end
         end)
       elseif sel.action == "toggle" and sel.path then
-        M.toggle(session_id, sel.path, function()
-          M.picker(session_id)
+        M.toggle(session_id, sel.path, function(ok)
+          if ok then
+            M.picker(session_id)
+          else
+            vim.notify("[SageFs] Failed to toggle file watch — check the daemon connection", vim.log.levels.ERROR)
+          end
         end)
       end
     end)

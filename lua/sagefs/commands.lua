@@ -218,25 +218,42 @@ function M.register_commands(plugin, helpers)
     hotreload.picker(sid)
   end, { desc = "Manage hot-reload file selection" })
 
+  -- §5.9: this used to be a bare "No active session" — one of the worst
+  -- messages in the plugin — while the identical precondition on
+  -- :SageFsHotReload (hotreload.lua:79) gives concrete next steps. Same
+  -- subsystem, same condition: one message.
+  local NO_SESSION_MSG = "No active session. Try: :SageFsCreateSession to create one, or :SageFsStart to start the daemon"
+
   vim.api.nvim_create_user_command("SageFsWatchAll", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     if not sid then
-      helpers.notify("No active session", vim.log.levels.WARN)
+      helpers.notify(NO_SESSION_MSG, vim.log.levels.WARN)
       return
     end
-    hotreload.watch_all(sid, function()
-      helpers.notify(string.format("Watching all %d files", #hotreload.state.files))
+    -- §5.2: watch_all used to invoke this callback identically on success
+    -- and failure, so a rejected request notified "Watching all N files"
+    -- — the opposite of the truth. `ok` is now always passed through.
+    hotreload.watch_all(sid, function(ok)
+      if ok then
+        helpers.notify(string.format("Watching all %d files", #hotreload.state.files))
+      else
+        helpers.notify("Failed to watch all files — check the daemon connection", vim.log.levels.ERROR)
+      end
     end)
   end, { desc = "Watch all files for hot reload" })
 
   vim.api.nvim_create_user_command("SageFsUnwatchAll", function()
     local sid = plugin.active_session and plugin.active_session.id or nil
     if not sid then
-      helpers.notify("No active session", vim.log.levels.WARN)
+      helpers.notify(NO_SESSION_MSG, vim.log.levels.WARN)
       return
     end
-    hotreload.unwatch_all(sid, function()
-      helpers.notify("Unwatched all files")
+    hotreload.unwatch_all(sid, function(ok)
+      if ok then
+        helpers.notify("Unwatched all files")
+      else
+        helpers.notify("Failed to unwatch all files — check the daemon connection", vim.log.levels.ERROR)
+      end
     end)
   end, { desc = "Unwatch all files for hot reload" })
 
