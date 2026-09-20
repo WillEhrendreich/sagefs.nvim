@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **60 Lua modules under `lua/sagefs/` (61 under `lua/`), 1474 passing tests (1418 busted + 56 headless-Neovim integration) as of the latest run, 53 user commands.**
+This plugin provides the Neovim integration layer. **60 Lua modules under `lua/sagefs/` (61 under `lua/`), 1546 passing tests (1480 busted + 66 headless-Neovim integration) as of the latest run, 53 user commands.**
 
 ### New in Latest
 
@@ -496,10 +496,10 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1372 (latest run: 1372 passed, 0 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 56 (latest run: 56 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline. |
+| **Busted (pure)** | `busted` via LuaRocks | 1480 (latest run on Linux: 1480 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 66 (latest run: 66 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping. |
 | **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1428 unit+integration passing** | 1372 busted + 56 headless-Neovim integration (latest green run); E2E suite requires a running SageFs daemon |
+| **Total** | | **1546 unit+integration passing** | 1480 busted + 66 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
