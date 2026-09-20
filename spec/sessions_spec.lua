@@ -39,6 +39,43 @@ describe("sagefs.sessions", function()
       assert.equals(42.3, result.sessions[1].avg_duration_ms)
     end)
 
+    -- §5.5: `sessions.lua`'s normalization dropped `health`, `faultReason`
+    -- and `loadedProjects` entirely, so a `Degraded` session (worker Ready,
+    -- but nothing usable loaded) rendered identically to a healthy one
+    -- everywhere in the plugin — the picker, the statusline, the dashboard.
+
+    it("parses health, faultReason and loadedProjects", function()
+      local json = vim.json.encode({
+        sessions = {
+          {
+            id = "abc-123",
+            status = "Ready",
+            projects = {},
+            workingDirectory = "C:\\Code\\MyApp",
+            evalCount = 0,
+            avgDurationMs = 0,
+            faultReason = vim.NIL,
+            health = { status = "Degraded", reason = "Session is Ready but nothing was loaded" },
+            loadedProjects = { "C:\\Code\\MyApp\\MyApp.fsproj" },
+          },
+        },
+      })
+
+      local result = sessions.parse_sessions_response(json)
+      assert.is_true(result.ok)
+      assert.same({ status = "Degraded", reason = "Session is Ready but nothing was loaded" }, result.sessions[1].health)
+      assert.same({ "C:\\Code\\MyApp\\MyApp.fsproj" }, result.sessions[1].loaded_projects)
+    end)
+
+    it("defaults loaded_projects to an empty list and health to nil when absent", function()
+      local json = vim.json.encode({
+        sessions = { { id = "abc", status = "Ready", projects = {}, workingDirectory = "", evalCount = 0, avgDurationMs = 0 } },
+      })
+      local result = sessions.parse_sessions_response(json)
+      assert.is_nil(result.sessions[1].health)
+      assert.same({}, result.sessions[1].loaded_projects)
+    end)
+
     it("returns error for nil input", function()
       local result = sessions.parse_sessions_response(nil)
       assert.is_false(result.ok)
@@ -169,6 +206,38 @@ describe("sagefs.sessions", function()
       local line = sessions.format_session_line(s)
       assert.is_truthy(line:find("42"))
     end)
+
+    -- §5.5: a `Degraded` session (worker Ready, but nothing usable loaded)
+    -- rendered in the picker as plain "MyApp.fsproj  Ready" — identical to
+    -- a healthy session. The picker line must say so.
+
+    it("shows a Degraded verdict and reason in the picker line", function()
+      local s = {
+        id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, working_directory = "",
+        eval_count = 3, avg_duration_ms = 0,
+        health = { status = "Degraded", reason = "0 assemblies loaded" },
+      }
+      local line = sessions.format_session_line(s)
+      assert.is_truthy(line:find("Degraded", 1, true))
+      assert.is_truthy(line:find("0 assemblies loaded", 1, true))
+    end)
+
+    it("shows no health suffix for a Healthy session", function()
+      local s = {
+        id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, working_directory = "",
+        eval_count = 0, avg_duration_ms = 0,
+        health = { status = "Healthy" },
+      }
+      local line = sessions.format_session_line(s)
+      assert.is_falsy(line:find("Degraded", 1, true))
+      assert.is_falsy(line:find("Failed", 1, true))
+    end)
+
+    it("shows no health suffix when health is absent (no invented problems)", function()
+      local s = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, working_directory = "", eval_count = 0, avg_duration_ms = 0 }
+      local line = sessions.format_session_line(s)
+      assert.equals("MyApp.fsproj  Ready", line)
+    end)
   end)
 
   -- ─── format_statusline ───────────────────────────────────────────────────
@@ -204,6 +273,69 @@ describe("sagefs.sessions", function()
       local text = sessions.format_statusline(s)
       assert.is_truthy(text:find("MyApp"))
       assert.is_falsy(text:find("%.fsproj"))
+    end)
+
+    -- The connection-aware icon used to live only in the `else` branch of
+    -- init.lua's statusline() — reached only when there was NO active
+    -- session. With an active session, format_statusline always rendered
+    -- an unconditional ⚡, so a dead daemon kept showing
+    -- "⚡ MyProject (Ready)" forever. format_statusline now takes the
+    -- connection status explicitly, so the caller can never skip it.
+
+    it("defaults to the connected icon when no connection status is given (back-compat)", function()
+      local s = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0 }
+      local text = sessions.format_statusline(s)
+      assert.is_truthy(text:find("⚡", 1, true))
+    end)
+
+    it("shows the connected icon when the transport is connected", function()
+      local s = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0 }
+      local text = sessions.format_statusline(s, "connected")
+      assert.is_truthy(text:find("⚡", 1, true))
+    end)
+
+    it("shows the reconnecting icon when the transport is reconnecting, even with an active session", function()
+      local s = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0 }
+      local text = sessions.format_statusline(s, "reconnecting")
+      assert.is_truthy(text:find("🔌", 1, true))
+      assert.is_falsy(text:find("⚡", 1, true))
+    end)
+
+    it("shows a disconnected icon when the daemon is dead, even with an active session — the §5.1 fix", function()
+      local s = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0 }
+      local text = sessions.format_statusline(s, "disconnected")
+      assert.is_truthy(text:find("💤", 1, true))
+      assert.is_falsy(text:find("⚡", 1, true))
+      -- The lie this fixes: the daemon is dead but the session still reads "Ready".
+      assert.is_truthy(text:find("Ready", 1, true))
+    end)
+
+    it("appends a degraded marker when the session's health is Degraded", function()
+      local s = {
+        id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0,
+        health = { status = "Degraded", reason = "0 assemblies loaded" },
+      }
+      local text = sessions.format_statusline(s, "connected")
+      assert.is_truthy(text:find("⚠", 1, true))
+    end)
+
+    it("appends a failed marker when the session's health is Failed", function()
+      local s = {
+        id = "abc", status = "Faulted", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0,
+        health = { status = "Failed", reason = "Session faulted" },
+      }
+      local text = sessions.format_statusline(s, "connected")
+      assert.is_truthy(text:find("❌", 1, true))
+    end)
+
+    it("adds no marker when the session's health is Healthy", function()
+      local s = {
+        id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0,
+        health = { status = "Healthy" },
+      }
+      local text = sessions.format_statusline(s, "connected")
+      assert.is_falsy(text:find("⚠", 1, true))
+      assert.is_falsy(text:find("❌", 1, true))
     end)
   end)
 

@@ -52,6 +52,37 @@ describe("Session section", function()
     assert.is_true(has_faulted_hl)
   end)
 
+  -- §5.5: a `Degraded` session (worker Ready, but nothing usable loaded) is,
+  -- by definition, `status == "Ready"` — the same status a healthy session
+  -- has. Rendering only on `status == "Faulted"` shows it as perfectly
+  -- healthy. When `s.health` is present, the verdict must be visible.
+
+  it("highlights a Degraded session distinctly from a healthy Ready one", function()
+    local s = state_mod.new()
+    s.sessions = {
+      { id = "abc12345-long", status = "Ready", project = "X", health = { status = "Degraded", reason = "0 assemblies loaded" } },
+    }
+    local out = session_section.render(s)
+    local joined = table.concat(out.lines, "\n")
+    assert.truthy(joined:find("Degraded"), "line should show the Degraded verdict")
+    assert.truthy(joined:find("0 assemblies loaded"), "line should show the reason")
+
+    local has_degraded_hl = false
+    for _, hl in ipairs(out.highlights) do
+      if hl.hl_group == "SageFsSessionDegraded" then has_degraded_hl = true end
+    end
+    assert.is_true(has_degraded_hl, "should have a distinct highlight group for Degraded")
+  end)
+
+  it("does not highlight a Ready session with no health data as degraded (no invented problems)", function()
+    local s = state_mod.new()
+    s.sessions = { { id = "abc12345-long", status = "Ready", project = "X" } }
+    local out = session_section.render(s)
+    for _, hl in ipairs(out.highlights) do
+      assert.are_not.equal("SageFsSessionDegraded", hl.hl_group)
+    end
+  end)
+
   it("has switch_session keymaps", function()
     local s = state_mod.new()
     s.sessions = { { id = "xyz", status = "Ready" } }

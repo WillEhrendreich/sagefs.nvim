@@ -1242,6 +1242,34 @@ describe("statusline integration", function()
     -- Should contain separator when testing info present
     assert_contains(sl, "│", "should have separator between sections")
   end)
+
+  -- §5.1: a dead daemon must be visible in the statusline even with an
+  -- active session — this was the plugin's single most consequential
+  -- truthfulness defect (the same class the server fixed today for
+  -- SessionHealth). Before the fix, M.active_session took a completely
+  -- separate branch that hardcoded ⚡ and never looked at M.state.status.
+  it("shows a disconnected icon (not ⚡) once the daemon dies, even with an active session", function()
+    local sagefs = require("sagefs")
+    local model = require("sagefs.model")
+
+    local prev_active_session = sagefs.active_session
+    local prev_state = sagefs.state
+
+    sagefs.active_session = { id = "abc123", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 3, avg_duration_ms = 10 }
+    sagefs.state = model.set_status(model.new(), "connected")
+    local connected_sl = sagefs.statusline()
+    assert_contains(connected_sl, "⚡", "connected daemon should show the lightning icon")
+
+    sagefs.state = model.set_status(model.new(), "disconnected")
+    local dead_sl = sagefs.statusline()
+    assert_falsy(dead_sl:find("⚡", 1, true), "a dead daemon must not still show the connected icon")
+    assert_contains(dead_sl, "💤", "a dead daemon should show the disconnected icon")
+    -- The exact lie this fixes: the session data itself still says "Ready".
+    assert_contains(dead_sl, "Ready", "session status label is unchanged — only the connection icon must reflect death")
+
+    sagefs.active_session = prev_active_session
+    sagefs.state = prev_state
+  end)
 end)
 
 -- ─── Report ──────────────────────────────────────────────────────────────────

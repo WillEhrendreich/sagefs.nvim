@@ -1301,7 +1301,11 @@ function M.statusline()
   end
 
   if M.active_session then
-    table.insert(parts, sessions.format_statusline(M.active_session))
+    -- §5.1: the connection status must reach the statusline even when a
+    -- session is active — this used to be computed only in the `else`
+    -- branch below, so a dead daemon kept rendering "⚡ MyProject (Ready)"
+    -- forever after M.state.status flipped to "disconnected".
+    table.insert(parts, sessions.format_statusline(M.active_session, M.state.status))
   else
     local icon = M.state.status == "connected" and "⚡"
       or M.state.status == "reconnecting" and "🔌"

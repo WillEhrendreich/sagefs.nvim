@@ -21,6 +21,17 @@ end
 -- ─── Parse GET /api/sessions response ────────────────────────────────────────
 
 local function normalize_session(raw)
+  -- `health` is passed through as-is (never invented): `nil` means the
+  -- server didn't send a verdict, which callers must treat the same as
+  -- "don't know" — never as "healthy". `faultReason` and `loadedProjects`
+  -- are the two other `/api/sessions` fields (SageFs.Core/SessionHealth.fs,
+  -- SageFs/McpServer.fs:2360-2377) that a `Degraded` session depends on to
+  -- be distinguishable from a healthy one; both were previously dropped
+  -- (§5.5), so no Neovim surface could ever render the distinction.
+  local health = nil
+  if type(raw.health) == "table" then
+    health = { status = raw.health.status, reason = raw.health.reason }
+  end
   return {
     id = raw.id or "",
     status = raw.status or "",
@@ -28,6 +39,9 @@ local function normalize_session(raw)
     working_directory = raw.workingDirectory or "",
     eval_count = raw.evalCount or 0,
     avg_duration_ms = raw.avgDurationMs or 0,
+    fault_reason = (raw.faultReason ~= vim.NIL) and raw.faultReason or nil,
+    health = health,
+    loaded_projects = raw.loadedProjects or {},
   }
 end
 
@@ -74,6 +88,29 @@ end
 
 -- ─── Formatting ──────────────────────────────────────────────────────────────
 
+-- ─── Health verdict formatting ────────────────────────────────────────────
+-- `s.health` is `SessionHealth.toJson` passed through unchanged: `nil` means
+-- no verdict was computed (never rendered as a problem — a session can be
+-- Healthy and just not have been classified yet), "Healthy"/"Starting" are
+-- quiet (must stay quiet — the common case), "Degraded"/"Failed" carry a
+-- `reason` that a user needs to actually act on (§5.5).
+
+local function health_suffix(health)
+  if not health then return "" end
+  if health.status == "Degraded" or health.status == "Failed" then
+    local reason = health.reason and (" — " .. health.reason) or ""
+    return string.format("  [%s%s]", health.status, reason)
+  end
+  return ""
+end
+
+local function health_marker(health)
+  if not health then return "" end
+  if health.status == "Degraded" then return " ⚠" end
+  if health.status == "Failed" then return " ❌" end
+  return ""
+end
+
 function M.format_session_line(s)
   local proj = #s.projects > 0
     and table.concat(s.projects, ", ")
@@ -81,15 +118,22 @@ function M.format_session_line(s)
   local evals = s.eval_count > 0
     and string.format(" [%d evals]", s.eval_count)
     or ""
-  return string.format("%s  %s%s", proj, s.status, evals)
+  return string.format("%s  %s%s%s", proj, s.status, evals, health_suffix(s.health))
 end
 
-function M.format_statusline(s)
+function M.format_statusline(s, conn_status)
   if not s then return "" end
+  -- The connection-aware icon: previously this was hardcoded to ⚡
+  -- unconditionally, so once a session was active the statusline kept
+  -- reading "⚡ MyProject (Ready)" even after the daemon died (§5.1). Every
+  -- caller must now pass the transport's own connection status through.
+  local icon = conn_status == "reconnecting" and "🔌"
+    or conn_status == "disconnected" and "💤"
+    or "⚡"
   local name = s.projects and s.projects[1] or ""
   name = name:gsub("%.fsproj$", "")
   if name == "" then name = s.id or "?" end
-  return string.format("⚡ %s (%s)", name, s.status or "?")
+  return string.format("%s %s (%s)%s", icon, name, s.status or "?", health_marker(s.health))
 end
 
 -- ─── Find session for working directory ──────────────────────────────────────

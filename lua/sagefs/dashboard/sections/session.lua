@@ -34,11 +34,29 @@ function M.render(state)
     local proj = s.project or ""
     local is_active = sid == active
     local marker = is_active and "▶" or " "
-    local line_text = string.format("%s %s %s %s", marker, short_id, status, proj)
+    -- §5.5: a Degraded session is worker-Ready by definition (the worker is
+    -- alive; it just loaded nothing usable) — `status` alone can never show
+    -- it. `s.health` is passed through unchanged: absent means "no verdict
+    -- computed", never "healthy" — so a session with no health data gets no
+    -- suffix and no highlight, exactly like before this fix.
+    local health = s.health
+    local health_suffix = ""
+    if health and (health.status == "Degraded" or health.status == "Failed") then
+      health_suffix = string.format("  [%s%s]", health.status, health.reason and (" — " .. health.reason) or "")
+    end
+    local line_text = string.format("%s %s %s %s%s", marker, short_id, status, proj, health_suffix)
     table.insert(lines, line_text)
 
     local line_idx = #lines - 1
     if status == "Faulted" then
+      table.insert(highlights, {
+        line = line_idx, col_start = 0, col_end = #line_text, hl_group = "SageFsSessionFaulted",
+      })
+    elseif health and health.status == "Degraded" then
+      table.insert(highlights, {
+        line = line_idx, col_start = 0, col_end = #line_text, hl_group = "SageFsSessionDegraded",
+      })
+    elseif health and health.status == "Failed" then
       table.insert(highlights, {
         line = line_idx, col_start = 0, col_end = #line_text, hl_group = "SageFsSessionFaulted",
       })
