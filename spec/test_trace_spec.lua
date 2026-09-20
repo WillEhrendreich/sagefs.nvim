@@ -1,7 +1,9 @@
 -- =============================================================================
 -- test_trace Trace Tests — sagefs/test_trace.lua
 -- =============================================================================
--- Pure parsing of test_trace trace data from SageFs get_test_trace_trace.
+-- Pure parsing of the GET /api/live-testing/test-trace payload — real
+-- shape verified live against a daemon (PascalCase, Policies as an array
+-- of pre-formatted "Category: Policy" strings, not a map).
 
 local test_trace = require("sagefs.test_trace")
 
@@ -9,14 +11,18 @@ describe("test_trace", function()
 
   describe("parse_trace", function()
     it("parses a basic trace response", function()
-      local raw = '{"enabled":true,"running":false,"providers":["TreeSitter","FCS","TestRunner"],"runPolicies":{"Unit":"OnEveryChange","Integration":"OnSaveOnly"},"testSummary":{"total":10,"passed":8,"failed":1,"stale":1}}'
+      local raw = '{"Enabled":true,"IsRunning":false,"Providers":["TreeSitter","FCS","TestRunner"],'
+        .. '"Policies":["Unit: OnEveryChange","Integration: OnSaveOnly"],'
+        .. '"Summary":{"Total":10,"Passed":8,"Failed":1,"Stale":1,"Running":0,"Disabled":0,"Enabled":true}}'
       local result = test_trace.parse_trace(raw)
       assert.is_table(result)
       assert.is_true(result.enabled)
       assert.is_false(result.running)
       assert.are.equal(3, #result.providers)
-      assert.are.equal("OnEveryChange", result.run_policies.Unit)
+      assert.are.equal(2, #result.policies)
+      assert.are.equal("Unit: OnEveryChange", result.policies[1])
       assert.are.equal(10, result.test_summary.total)
+      assert.are.equal(8, result.test_summary.passed)
     end)
 
     it("returns nil for invalid JSON", function()
@@ -25,12 +31,13 @@ describe("test_trace", function()
     end)
 
     it("handles missing fields gracefully", function()
-      local raw = '{"enabled":false}'
+      local raw = '{"Enabled":false}'
       local result = test_trace.parse_trace(raw)
       assert.is_table(result)
       assert.is_false(result.enabled)
       assert.is_table(result.providers)
       assert.are.equal(0, #result.providers)
+      assert.are.equal(0, result.test_summary.total)
     end)
   end)
 
@@ -40,7 +47,7 @@ describe("test_trace", function()
         enabled = true,
         running = false,
         providers = { "TreeSitter", "FCS", "TestRunner" },
-        run_policies = { Unit = "OnEveryChange", Integration = "OnSaveOnly" },
+        policies = { "Unit: OnEveryChange", "Integration: OnSaveOnly" },
         test_summary = { total = 10, passed = 8, failed = 1, stale = 1, running = 0 },
       }
       local lines = test_trace.format_panel_content(trace)
@@ -49,7 +56,7 @@ describe("test_trace", function()
       local text = table.concat(lines, "\n")
       assert.truthy(text:find("Enabled") or text:find("enabled"))
       assert.truthy(text:find("TreeSitter"))
-      assert.truthy(text:find("Unit"))
+      assert.truthy(text:find("Unit: OnEveryChange"))
     end)
 
     it("shows disabled state clearly", function()
@@ -57,7 +64,7 @@ describe("test_trace", function()
         enabled = false,
         running = false,
         providers = {},
-        run_policies = {},
+        policies = {},
         test_summary = { total = 0, passed = 0, failed = 0, stale = 0, running = 0 },
       }
       local lines = test_trace.format_panel_content(trace)
@@ -70,7 +77,7 @@ describe("test_trace", function()
         enabled = true,
         running = true,
         providers = { "TreeSitter" },
-        run_policies = {},
+        policies = {},
         test_summary = { total = 5, passed = 3, failed = 0, stale = 2, running = 0 },
       }
       local lines = test_trace.format_panel_content(trace)

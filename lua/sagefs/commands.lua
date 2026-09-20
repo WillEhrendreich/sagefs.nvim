@@ -752,7 +752,13 @@ function M.register_commands(plugin, helpers)
     local test_trace_mod = require("sagefs.test_trace")
     transport.http_json({
       method = "GET",
-      url = helpers.base_url() .. "/api/status",
+      -- The daemon's dedicated test-trace endpoint (McpServer.fs, backed by
+      -- Mcp.fs's get_test_trace tool). /api/status carries no enabled/
+      -- running/providers/policies/summary fields at all — it silently
+      -- produced an always-empty, always-disabled trace regardless of the
+      -- real live-testing state. Legacy routing from before this endpoint
+      -- existed.
+      url = helpers.base_url() .. "/api/live-testing/test-trace",
       timeout = 5,
       callback = function(ok, raw)
         if not ok then

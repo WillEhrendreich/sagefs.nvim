@@ -1,5 +1,17 @@
 -- sagefs/test_trace.lua — Pure test trace parsing and formatting
 -- No vim APIs — fully testable under busted.
+--
+-- Parses the payload of GET /api/live-testing/test-trace (McpServer.fs,
+-- backed by Mcp.fs's getTestTrace). Field names are the F# record's own
+-- PascalCase (no camelCase naming policy is applied when this route
+-- serializes it), and `Policies` arrives pre-formatted as an array of
+-- "Category: Policy" strings (`state.RunPolicies |> Map.toList |> List.map
+-- (fun (c, p) -> sprintf "%A: %A" c p)`), not a map — verified live against
+-- a real daemon:
+--   {"Enabled":false,"IsRunning":false,"Providers":[],
+--    "Policies":["Unit: OnEveryChange", ...],
+--    "Summary":{"Total":0,"Passed":0,"Failed":0,"Stale":0,"Running":0,
+--               "Disabled":0,"Enabled":false}, ...}
 local M = {}
 
 local json_decode = require("sagefs.util").json_decode
@@ -10,12 +22,22 @@ local json_decode = require("sagefs.util").json_decode
 function M.parse_trace(raw)
   local ok, data = json_decode(raw)
   if not ok or not data then return nil end
+  local summary = data.Summary or {}
   return {
-    enabled = data.enabled or false,
-    running = data.running or false,
-    providers = data.providers or {},
-    run_policies = data.runPolicies or {},
-    test_summary = data.testSummary or { total = 0, passed = 0, failed = 0, stale = 0, running = 0 },
+    enabled = data.Enabled or false,
+    running = data.IsRunning or false,
+    providers = data.Providers or {},
+    -- Already-formatted "Category: Policy" strings from the server, not a
+    -- category → policy map.
+    policies = data.Policies or {},
+    test_summary = {
+      total = summary.Total or 0,
+      passed = summary.Passed or 0,
+      failed = summary.Failed or 0,
+      stale = summary.Stale or 0,
+      running = summary.Running or 0,
+      disabled = summary.Disabled or 0,
+    },
   }
 end
 
@@ -46,17 +68,12 @@ function M.format_panel_content(trace)
     end
   end
 
-  -- Run policies
-  local policies = {}
-  for k, v in pairs(trace.run_policies) do
-    table.insert(policies, { category = k, policy = v })
-  end
-  if #policies > 0 then
-    table.sort(policies, function(a, b) return a.category < b.category end)
+  -- Run policies (already-formatted "Category: Policy" strings)
+  if #trace.policies > 0 then
     table.insert(lines, "")
     table.insert(lines, "Run Policies:")
-    for _, p in ipairs(policies) do
-      table.insert(lines, string.format("  %s: %s", p.category, p.policy))
+    for _, p in ipairs(trace.policies) do
+      table.insert(lines, "  " .. p)
     end
   end
 
