@@ -1349,9 +1349,10 @@ function M.disable_live_testing()
 end
 
 function M.switch_workflow()
-  -- Workflow switching is done via /api/dispatch with an action name.
-  -- Currently the daemon doesn't expose a dedicated REST endpoint for this;
-  -- notify the user to use the MCP tool directly.
+  -- The daemon gained `POST /api/sessions/{id}/workflow` recently (see
+  -- SageFs/McpServer.fs), so this stub is no longer blocked on a missing
+  -- server-side route — wiring it up is a small, separate follow-up. It
+  -- still just points at the MCP tool for now.
   notify("Use the SageFs MCP tool 'switch_workflow' or the TUI to change workflows", vim.log.levels.INFO)
 end
 
