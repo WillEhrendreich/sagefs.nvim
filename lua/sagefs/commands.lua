@@ -1593,9 +1593,15 @@ end
 function M.register_autocmds(plugin, helpers)
   local group = vim.api.nvim_create_augroup("SageFs", { clear = true })
 
-  vim.api.nvim_create_autocmd("TextChanged", {
+  -- §5.11: this fired only on TextChanged (not TextChangedI) and only for
+  -- *.fsx — editing a .fs buffer never marked previously-evaluated inline
+  -- results stale, so the virtual text kept rendering as current against
+  -- code that had already changed underneath it. The neighbouring
+  -- cell-highlight and buffer-sync autocmds below already use both events
+  -- and both extensions; this one now matches them.
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = group,
-    pattern = "*.fsx",
+    pattern = { "*.fs", "*.fsx" },
     callback = function(ev)
       helpers.mark_stale_and_render(ev.buf)
     end,

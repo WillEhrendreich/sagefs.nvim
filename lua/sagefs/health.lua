@@ -105,13 +105,22 @@ function M.check()
 
   vim.health.ok("sagefs.nvim loaded (plugin v" .. (sagefs.version or "?") .. ")")
 
-  -- Warn loudly if the daemon is a minor version ahead — that is the drift class
-  -- (0.5 -> 0.6 SSE unification) that silently breaks event handling.
-  if cli_version and cli_version ~= "" and sagefs.version then
-    local drift = M.version_drift(sagefs.version, cli_version)
+  -- §5.12: drift must be measured against the actual RUNNING daemon, not
+  -- the installed global CLI tool. `sagefs --version` reports whatever
+  -- binary happens to be on PATH — a stale install can silently disagree
+  -- with the process actually holding the port (the exact stale-tool
+  -- hazard this repo has been bitten by before). `sagefs.state.daemon_version`
+  -- is the already-probed, authoritative value (init.lua's
+  -- update_health_metadata, sourced from /health or /version's own
+  -- `version` field) and wins whenever it's present; the CLI subprocess is
+  -- only a fallback for when the plugin has never connected to a daemon at
+  -- all, so :checkhealth still says SOMETHING before a connection exists.
+  local daemon_version = (sagefs.state and sagefs.state.daemon_version) or cli_version
+  if daemon_version and daemon_version ~= "" and sagefs.version then
+    local drift = M.version_drift(sagefs.version, daemon_version)
     if drift == "behind" then
       vim.health.warn(
-        string.format("Plugin v%s is behind the SageFs daemon (%s)", sagefs.version, cli_version),
+        string.format("Plugin v%s is behind the SageFs daemon (%s)", sagefs.version, daemon_version),
         {
           "The daemon may emit wire-protocol changes this plugin does not handle yet.",
           "Update the plugin (git pull), or run ./sync-version.sh to re-sync.",
@@ -119,7 +128,7 @@ function M.check()
     elseif drift == "ahead" then
       vim.health.info(
         string.format("Plugin v%s is ahead of the SageFs daemon (%s) — update the daemon: dotnet tool update -g SageFs",
-          sagefs.version, cli_version))
+          sagefs.version, daemon_version))
     end
   end
 
@@ -173,7 +182,10 @@ function M.check()
     for _, s in ipairs(session_list) do
       local projs = s.projects or {}
       local proj_str = #projs > 0 and table.concat(projs, ", ") or "no projects"
-      local marker = (active and s.id == active) and " (active)" or ""
+      -- §5.12: `active` is the session TABLE (sagefs.active_session), never
+      -- an id string — `s.id == active` compared a string to a table and
+      -- was always false, so the "(active)" marker never rendered.
+      local marker = (active and s.id == active.id) and " (active)" or ""
       table.insert(lines, string.format("  %s — %s [%s]%s",
         s.id or "?", proj_str, s.status or "?", marker))
     end

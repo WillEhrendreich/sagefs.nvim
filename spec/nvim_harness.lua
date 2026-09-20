@@ -249,6 +249,50 @@ describe("smart eval session check (§5.6)", function()
   end)
 end)
 
+-- §5.12: version drift used to be visible ONLY inside :checkhealth — a user
+-- who never runs it never learns their plugin is a minor behind. This test
+-- runs BEFORE the "health check discovery" tests below (both of which also
+-- happen to hit a "behind" drift scenario) so it deterministically
+-- consumes the one-time drift_warning_shown flag; the pre-existing tests
+-- after it don't assert the flag's state either way.
+describe("version drift notification (§5.12)", function()
+  it("notifies once, outside :checkhealth, the first time the daemon is found ahead", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local original_notify = vim.notify
+    local notifications = {}
+    local healthy = nil
+
+    transport.http_json = function(opts)
+      if opts.url:find("/health$") then
+        opts.callback(true, vim.json.encode({ healthy = true, status = "ready", features = {}, apiVersion = 7, version = "9.9.9" }))
+        return
+      end
+      error("unexpected discovery request: " .. opts.url)
+    end
+
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+
+    sagefs.health_check(function(result) healthy = result end)
+    vim.wait(1000, function() return healthy ~= nil end, 10)
+    -- the drift notify is deliberately deferred a tick past the connect notify
+    vim.wait(200, function() return #notifications >= 2 end, 10)
+
+    transport.http_json = original_http_json
+    vim.notify = original_notify
+
+    local found_drift = false
+    for _, n in ipairs(notifications) do
+      if n.msg:find("behind the SageFs daemon", 1, true) and n.msg:find("9.9.9", 1, true) then
+        found_drift = true
+        assert_eq(vim.log.levels.WARN, n.level, "drift notice should be a warning")
+      end
+    end
+    assert_truthy(found_drift, "should notify about version drift outside :checkhealth")
+  end)
+end)
+
 describe("health check discovery", function()
   it("falls back to /version when /health is unavailable", function()
     local sagefs = require("sagefs")

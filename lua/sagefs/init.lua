@@ -86,6 +86,12 @@ local eval_watchdog_timer = nil
 -- SSE connection handle (managed by transport.lua)
 local events_sse = nil
 
+-- §5.12: version-drift used to be visible ONLY inside :checkhealth — a user
+-- who never runs it never learns their plugin is a minor behind. Notify
+-- once per session (not on every probe/reconnect) the first time drift is
+-- detected against the live daemon.
+local drift_warning_shown = false
+
 -- Pre-allocated namespaces (created once, reused everywhere)
 local ns = {
   fsi_diagnostics = vim.api.nvim_create_namespace("sagefs_fsi_diagnostics"),
@@ -1226,6 +1232,27 @@ local function update_health_metadata(parsed)
   if parsed.apiVersion ~= nil then
     M.state.api_version = parsed.apiVersion
     M.state.features = parsed.features or {}
+  end
+
+  -- §5.12: the daemon's own semver, straight from the probe that just
+  -- succeeded — the authoritative oracle for version-drift detection
+  -- (health.lua), since it names the process actually holding the port
+  -- rather than whatever `sagefs --version` finds on PATH.
+  if parsed.version ~= nil and parsed.version ~= "" then
+    M.state.daemon_version = parsed.version
+    if not drift_warning_shown and M.version then
+      local drift = require("sagefs.health").version_drift(M.version, parsed.version)
+      if drift == "behind" then
+        drift_warning_shown = true
+        -- Deferred a tick so this never races ahead of the connect
+        -- notification that's about to fire in the same call chain.
+        vim.schedule(function()
+          notify(string.format(
+            "Plugin v%s is behind the SageFs daemon (v%s) — wire-protocol changes may not be handled yet. Update the plugin (git pull), or run :checkhealth sagefs for details.",
+            M.version, parsed.version), vim.log.levels.WARN)
+        end)
+      end
+    end
   end
 
   if parsed.error and type(parsed.error) == "table" then

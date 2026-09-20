@@ -107,6 +107,103 @@ describe("sagefs.health", function()
 
     assert.is_true(found_fallback_message)
   end)
+
+  -- §5.12: `active` is a session TABLE (sagefs.active_session), never an id
+  -- string — `s.id == active` compared a string to a table and was always
+  -- false, so the "(active)" marker never rendered in :checkhealth's session
+  -- list, and the fallback branch printed `table: 0x...` instead.
+  it("marks the active session correctly by comparing ids, not a string to a table", function()
+    local ok_messages = {}
+
+    package.loaded["sagefs"] = {
+      version = "test",
+      state = { status = "connected" },
+      config = { port = 37749, dashboard_port = 37750, auto_connect = false, check_on_save = false },
+      session_list = {
+        { id = "abc123", projects = { "X.fsproj" }, status = "Ready" },
+        { id = "def456", projects = { "Y.fsproj" }, status = "Ready" },
+      },
+      active_session = { id = "abc123", projects = { "X.fsproj" }, status = "Ready" },
+      testing_state = nil,
+    }
+
+    vim.health = {
+      start = function(_) end,
+      ok = function(msg) table.insert(ok_messages, msg) end,
+      warn = function(_) end,
+      info = function(_) end,
+      error = function(_) end,
+    }
+
+    vim.fn.system = function(cmd)
+      vim.v.shell_error = 1
+      return ""
+    end
+
+    require("sagefs.health").check()
+
+    local found_active_marker = false
+    local found_table_leak = false
+    for _, msg in ipairs(ok_messages) do
+      if msg:find("abc123", 1, true) and msg:find("(active)", 1, true) then found_active_marker = true end
+      if msg:find("table: 0x", 1, true) or msg:find("table: table", 1, true) then found_table_leak = true end
+    end
+
+    assert.is_true(found_active_marker, "the active session should carry the (active) marker")
+    assert.is_false(found_table_leak, "must never print a raw table address")
+  end)
+
+  -- §5.12: the version-drift oracle shelled out to `sagefs --version` — the
+  -- INSTALLED global tool — instead of the already-parsed `/version` probe
+  -- (daemon_discovery.lua) or `apiVersion`/`version` off `/health`
+  -- (init.lua's update_health_metadata), which is the actual PROCESS
+  -- holding the port. A stale global-tool install can silently disagree
+  -- with what's actually running — exactly the hazard this repo has been
+  -- bitten by before (project_stale_deployed_daemon-class bugs). The
+  -- authoritative, already-probed `state.daemon_version` must win when
+  -- present; the CLI subprocess is only a fallback for when the plugin has
+  -- never connected yet.
+  it("uses the already-probed daemon version, not a stale installed CLI, for drift detection", function()
+    local warn_messages = {}
+
+    package.loaded["sagefs"] = {
+      version = "0.5.543",
+      state = { status = "connected", daemon_version = "0.6.708" },
+      config = { port = 37749, dashboard_port = 37750, auto_connect = false, check_on_save = false },
+      session_list = {},
+      active_session = nil,
+      testing_state = nil,
+    }
+
+    vim.health = {
+      start = function(_) end,
+      ok = function(_) end,
+      warn = function(msg, hints) table.insert(warn_messages, msg) end,
+      info = function(_) end,
+      error = function(_) end,
+    }
+
+    vim.fn.system = function(cmd)
+      if cmd == "sagefs --version" then
+        vim.v.shell_error = 0
+        return "0.6.283" -- a stale installed global tool — must NOT be used for drift
+      end
+      vim.v.shell_error = 1
+      return ""
+    end
+
+    require("sagefs.health").check()
+
+    local found_correct_drift = false
+    local found_stale_drift = false
+    for _, msg in ipairs(warn_messages) do
+      if msg:find("0.6.708", 1, true) then found_correct_drift = true end
+      if msg:find("0.6.283", 1, true) then found_stale_drift = true end
+    end
+
+    assert.is_true(found_correct_drift, "drift warning should cite the live daemon version (0.6.708)")
+    assert.is_false(found_stale_drift, "drift warning must not cite the stale installed CLI version (0.6.283)")
+  end)
 end)
 
 -- Pure version-drift check: catches the "plugin a minor behind the daemon" class

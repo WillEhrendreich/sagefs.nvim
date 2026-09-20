@@ -286,7 +286,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsTestPolicy` | Configure test run policies per category |
 | `:SageFsEnableTesting` | Enable live testing |
 | `:SageFsDisableTesting` | Disable live testing |
-| `:SageFsWorkflow [live\|repl]` | Switch workflow mode (creates a new session) |
+| `:SageFsWorkflow` | Show the current workflow label (no argument — switching workflow requires the SageFs MCP tool `switch_workflow`; there is no REST route for it yet) |
 | `:SageFsPickTest` | Pick a test to run/jump-to via Telescope |
 | `:SageFsSwitchProject` | Switch the active project for a session |
 | `:SageFsDashboard` | Toggle the floating SageFS dashboard |
