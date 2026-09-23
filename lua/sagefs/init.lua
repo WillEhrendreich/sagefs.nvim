@@ -930,10 +930,22 @@ function M.post_buffer_changed(buf, callback)
   end)
 end
 
-function M.create_session(projects, working_dir, callback)
+-- selection: "discover" (auto-discover in working_dir), "these" (load exactly
+-- `projects`, which must be non-empty), or "none" (bare session, nothing loaded).
+-- Mirrors the daemon's own projectSelection contract — no inferring intent
+-- from an empty `projects` table here either, same reason the server stopped.
+function M.create_session(selection, projects, working_dir, callback)
+  if selection == "these" and (not projects or #projects == 0) then
+    local result = { ok = false, error = "create_session: selection 'these' requires a non-empty projects list" }
+    notify(result.error, vim.log.levels.ERROR)
+    if callback then callback(result) end
+    return
+  end
+
   working_dir = working_dir or vim.fn.getcwd()
   session_http("POST", "/api/sessions/create", {
-    projects = projects,
+    projectSelection = selection,
+    projects = projects or {},
     workingDirectory = working_dir,
   }, function(ok, raw)
     local result = sessions.parse_action_response(ok and raw or nil)
@@ -1151,7 +1163,7 @@ function M.discover_and_create(working_dir)
 
   vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)
     if not choice then return end
-    M.create_session({ choice }, working_dir)
+    M.create_session("these", { choice }, working_dir)
   end)
 end
 
@@ -1526,7 +1538,7 @@ function M.setup(opts)
                   table.insert(names, vim.fn.fnamemodify(f, ":~:."))
                 end
                 vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                  if choice then M.create_session({ choice }) end
+                  if choice then M.create_session("these", { choice }) end
                 end)
               end
             end

@@ -77,9 +77,10 @@ local function resolve_session_id(port)
   return nil
 end
 
--- POST /api/sessions/create like plugin M.create_session does.
+-- POST /api/sessions/create like plugin M.create_session("these", ...) does.
 local function create_session(port, fsproj, working_dir)
   local body = vim.json.encode({
+    projectSelection = "these",
     projects = { fsproj },
     workingDirectory = working_dir,
   })
