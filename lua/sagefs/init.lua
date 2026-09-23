@@ -1268,6 +1268,17 @@ local function update_health_metadata(parsed)
   else
     M.state.last_error = nil
   end
+
+  -- Store per-session health from /health (daemon-wide snapshot)
+  if parsed.sessionStates and type(parsed.sessionStates) == "table" then
+    M.state.health_session_states = parsed.sessionStates
+  end
+  if parsed.diagnosticSummary and type(parsed.diagnosticSummary) == "string" then
+    M.state.health_diagnostic_summary = parsed.diagnosticSummary
+  end
+  if parsed.sessionCount and type(parsed.sessionCount) == "number" then
+    M.state.health_session_count = parsed.sessionCount
+  end
 end
 
 function M.health_check(callback)

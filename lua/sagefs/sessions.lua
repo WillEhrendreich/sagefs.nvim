@@ -164,7 +164,12 @@ function M.format_statusline(s, conn_status)
   local name = s.projects and s.projects[1] or ""
   name = name:gsub("%.fsproj$", "")
   if name == "" then name = s.id or "?" end
-  return string.format("%s %s (%s)%s", icon, name, s.status or "?", health_marker(s.health))
+  local health_str = health_marker(s.health)
+  -- Include health reason for Degraded/Failed so the remedy is visible
+  if s.health and (s.health.status == "Degraded" or s.health.status == "Failed") and s.health.reason then
+    health_str = health_str .. " " .. s.health.reason
+  end
+  return string.format("%s %s (%s)%s", icon, name, s.status or "?", health_str)
 end
 
 -- ─── Find session for working directory ──────────────────────────────────────
