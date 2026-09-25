@@ -241,13 +241,13 @@ function H.start_daemon(project_dir, port)
   local fsproj = H.find_fsproj(project_dir)
   local sagefs_bin = H.find_sagefs_binary()
 
-  io.write(string.format("    [harness] Starting SageFs (%s) on port %d: %s\n", sagefs_bin, port, fsproj))
+  io.write(string.format("    [harness] Starting SageFs (%s) bare on port %d; fixture project: %s\n", sagefs_bin, port, fsproj))
 
   local stdout_lines = {}
   local stderr_lines = {}
 
   local job_id = vim.fn.jobstart({
-    sagefs_bin, "--supervised", "--proj", fsproj, "--mcp-port", tostring(port)
+    sagefs_bin, "--mcp-port", tostring(port), "--ttl", "4h"
   }, {
     cwd = project_dir,
     on_stdout = function(_, data)

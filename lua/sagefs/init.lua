@@ -905,10 +905,8 @@ function M.list_sessions(callback)
     local result = sessions.parse_sessions_response(ok and raw or nil)
     if result.ok then
       M.session_list = result.sessions
-      local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
-      if cwd_session then
-        M.active_session = cwd_session
-      end
+      local active_id = M.active_session and M.active_session.id or nil
+      M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())
     end
     if callback then callback(result) end
   end)
@@ -930,22 +928,17 @@ function M.post_buffer_changed(buf, callback)
   end)
 end
 
--- selection: "discover" (auto-discover in working_dir), "these" (load exactly
--- `projects`, which must be non-empty), or "none" (bare session, nothing loaded).
--- Mirrors the daemon's own projectSelection contract — no inferring intent
--- from an empty `projects` table here either, same reason the server stopped.
-function M.create_session(selection, projects, working_dir, callback)
-  if selection == "these" and (not projects or #projects == 0) then
-    local result = { ok = false, error = "create_session: selection 'these' requires a non-empty projects list" }
-    notify(result.error, vim.log.levels.ERROR)
-    if callback then callback(result) end
-    return
-  end
+local function is_target_path(path)
+  if type(path) ~= "string" or path == "" then return false end
+  return path:lower():match("%.fsproj$") ~= nil
+    or path:lower():match("%.sln$") ~= nil
+    or path:lower():match("%.slnx$") ~= nil
+end
 
+local function create_targets(paths, working_dir, callback)
   working_dir = working_dir or vim.fn.getcwd()
   session_http("POST", "/api/sessions/create", {
-    projectSelection = selection,
-    projects = projects or {},
+    projects = paths,
     workingDirectory = working_dir,
   }, function(ok, raw)
     local result = sessions.parse_action_response(ok and raw or nil)
@@ -956,7 +949,29 @@ function M.create_session(selection, projects, working_dir, callback)
       notify(result.error or "Failed to create session", vim.log.levels.ERROR)
     end
     if callback then callback(result) end
-  end)
+  end, { timeout = 300 })
+end
+
+function M.create_session(paths, working_dir, callback)
+  if type(paths) ~= "table" or #paths == 0 then
+    local result = { ok = false, error = "create_session requires at least one explicit .fsproj, .sln, or .slnx path" }
+    notify(result.error, vim.log.levels.ERROR)
+    if callback then callback(result) end
+    return
+  end
+  for _, path in ipairs(paths) do
+    if not is_target_path(path) then
+      local result = { ok = false, error = "create_session accepts only .fsproj, .sln, or .slnx paths: " .. tostring(path) }
+      notify(result.error, vim.log.levels.ERROR)
+      if callback then callback(result) end
+      return
+    end
+  end
+  create_targets(paths, working_dir, callback)
+end
+
+function M.create_bare_session(working_dir, callback)
+  create_targets({}, working_dir, callback)
 end
 
 function M.switch_session(session_id, callback)
@@ -989,7 +1004,7 @@ function M.stop_session(session_id, callback)
       notify(result.error or "Failed to stop session", vim.log.levels.ERROR)
     end
     if callback then callback(result) end
-  end)
+  end, { timeout = 30 })
 end
 
 function M.reset_session(callback)
@@ -1163,7 +1178,7 @@ function M.discover_and_create(working_dir)
 
   vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)
     if not choice then return end
-    M.create_session("these", { choice }, working_dir)
+    M.create_session({ choice }, working_dir)
   end)
 end
 
@@ -1538,7 +1553,7 @@ function M.setup(opts)
                   table.insert(names, vim.fn.fnamemodify(f, ":~:."))
                 end
                 vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                  if choice then M.create_session("these", { choice }) end
+                  if choice then M.create_session({ choice }) end
                 end)
               end
             end

@@ -798,6 +798,73 @@ describe("sessions with real vim.json", function()
     assert_contains(line, "MyApp", "should contain project name")
     assert_contains(line, "Ready", "should contain status")
   end)
+
+  it("creates an explicit project session with no discovery key", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local calls = {}
+    transport.http_json = function(opts)
+      table.insert(calls, opts)
+      if opts.url:find("/api/sessions/create$") then
+        opts.callback(true, vim.json.encode({ success = true, message = "created" }))
+        return
+      end
+      opts.callback(true, vim.json.encode({ sessions = {} }))
+    end
+
+    sagefs.create_session({ "App.fsproj" }, "/repo")
+    transport.http_json = original_http_json
+
+    assert_eq(2, #calls, "create plus follow-up session refresh")
+    local create = calls[1]
+    assert_eq("POST", create.method)
+    assert_eq("http://localhost:37749/api/sessions/create", create.url)
+    assert_eq(300, create.timeout)
+    assert_eq(1, #create.body.projects)
+    assert_eq("App.fsproj", create.body.projects[1])
+    assert_eq("/repo", create.body.workingDirectory)
+    assert_falsy(create.body.projectSelection, "obsolete discovery key must not be sent")
+    assert_contains(calls[2].url, "/api/sessions", "successful create refreshes sessions")
+  end)
+
+  it("creates a bare session through the explicit bare API", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local call = nil
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions/create$") then
+        call = opts
+        opts.callback(true, vim.json.encode({ success = true, message = "created" }))
+        return
+      end
+      opts.callback(true, vim.json.encode({ sessions = {} }))
+    end
+
+    sagefs.create_bare_session("/repo")
+    transport.http_json = original_http_json
+
+    assert_truthy(call, "bare create should reach the daemon")
+    assert_eq(0, #call.body.projects)
+    assert_falsy(call.body.projectSelection, "bare has a named API, not an inferred selection field")
+  end)
+
+  it("rejects an invalid target before making an HTTP request", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local count = 0
+    local result = nil
+    transport.http_json = function() count = count + 1 end
+
+    sagefs.create_session({ "App.txt" }, "/repo", function(value) result = value end)
+    transport.http_json = original_http_json
+
+    assert_eq(0, count, "invalid target must fail locally")
+    assert_truthy(result and not result.ok, "callback should receive the local refusal")
+    assert_contains(result.error, ".fsproj", "error names the closed target set")
+  end)
 end)
 
 -- ─── Buffer edit → stale detection cycle ──────────────────────────────────

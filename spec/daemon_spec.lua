@@ -19,66 +19,14 @@ describe("daemon", function()
   end)
 
   describe("start_command", function()
-    it("builds sagefs command with --proj for .fsproj files", function()
-      local cmd = daemon.start_command({
-        project = "MyApp.fsproj",
-        port = 37749,
-      })
-      assert.is_table(cmd)
-      assert.are.equal("sagefs", cmd[1])
-      local has_proj = false
-      for i, v in ipairs(cmd) do
-        if v == "--proj" then
-          assert.are.equal("MyApp.fsproj", cmd[i + 1])
-          has_proj = true
-        end
-      end
-      assert.is_true(has_proj, "command must include --proj")
+    it("starts SageFs bare without obsolete project flags", function()
+      local cmd = daemon.start_command({ project = "MyApp.fsproj", port = 37749 })
+      assert.same({ "sagefs", "--mcp-port", "37749" }, cmd)
     end)
 
-    it("uses --sln for .slnx files", function()
-      local cmd = daemon.start_command({
-        project = "Harmony.slnx",
-        port = 37749,
-      })
-      local has_sln = false
-      for i, v in ipairs(cmd) do
-        if v == "--sln" then
-          assert.are.equal("Harmony.slnx", cmd[i + 1])
-          has_sln = true
-        end
-      end
-      assert.is_true(has_sln, "command must include --sln for .slnx")
-    end)
-
-    it("uses --sln for .sln files", function()
-      local cmd = daemon.start_command({
-        project = "MyApp.sln",
-        port = 37749,
-      })
-      local has_sln = false
-      for i, v in ipairs(cmd) do
-        if v == "--sln" then
-          assert.are.equal("MyApp.sln", cmd[i + 1])
-          has_sln = true
-        end
-      end
-      assert.is_true(has_sln, "command must include --sln for .sln")
-    end)
-
-    it("includes --mcp-port when specified", function()
-      local cmd = daemon.start_command({
-        project = "MyApp.fsproj",
-        port = 9999,
-      })
-      local has_port = false
-      for i, v in ipairs(cmd) do
-        if v == "--mcp-port" then
-          assert.are.equal("9999", cmd[i + 1])
-          has_port = true
-        end
-      end
-      assert.is_true(has_port, "command must include --mcp-port")
+    it("adds a bounded TTL for custom ports", function()
+      local cmd = daemon.start_command({ project = "Harmony.slnx", port = 9999 })
+      assert.same({ "sagefs", "--mcp-port", "9999", "--ttl", "4h" }, cmd)
     end)
   end)
 

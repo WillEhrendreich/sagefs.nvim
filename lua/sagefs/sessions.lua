@@ -185,6 +185,15 @@ function M.find_session_for_dir(sessions_list, dir)
   return nil
 end
 
+function M.select_active_session(sessions_list, active_id, cwd)
+  if sessions_list and active_id and active_id ~= "" then
+    for _, session in ipairs(sessions_list) do
+      if session.id == active_id then return session end
+    end
+  end
+  return M.find_session_for_dir(sessions_list, cwd)
+end
+
 -- ─── Buffer-changed request routing ─────────────────────────────────────────
 -- Mirrors the VS Code extension's BufferBridge.resolveSessionOwnership
 -- (sagefs-vscode/src/BufferBridge.fs): route an edited buffer to whichever

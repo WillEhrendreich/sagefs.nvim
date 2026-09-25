@@ -904,11 +904,18 @@ function M.register_commands(plugin, helpers)
       })
       if job_id > 0 then
         plugin.daemon_state = daemon.mark_running(plugin.daemon_state, job_id)
-        helpers.notify("SageFs daemon started for " .. project)
+        helpers.notify("SageFs daemon started" .. (project and (" for " .. project) or ""))
         -- Auto-connect after a short delay
         vim.defer_fn(function()
           plugin.health_check(function(healthy)
-            if healthy then helpers.start_sse() end
+            if not healthy then return end
+            helpers.start_sse()
+            if project and project ~= "" then
+              local target = vim.fn.fnamemodify(project, ":p")
+              plugin.create_session({ target }, vim.fn.fnamemodify(target, ":h"))
+            else
+              plugin.create_bare_session(vim.fn.getcwd())
+            end
           end)
         end, 3000)
       else

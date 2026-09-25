@@ -14,18 +14,13 @@ end
 
 function M.start_command(opts)
   local cmd = { "sagefs" }
-  if opts.project then
-    -- Use --sln for solution files, --proj for project files
-    if opts.project:match("%.[sS][lL][nN][xX]?$") then
-      table.insert(cmd, "--sln")
-    else
-      table.insert(cmd, "--proj")
-    end
-    table.insert(cmd, opts.project)
-  end
   if opts.port then
     table.insert(cmd, "--mcp-port")
     table.insert(cmd, tostring(opts.port))
+  end
+  if opts.port and opts.port ~= 37749 then
+    table.insert(cmd, "--ttl")
+    table.insert(cmd, "4h")
   end
   return cmd
 end

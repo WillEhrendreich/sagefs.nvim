@@ -135,6 +135,24 @@ describe("sagefs.sessions", function()
     end)
   end)
 
+  describe("select_active_session", function()
+    it("keeps the active session when its id still exists", function()
+      local active = { id = "a", working_directory = "/other" }
+      local selected = sessions.select_active_session({ active }, "a", "/repo")
+      assert.equals("a", selected.id)
+    end)
+
+    it("clears a vanished active session when cwd has no replacement", function()
+      assert.is_nil(sessions.select_active_session({}, "a", "/repo"))
+    end)
+
+    it("falls back to the cwd session when the active id vanished", function()
+      local cwd_session = { id = "b", working_directory = "/repo" }
+      local selected = sessions.select_active_session({ cwd_session }, "a", "/repo")
+      assert.equals("b", selected.id)
+    end)
+  end)
+
   -- ─── parse_action_response ───────────────────────────────────────────────
 
   describe("parse_action_response", function()
