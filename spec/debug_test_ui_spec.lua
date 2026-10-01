@@ -1,0 +1,148 @@
+-- Tests: the editor-facing side of debugging a failing test: which test does
+-- :SageFsDebugTest mean, the "debug" hint drawn on a failing-test line, and the
+-- command and keymap registration. The lifecycle itself is in debug_test_spec.lua.
+require("spec.helper")
+
+local ui = require("sagefs.debug_test_ui")
+local annotations = require("sagefs.annotations")
+local testing = require("sagefs.testing")
+
+local FILE = "/tmp/lem/tour-live-testing-passing-04/w/DemoEnv.Tests/DemoEnvTests.fs"
+
+local function annotation_state()
+  local src = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
+  local f = assert(io.open(src .. "fixtures/wire/file_annotations_demoenv_tests.json", "rb"))
+  local text = f:read("*a")
+  f:close()
+  local _, data = require("sagefs.util").json_decode(text)
+  return annotations.handle_file_annotations(annotations.new(), data)
+end
+
+describe("debug_test_ui.resolve_target", function()
+  local state = testing.new()
+  testing.update_test(state, {
+    testId = "KNOWNID", displayName = "adds", fullName = "Suite.adds", status = "Failed",
+    origin = { Case = "SourceMapped", Fields = { "/x/Other.fs", 3 } },
+  })
+
+  it("a bare argument that is a known test id debugs that test by id", function()
+    local r = ui.resolve_target({ args = "KNOWNID", testing_state = state, annotations_state = annotation_state(), file = FILE, line = 1 })
+    assert.are.equal("start", r.kind)
+    assert.are.same({ test_id = "KNOWNID" }, r.target)
+  end)
+
+  it("any other argument is a name pattern", function()
+    local r = ui.resolve_target({ args = "negative integer", testing_state = state, annotations_state = annotation_state(), file = FILE, line = 1 })
+    assert.are.equal("start", r.kind)
+    assert.are.same({ pattern = "negative integer" }, r.target)
+  end)
+
+  it("with no argument, debugs the failing test on the cursor line", function()
+    local r = ui.resolve_target({ args = "", testing_state = testing.new(), annotations_state = annotation_state(), file = FILE, line = 8 })
+    assert.are.equal("start", r.kind)
+    assert.are.same({ test_id = "D39C4D7B318839A9" }, r.target)
+    assert.are.equal("a negative integer yields None", r.name)
+  end)
+
+  it("off the marker, a file with exactly one failing test debugs that one", function()
+    local r = ui.resolve_target({ args = "", testing_state = testing.new(), annotations_state = annotation_state(), file = FILE, line = 20 })
+    assert.are.equal("start", r.kind)
+    assert.are.same({ test_id = "D39C4D7B318839A9" }, r.target)
+  end)
+
+  it("asks which one when several tests fail on the line", function()
+    local s = testing.new()
+    testing.update_test(s, {
+      testId = "OTHER", displayName = "also bad", fullName = "y", status = "Failed",
+      origin = { Case = "SourceMapped", Fields = { FILE, 8 } },
+    })
+    local r = ui.resolve_target({ args = "", testing_state = s, annotations_state = annotation_state(), file = FILE, line = 8 })
+    assert.are.equal("choose", r.kind)
+    assert.are.equal(2, #r.choices)
+  end)
+
+  it("says what to do when nothing fails here", function()
+    local r = ui.resolve_target({ args = "", testing_state = testing.new(), annotations_state = annotations.new(), file = FILE, line = 8 })
+    assert.are.equal("none", r.kind)
+    assert.is_truthy(r.message:find("SageFsDebugTest <name>", 1, true))
+  end)
+end)
+
+describe("debug_test_ui hint", function()
+  it("draws a right-aligned debug hint, quiet, with the keymap", function()
+    local spec = ui.hint_extmark(1, "<leader>")
+    assert.are.equal("right_align", spec.virt_text_pos)
+    local text = spec.virt_text[1][1]
+    assert.is_truthy(text:find("debug", 1, true))
+    assert.is_truthy(text:find("<leader>rtD", 1, true))
+    assert.are.equal("SageFsDebugHint", spec.virt_text[1][2])
+  end)
+
+  it("counts when several fail on one line", function()
+    local text = ui.hint_extmark(3, "<leader>").virt_text[1][1]
+    assert.is_truthy(text:find("3", 1, true))
+  end)
+
+  it("renders one extmark per failing line and clears the old ones first", function()
+    local calls = { clear = 0, set = {} }
+    local api = {
+      nvim_buf_get_name = function() return FILE end,
+      nvim_create_namespace = function() return 99 end,
+      nvim_buf_line_count = function() return 60 end,
+      nvim_buf_clear_namespace = function() calls.clear = calls.clear + 1 end,
+      nvim_buf_set_extmark = function(_, ns, line, col, opts)
+        table.insert(calls.set, { ns = ns, line = line, opts = opts })
+      end,
+    }
+    ui.render_hints(5, testing.new(), annotation_state(), { api = api, leader = "<leader>" })
+    assert.are.equal(1, calls.clear)
+    assert.are.equal(1, #calls.set)
+    assert.are.equal(7, calls.set[1].line, "0-based line for source line 8")
+  end)
+
+  it("clears and draws nothing for an unnamed buffer", function()
+    local calls = { clear = 0, set = 0 }
+    local api = {
+      nvim_buf_get_name = function() return "" end,
+      nvim_create_namespace = function() return 99 end,
+      nvim_buf_line_count = function() return 60 end,
+      nvim_buf_clear_namespace = function() calls.clear = calls.clear + 1 end,
+      nvim_buf_set_extmark = function() calls.set = calls.set + 1 end,
+    }
+    ui.render_hints(5, testing.new(), annotation_state(), { api = api })
+    assert.are.equal(1, calls.clear)
+    assert.are.equal(0, calls.set)
+  end)
+end)
+
+describe("debug_test_ui registration", function()
+  it("registers :SageFsDebugTest and :SageFsDebugRelease", function()
+    local registered = {}
+    ui.register_commands({}, { notify = function() end, base_url = function() return "" end },
+      function(name, handler, opts) registered[name] = { handler = handler, opts = opts } end)
+    assert.is_truthy(registered.SageFsDebugTest)
+    assert.are.equal("?", registered.SageFsDebugTest.opts.nargs)
+    assert.is_truthy(registered.SageFsDebugRelease)
+  end)
+
+  it("maps <leader>rtD on the buffer", function()
+    local mapped = {}
+    local prev = vim.keymap
+    vim.keymap = { set = function(mode, lhs, rhs, opts) table.insert(mapped, { mode = mode, lhs = lhs, opts = opts }) end }
+    ui.register_keymaps({}, { notify = function() end }, 12)
+    vim.keymap = prev
+    assert.are.equal(1, #mapped)
+    assert.are.equal("<leader>rtD", mapped[1].lhs)
+    assert.are.equal(12, mapped[1].opts.buffer)
+  end)
+
+  it(":SageFsDebugRelease says so when nothing is open", function()
+    local notes = {}
+    local registered = {}
+    ui.register_commands({}, { notify = function(msg) table.insert(notes, msg) end, base_url = function() return "" end },
+      function(name, handler) registered[name] = handler end)
+    require("sagefs.debug_test")._reset()
+    registered.SageFsDebugRelease()
+    assert.is_truthy(notes[1]:find("nothing", 1, true))
+  end)
+end)
