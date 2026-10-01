@@ -1,0 +1,138 @@
+{
+  "containment": "ran under a syscall filter (no network, no file writes, no new processes); guarded: stack and loops checked in 1 method; not guarded: 1 x code in System.Private.CoreLib, which SageFs does not own",
+  "notEvaluated": 4,
+  "outcome": {
+    "type": "MemberShown",
+    "value": [
+      {
+        "name": "box",
+        "typeSignature": "Box",
+        "root": {
+          "label": "box",
+          "typeName": "Box",
+          "preview": "{ size = 7; RunsCode = …; Boom = …; Inner = …; Lazy = … }",
+          "kind": {
+            "type": "Class"
+          },
+          "children": [
+            {
+              "label": "size",
+              "typeName": "Int32",
+              "preview": "7",
+              "kind": {
+                "type": "Leaf"
+              },
+              "children": [],
+              "bestEffort": false,
+              "depth": 1
+            },
+            {
+              "label": "RunsCode",
+              "typeName": "String",
+              "preview": "not evaluated: the getter calls other code",
+              "kind": {
+                "type": "NotEvaluated",
+                "value": [
+                  {
+                    "type": "GetterRunsCode"
+                  }
+                ]
+              },
+              "children": [],
+              "bestEffort": false,
+              "depth": 1
+            },
+            {
+              "label": "Boom",
+              "typeName": "Int32",
+              "preview": "not evaluated: the getter threw: kaput",
+              "kind": {
+                "type": "NotEvaluated",
+                "value": [
+                  {
+                    "type": "EvaluationThrew",
+                    "value": [
+                      "kaput"
+                    ]
+                  }
+                ]
+              },
+              "children": [],
+              "bestEffort": false,
+              "depth": 1
+            },
+            {
+              "label": "Inner",
+              "typeName": "Inner",
+              "preview": "not evaluated: the getter calls other code",
+              "kind": {
+                "type": "NotEvaluated",
+                "value": [
+                  {
+                    "type": "GetterRunsCode"
+                  }
+                ]
+              },
+              "children": [],
+              "bestEffort": false,
+              "depth": 1
+            },
+            {
+              "label": "Lazy",
+              "typeName": "IEnumerable`1",
+              "preview": "not evaluated: the getter calls other code",
+              "kind": {
+                "type": "NotEvaluated",
+                "value": [
+                  {
+                    "type": "GetterRunsCode"
+                  }
+                ]
+              },
+              "children": [],
+              "bestEffort": false,
+              "depth": 1
+            }
+          ],
+          "bestEffort": false,
+          "depth": 0
+        }
+      },
+      {
+        "type": "ContainedBy",
+        "value": [
+          {
+            "type": "NoNetworkNoWritesNoSpawn"
+          }
+        ]
+      },
+      {
+        "coverage": {
+          "type": "Guarded",
+          "value": [
+            {
+              "methods": [
+                "FSI_0005+Box.get_Boom"
+              ],
+              "skipped": [
+                {
+                  "method": "System.Exception..ctor",
+                  "reason": {
+                    "type": "NotOurCode",
+                    "value": [
+                      "System.Private.CoreLib"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "trip": {
+          "type": "NotTripped"
+        }
+      }
+    ]
+  },
+  "success": true
+}

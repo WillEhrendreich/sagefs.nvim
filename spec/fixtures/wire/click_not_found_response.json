@@ -1,0 +1,11 @@
+{
+  "containment": "not run: nope is not in the session any more",
+  "notEvaluated": 4,
+  "outcome": {
+    "type": "BindingNotFound",
+    "value": [
+      "nope"
+    ]
+  },
+  "success": true
+}
