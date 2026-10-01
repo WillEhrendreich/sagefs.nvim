@@ -35,6 +35,9 @@ M.config = {
   dashboard_port = 37750,
   auto_connect = true,
   check_on_save = false,
+  -- The sagefs binary :SageFsStart spawns. A bare name is looked up on PATH;
+  -- set a full path when sagefs is installed somewhere PATH does not see.
+  sagefs_path = "sagefs",
   -- Override for the one-time-welcome marker file (mainly for tests).
   -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
   welcome_marker_path = nil,
@@ -539,6 +542,11 @@ local function start_sse()
       if status == "reconnecting" then
         fire_user_event("reconnecting")
       end
+    end,
+    on_spawn_error = function(msg)
+      M.state = model.set_status(M.state, "disconnected")
+      local missing = tostring(msg):find("not on PATH", 1, true)
+      notify(missing and require("sagefs.spawn").missing_curl_message() or tostring(msg), vim.log.levels.ERROR)
     end,
     auto_reconnect = true,
   })

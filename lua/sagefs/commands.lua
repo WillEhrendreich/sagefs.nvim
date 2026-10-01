@@ -870,10 +870,17 @@ function M.register_commands(plugin, helpers)
     end
     -- Check if SageFs is already running externally (health check)
     local function try_start(project)
+      local spawn = require("sagefs.spawn")
+      local bin = plugin.config.sagefs_path or "sagefs"
+      if not spawn.binary_available(bin) then
+        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, bin .. " not found")
+        helpers.notify(spawn.missing_sagefs_message(bin), vim.log.levels.ERROR)
+        return
+      end
       plugin.daemon_state = daemon.mark_starting(plugin.daemon_state, project, plugin.config.port)
-      local cmd = daemon.start_command({ project = project, port = plugin.config.port })
+      local cmd = daemon.start_command({ project = project, port = plugin.config.port, bin = bin })
       local stderr_lines = {}
-      local job_id = vim.fn.jobstart(cmd, {
+      local job_id, spawn_err = spawn.jobstart(cmd, {
         detach = true,
         on_stdout = function() end,
         on_stderr = function(_, data)
@@ -902,7 +909,7 @@ function M.register_commands(plugin, helpers)
           end)
         end,
       })
-      if job_id > 0 then
+      if job_id then
         plugin.daemon_state = daemon.mark_running(plugin.daemon_state, job_id)
         helpers.notify("SageFs daemon started" .. (project and (" for " .. project) or ""))
         -- Auto-connect after a short delay
@@ -919,8 +926,8 @@ function M.register_commands(plugin, helpers)
           end)
         end, 3000)
       else
-        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, "jobstart failed")
-        helpers.notify("Failed to start SageFs daemon", vim.log.levels.ERROR)
+        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, spawn_err or "jobstart failed")
+        helpers.notify("Failed to start SageFs daemon: " .. tostring(spawn_err), vim.log.levels.ERROR)
       end
     end
 

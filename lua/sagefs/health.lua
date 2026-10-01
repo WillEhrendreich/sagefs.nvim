@@ -7,8 +7,11 @@ local discovery = require("sagefs.daemon_discovery")
 local compat = require("sagefs.compat")
 
 --- Run SageFs CLI and extract version string, or nil on failure
-local function get_cli_version()
-  local ok, result = pcall(vim.fn.system, "sagefs --version")
+---@param bin string|nil the configured sagefs_path (default "sagefs")
+local function get_cli_version(bin)
+  bin = (bin and bin ~= "") and bin or "sagefs"
+  local quoted = bin:find("%s") and ('"' .. bin .. '"') or bin
+  local ok, result = pcall(vim.fn.system, quoted .. " --version")
   if not ok or vim.v.shell_error ~= 0 then return nil end
   return vim.trim(result or "")
 end
@@ -65,12 +68,15 @@ function M.check()
   vim.health.start("sagefs")
 
   -- ── 1. SageFs CLI version ───────────────────────────────────────────────
-  local cli_version = get_cli_version()
+  local configured = package.loaded["sagefs"]
+  local sagefs_path = configured and configured.config and configured.config.sagefs_path or "sagefs"
+  local cli_version = get_cli_version(sagefs_path)
   if cli_version and cli_version ~= "" then
     vim.health.ok("SageFs CLI found: " .. cli_version)
   else
-    vim.health.error("SageFs CLI not found", {
-      "Install with: dotnet tool install -g sagefs",
+    vim.health.error("SageFs CLI not found (" .. sagefs_path .. " is not on PATH)", {
+      "Install with: dotnet tool install --global sagefs",
+      "Installed somewhere PATH does not see? Set it in setup(): require(\"sagefs\").setup({ sagefs_path = \"/full/path/to/sagefs\" })",
       "See https://github.com/WillEhrendreich/SageFs",
     })
   end

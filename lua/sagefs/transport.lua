@@ -155,7 +155,7 @@ function M.connect_sse(url, opts)
     handle._partial = ""
     handle._connected = false
     handle._attempt = handle._attempt + 1
-    handle.job_id = vim.fn.jobstart(
+    local job_id, spawn_err = require("sagefs.spawn").jobstart(
       { "curl", "--no-buffer", "-N", "--compressed", url, "--silent", "--show-error" },
       {
         on_stdout = function(_, data)
@@ -208,6 +208,17 @@ function M.connect_sse(url, opts)
         end,
       }
     )
+    if not job_id then
+      -- curl is missing or cannot be spawned. Retrying cannot fix that, so
+      -- report once and stop instead of looping or raising.
+      handle.job_id = nil
+      handle._stopped = true
+      if opts.on_spawn_error then
+        opts.on_spawn_error(spawn_err)
+      end
+      return
+    end
+    handle.job_id = job_id
   end
 
   function handle.start()

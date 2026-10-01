@@ -13,7 +13,7 @@ function M.new()
 end
 
 function M.start_command(opts)
-  local cmd = { "sagefs" }
+  local cmd = { opts.bin or "sagefs" }
   if opts.port then
     table.insert(cmd, "--mcp-port")
     table.insert(cmd, tostring(opts.port))
