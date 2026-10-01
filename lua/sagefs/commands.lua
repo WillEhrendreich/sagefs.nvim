@@ -1429,6 +1429,8 @@ function M.register_commands(plugin, helpers)
     vim.fn.writefile(vim.split(content, "\n"), fname)
     helpers.notify("Exported notebook: " .. fname, vim.log.levels.INFO)
   end, { desc = "Export session as literate .fsx notebook", nargs = "?" })
+
+  require("sagefs.wire_testing").register_commands(plugin, helpers)
 end
 
 --- Register keymaps
@@ -1588,6 +1590,8 @@ function M.register_keymaps(plugin, helpers, bufnr)
       { "<leader>t", group = "SageFs Tests", buffer = bufnr },
     })
   end
+
+  require("sagefs.wire_testing").register_keymaps(plugin, helpers, bufnr)
 end
 
 --- Register autocmds

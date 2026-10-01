@@ -423,6 +423,7 @@ local function schedule_render()
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state, M.density_state)
+      require("sagefs.wire_testing").render(buf, M)
       if file ~= "" then
         if not test_diag_ns then
           test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
@@ -1473,6 +1474,7 @@ function M.setup(opts)
 
   render.get_namespace()
   render.setup_highlights(M.config.highlight)
+  require("sagefs.wire_testing").define_highlights()
 
   -- Apply cell_highlight config
   cell_highlight.setup_highlights()
@@ -1510,6 +1512,7 @@ function M.setup(opts)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state, M.density_state)
+      require("sagefs.wire_testing").render(buf, M)
     end,
     check_on_save = function() return M.config.check_on_save end,
     check_code = check_code,
