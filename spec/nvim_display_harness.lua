@@ -248,6 +248,168 @@ describe("a slow eval says why", function()
   end)
 end)
 
+describe("routing an eval by working directory", function()
+  local function sess(id, dir, status, project)
+    return { id = id, name = project or id, status = status or "Ready", projects = { (project or "App") .. ".fsproj" },
+      working_directory = dir, eval_count = 0 }
+  end
+
+  --- A checkout (has .git) with one F# file, as the current buffer.
+  local function checkout_buffer(name)
+    local root = vim.fn.tempname() .. "_" .. name
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.fn.mkdir(root .. "/src", "p")
+    vim.fn.writefile({ "<Project />" }, root .. "/src/App.fsproj")
+    vim.cmd("cd " .. vim.fn.fnameescape(root))
+    local buf = make_buffer({ "let a = 1;;" })
+    vim.api.nvim_buf_set_name(buf, root .. "/src/A.fs")
+    return buf, root
+  end
+
+  --- Run `guarded()` with a daemon that lists `list`; the user picks `choose(items)` (index or nil).
+  local function run(list, active, choose, opts)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local originals = { list = sagefs.list_sessions, select = vim.ui.select, notify = vim.notify }
+    local record = { evals = 0, listed = 0, selects = {}, notices = {} }
+    sagefs.session_overrides = {}
+    sagefs.active_session = active
+    sagefs.session_list = (opts and opts.cached) or {}
+    sagefs.list_sessions = function(cb)
+      record.listed = record.listed + 1
+      sagefs.session_list = list
+      cb({ ok = true, sessions = list })
+    end
+    vim.ui.select = function(items, o, on_choice)
+      record.selects[#record.selects + 1] = { items = items, prompt = o and o.prompt }
+      local idx = choose and choose(items)
+      on_choice(idx and items[idx] or nil, idx)
+    end
+    vim.notify = function(msg) record.notices[#record.notices + 1] = msg end
+    local created
+    local original_create = sagefs.discover_and_create
+    sagefs.discover_and_create = function(dir) created = dir end
+    local guarded = sagefs.smart_eval_with_session_check(function() record.evals = record.evals + 1 end)
+    guarded()
+    if opts and opts.twice then guarded() end
+    sagefs.list_sessions = originals.list
+    vim.ui.select = originals.select
+    vim.notify = originals.notify
+    sagefs.discover_and_create = original_create
+    record.created = created
+    record.active = sagefs.active_session
+    return record
+  end
+
+  it("does not evaluate in another directory's session; offers to create one for THIS directory", function()
+    local _, root = checkout_buffer("a")
+    local other = sess("other001", "/somewhere/else", "Ready", "Elsewhere")
+    local r = run({ other }, other, function() return nil end)
+    eq(0, r.evals, "no eval was sent")
+    eq(1, #r.selects, "the user is asked")
+    local joined = table.concat(r.selects[1].items, "\n")
+    ok_(joined:find("Create a session for " .. root, 1, true), "offers to create here: " .. joined)
+    ok_(joined:find("other001", 1, true) and joined:find("/somewhere/else", 1, true), "names the existing session and its directory: " .. joined)
+    local said = false
+    for _, n in ipairs(r.notices) do
+      if n:find("No active session for this directory", 1, true) and n:find("nothing was sent", 1, true) then said = true end
+    end
+    ok_(said, "says nothing was sent: " .. table.concat(r.notices, " | "))
+  end)
+
+  it("creates the session for this directory when the user picks that", function()
+    local _, root = checkout_buffer("b")
+    local r = run({ sess("other001", "/somewhere/else") }, nil, function(items) return 1 end)
+    eq(root, r.created, "discover_and_create called for the checkout root")
+    eq(0, r.evals)
+  end)
+
+  it("evaluates in another directory's session only after an explicit choice, and remembers it", function()
+    checkout_buffer("c")
+    local other = sess("other001", "/somewhere/else", "Ready", "Elsewhere")
+    local r = run({ other }, nil, function(items)
+      for i, item in ipairs(items) do if item:find("Evaluate in", 1, true) then return i end end
+    end, { twice = true })
+    eq(2, r.evals, "evaluated both times")
+    eq(1, #r.selects, "asked once: the choice is remembered for this directory")
+    eq("other001", r.active.id)
+  end)
+
+  it("switches to the session that belongs to this directory without asking", function()
+    local _, root = checkout_buffer("d")
+    local mine = sess("mine0001", root, "Ready", "App")
+    local other = sess("other001", "/somewhere/else")
+    local r = run({ other, mine }, other, nil)
+    eq(1, r.evals, "evaluated")
+    eq(0, #r.selects, "no prompt")
+    eq("mine0001", r.active.id, "routed to this directory's session")
+  end)
+
+  it("skips the network when the active session already belongs to this directory", function()
+    local _, root = checkout_buffer("e")
+    local mine = sess("mine0001", root, "Ready", "App")
+    local r = run({ mine }, mine, nil, { cached = { mine } })
+    eq(1, r.evals)
+    eq(0, r.listed, "no round trip")
+  end)
+
+  it("does not route a worktree to the main checkout's session", function()
+    local root = vim.fn.tempname() .. "_main"
+    local wt = root .. "/.claude/worktrees/agent-x"
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.fn.mkdir(wt .. "/src", "p")
+    vim.fn.writefile({ "gitdir: " .. root .. "/.git/worktrees/agent-x" }, wt .. "/.git")
+    vim.fn.writefile({ "<Project />" }, wt .. "/src/App.fsproj")
+    vim.cmd("cd " .. vim.fn.fnameescape(wt))
+    local buf = make_buffer({ "let a = 1;;" })
+    vim.api.nvim_buf_set_name(buf, wt .. "/src/A.fs")
+    local main_session = sess("main0001", root, "Ready", "App")
+    local r = run({ main_session }, main_session, function() return nil end)
+    eq(0, r.evals, "the main checkout's session is not the worktree's")
+    ok_(table.concat(r.selects[1].items, "\n"):find("Create a session for " .. wt, 1, true), "offers a session for the worktree")
+  end)
+end)
+
+describe("startup offers a session for this directory on a shared daemon", function()
+  it("prompts even though the daemon already has another session", function()
+    local root = vim.fn.tempname() .. "_startup"
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.fn.writefile({ "<Project />" }, root .. "/App.fsproj")
+    vim.cmd("cd " .. vim.fn.fnameescape(root))
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local original_select = vim.ui.select
+    local prompts = {}
+    vim.ui.select = function(items, o, cb) prompts[#prompts + 1] = { items = items, prompt = o.prompt }; cb(nil) end
+    sagefs.active_session = nil
+    local list = { { id = "other001", name = "Elsewhere", status = "Ready", projects = { "E.fsproj" }, working_directory = "/elsewhere", eval_count = 0 } }
+    sagefs.offer_session_for_startup({ ok = true, sessions = list })
+    vim.ui.select = original_select
+    eq(1, #prompts, "asked once")
+    ok_(prompts[1].prompt:find("no session", 1, true) or prompts[1].prompt:find("No session", 1, true), "prompt: " .. prompts[1].prompt)
+    ok_(prompts[1].prompt:find("1 other", 1, true), "prompt says other sessions exist: " .. prompts[1].prompt)
+    ok_(table.concat(prompts[1].items, "\n"):find("App.fsproj", 1, true), "explicit project choice")
+  end)
+
+  it("stays quiet when a session already belongs to this directory", function()
+    local root = vim.fn.tempname() .. "_startup2"
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.fn.writefile({ "<Project />" }, root .. "/App.fsproj")
+    vim.cmd("cd " .. vim.fn.fnameescape(root))
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local original_select = vim.ui.select
+    local asked = 0
+    vim.ui.select = function(_, _, cb) asked = asked + 1; cb(nil) end
+    sagefs.active_session = nil
+    sagefs.offer_session_for_startup({ ok = true, sessions = {
+      { id = "mine0001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = root, eval_count = 0 },
+    } })
+    vim.ui.select = original_select
+    eq(0, asked)
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
