@@ -1185,6 +1185,10 @@ end
 function M.configure_warmup_auto_open(working_dir)
   working_dir = working_dir or vim.fn.getcwd()
   local result = project_config.ensure_auto_open_opt_out(working_dir)
+  if result.status == "failed" then
+    notify("Could not create .SageFs/config.fsx: " .. tostring(result.error), vim.log.levels.ERROR)
+    return
+  end
   vim.cmd.edit(vim.fn.fnameescape(result.path))
 
   if result.status == "created" then
@@ -1571,9 +1575,16 @@ function M.setup(opts)
   -- regardless of the user's shada configuration.
   local welcome_marker = M.config.welcome_marker_path or (vim.fn.stdpath("data") .. "/sagefs_welcomed")
   if vim.fn.filereadable(welcome_marker) == 0 then
-    vim.fn.writefile({}, welcome_marker)
+    -- stdpath("data") may not exist yet on a fresh machine; fileio makes it
+    -- and reports a failure as a message instead of raising E482 out of setup().
+    local wrote, write_err = require("sagefs.fileio").write_file(welcome_marker, {})
     vim.defer_fn(function()
       vim.notify("[SageFs] Welcome! Run :SageFsStart to begin, or :checkhealth sagefs for setup guide.", vim.log.levels.INFO)
+      if not wrote then
+        vim.notify("[SageFs] could not remember that the welcome was shown (" .. tostring(write_err)
+          .. "). You will see it again next launch; set welcome_marker_path to a writable file to stop that.",
+          vim.log.levels.WARN)
+      end
     end, 1000)
   end
 

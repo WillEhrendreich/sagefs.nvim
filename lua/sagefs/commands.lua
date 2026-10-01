@@ -1426,7 +1426,11 @@ function M.register_commands(plugin, helpers)
       project = plugin.active_session and plugin.active_session.name or "",
     })
     local fname = opts.args ~= "" and opts.args or "session_notebook.fsx"
-    vim.fn.writefile(vim.split(content, "\n"), fname)
+    local wrote, write_err = require("sagefs.fileio").write_file(fname, vim.split(content, "\n"))
+    if not wrote then
+      helpers.notify("Could not export notebook: " .. tostring(write_err), vim.log.levels.ERROR)
+      return
+    end
     helpers.notify("Exported notebook: " .. fname, vim.log.levels.INFO)
   end, { desc = "Export session as literate .fsx notebook", nargs = "?" })
 end

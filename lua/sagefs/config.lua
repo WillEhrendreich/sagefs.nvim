@@ -19,8 +19,11 @@ function M.ensure_auto_open_opt_out(working_dir)
   local config_dir = join_path(working_dir, ".SageFs")
 
   if vim.fn.filereadable(path) == 0 then
-    vim.fn.mkdir(config_dir, "p")
-    vim.fn.writefile(vim.split(M.auto_open_opt_out_template(), "\n", { plain = true }), path)
+    local ok, err = require("sagefs.fileio").write_file(
+      path, vim.split(M.auto_open_opt_out_template(), "\n", { plain = true }))
+    if not ok then
+      return { status = "failed", path = path, error = err }
+    end
     return { status = "created", path = path }
   end
 
