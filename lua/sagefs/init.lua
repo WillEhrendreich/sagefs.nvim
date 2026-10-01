@@ -600,7 +600,7 @@ local function show_shadow_warnings(buf, cell_id, shadows)
   end)
 end
 
-local function handle_result(buf, cell_id, result, end_line, my_eval_id)
+local function handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
   -- Only clear eval_id if we're still the current eval
   if eval_id == my_eval_id then
     eval_id = 0
@@ -610,7 +610,7 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id)
     pcall(vim.fn.timer_stop, eval_watchdog_timer)
     eval_watchdog_timer = nil
   end
-  local meta = { duration_ms = result.duration_ms, end_line = end_line }
+  local meta = { duration_ms = result.duration_ms, end_line = end_line, buf = buf, anchor_line = anchor_line }
   -- Stats: track eval completion
   if result.duration_ms then
     M.state = model.record_eval(M.state, result.duration_ms)
@@ -653,7 +653,7 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id)
   end)
 end
 
-local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line)
+local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line, anchor_line)
   -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
   if model.is_cell_running(M.state, cell_id) then
     notify("Cell already evaluating", vim.log.levels.WARN)
@@ -662,7 +662,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
   eval_id = eval_id + 1
   local my_eval_id = eval_id
   local start_time = vim.uv.hrtime()
-  M.state = model.set_cell_state(M.state, cell_id, "running", nil)
+  M.state = model.set_cell_state(M.state, cell_id, "running", nil, { end_line = end_line, buf = buf, anchor_line = anchor_line })
   vim.schedule(function()
     render.render_all(buf, M.state)
     cell_highlight.set_eval_hint(buf, "running")
@@ -707,9 +707,9 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
             vim.diagnostic.set(ns.fsi_diagnostics, buf, vim_diags)
           end)
         end
-        handle_result(buf, cell_id, result, end_line, my_eval_id)
+        handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id)
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id, anchor_line)
       end
     end,
   })
@@ -771,7 +771,7 @@ function M.eval_cell()
   if not ctx then return end
   local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line, ctx.cursor_line)
 end
 
 function M.eval_cell_and_advance()
@@ -779,12 +779,33 @@ function M.eval_cell_and_advance()
   if not ctx then return end
   local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line, ctx.cursor_line)
 
   local next_start = cells.find_next_cell_start(ctx.lines, ctx.cursor_line)
   if next_start then
     vim.api.nvim_win_set_cursor(0, { next_start, 0 })
   end
+end
+
+--- Open the full result of the cell under the cursor in a float. This is what
+--- the "N more lines, <leader>rE to expand" footer points at.
+function M.show_result()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local all = cells.find_all_cells_auto(buf, lines)
+  local found
+  for _, c in ipairs(all) do
+    if cursor_line >= c.start_line and cursor_line <= c.end_line then found = c; break end
+  end
+  local cs = found and M.state.cells[found.id] or nil
+  local has_result = cs and (cs.buf == nil or cs.buf == buf)
+    and (cs.status == "success" or cs.status == "error" or cs.status == "stale")
+  if not has_result then
+    notify("No result for the cell under the cursor. Evaluate it first with <A-CR>.", vim.log.levels.WARN)
+    return
+  end
+  return render.show_result_float(cs)
 end
 
 function M.eval_selection()
@@ -1505,6 +1526,12 @@ function M.setup(opts)
     end,
     render_all = function(buf)
       render.render_all(buf, M.state)
+    end,
+    has_results = function(buf)
+      for _, c in pairs(M.state.cells) do
+        if (c.buf == nil or c.buf == buf) and c.status ~= "idle" then return true end
+      end
+      return false
     end,
     render_signs = function(buf)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)

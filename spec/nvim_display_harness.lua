@@ -1,6 +1,6 @@
--- spec/nvim_display_spec.lua — headless-Neovim specs for how results and
+-- spec/nvim_display_harness.lua — headless-Neovim specs for how results and
 -- sessions appear (render placement, :SageFsResult, :SageFsHelp, the hint).
--- Usage: nvim --headless --clean -u NONE -l spec/nvim_display_spec.lua
+-- Usage: nvim --headless --clean -u NONE -l spec/nvim_display_harness.lua
 -- Self-contained like spec/nvim_harness.lua (no busted); exits non-zero on failure.
 
 local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])")

@@ -26,6 +26,13 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       end,
     },
     {
+      name = "SageFsResult",
+      desc = "Show the full result of the cell under the cursor in a float",
+      handler = function()
+        plugin.show_result()
+      end,
+    },
+    {
       name = "SageFsEvalFile",
       desc = "Evaluate entire file",
       handler = function()
@@ -1474,6 +1481,8 @@ function M.register_keymaps(plugin, helpers, bufnr)
   km("n", "<leader>rl", function() plugin.eval_current_line() end,
     "SageFs: Evaluate current line")
   km("n", "<leader>rf", "<cmd>SageFsEvalFile<CR>", "SageFs: Evaluate file")
+  km("n", require("sagefs.config").EXPAND_RESULT_KEY, "<cmd>SageFsResult<CR>",
+    "SageFs: Expand result of the cell under the cursor")
   km("n", "<leader>rc", function()
     helpers.clear_and_render()
   end, "SageFs: Clear results")
@@ -1613,9 +1622,36 @@ function M.register_autocmds(plugin, helpers)
 
   vim.api.nvim_create_autocmd("BufEnter", {
     group = group,
-    pattern = "*.fsx",
+    pattern = { "*.fs", "*.fsx" },
     callback = function(ev)
       helpers.render_all(ev.buf)
+    end,
+  })
+
+  -- A result is anchored on a line that is on screen. Scrolling (or resizing)
+  -- can take that line away, so re-place results for the windows that moved.
+  -- Debounced, and only for buffers that have a result to place.
+  local scroll_timer = nil
+  vim.api.nvim_create_autocmd({ "WinScrolled", "WinResized" }, {
+    group = group,
+    callback = function()
+      if scroll_timer then pcall(vim.fn.timer_stop, scroll_timer) end
+      scroll_timer = vim.fn.timer_start(25, function()
+        scroll_timer = nil
+        vim.schedule(function()
+          local seen = {}
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            if not seen[buf] then
+              seen[buf] = true
+              local ft = vim.bo[buf].filetype
+              if (ft == "fsharp" or ft == "fsx") and helpers.has_results(buf) then
+                helpers.render_all(buf)
+              end
+            end
+          end
+        end)
+      end)
     end,
   })
 

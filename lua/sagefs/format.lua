@@ -288,6 +288,7 @@ function M.build_render_options(cell, cell_id)
     sign = sign,
     inline = M.format_inline(result),
     virtual_lines = M.format_virtual_lines(result),
+    result = result,
   }
 
   if is_stale then
