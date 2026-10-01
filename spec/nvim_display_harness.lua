@@ -182,6 +182,72 @@ describe("result placement in a real window", function()
   end)
 end)
 
+describe("a slow eval says why", function()
+  --- Drive eval_cell with a transport where /exec never answers and the
+  --- session list says whatever `sessions_reply` says.
+  local function slow_eval(sessions_reply)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local config = require("sagefs.config")
+    config.EVAL_SLOW_AFTER_MS = 80
+    config.EVAL_STATUS_POLL_MS = 80
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local notices = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) notices[#notices + 1] = msg end
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        vim.schedule(function() opts.callback(sessions_reply ~= nil, sessions_reply or "") end)
+      end
+      -- POST /exec: never answers
+    end
+    local buf = make_buffer({ "let a = 1;;" })
+    sagefs.active_session = { id = "s1", name = "Demo", status = "Ready", projects = { "Demo.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.eval_cell()
+    local cell
+    vim.wait(2500, function()
+      cell = sagefs.state.cells[1]
+      return cell and cell.pending_text ~= nil
+    end, 20)
+    -- let a draw happen
+    vim.wait(100, function() return false end, 20)
+    transport.http_json = original
+    vim.notify = original_notify
+    return { buf = buf, cell = cell, notices = notices, sagefs = sagefs }
+  end
+
+  local function sessions_json(status)
+    return vim.json.encode({ sessions = { {
+      id = "s1", status = status, projects = { "Demo.fsproj" }, workingDirectory = vim.fn.getcwd(), evalCount = 0,
+    } } })
+  end
+
+  it("names a warming session after the bound, from the daemon's own session list", function()
+    local r = slow_eval(sessions_json("WarmingUp"))
+    ok_(r.cell and r.cell.pending_text, "the running cell carries a status")
+    ok_(r.cell.pending_text:find("warming", 1, true), "says warming: " .. tostring(r.cell.pending_text))
+    local shown
+    for _, m in ipairs(result_marks(r.buf)) do shown = shown or m.virt_text end
+    ok_(shown and shown:find("warming", 1, true), "the status is on screen: " .. tostring(shown))
+    local said = false
+    for _, n in ipairs(r.notices) do if n:find("warming", 1, true) then said = true end end
+    ok_(said, "and the message line says so once")
+  end)
+
+  it("says the daemon is unreachable when the session probe fails", function()
+    local r = slow_eval(nil)
+    ok_(r.cell and r.cell.pending_text, "the running cell carries a status")
+    ok_(r.cell.pending_text:find("not reachable", 1, true), "says unreachable: " .. tostring(r.cell.pending_text))
+  end)
+
+  it("says the eval is simply running when the session is Ready", function()
+    local r = slow_eval(sessions_json("Ready"))
+    ok_(r.cell and r.cell.pending_text and r.cell.pending_text:find("running", 1, true),
+      "says running: " .. tostring(r.cell and r.cell.pending_text))
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
