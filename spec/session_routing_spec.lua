@@ -14,6 +14,7 @@ local function sess(id, dir, status, project)
     status = status or "Ready",
     projects = { (project or "App") .. ".fsproj" },
     working_directory = dir,
+    eval_count = 0,
   }
 end
 

@@ -185,6 +185,128 @@ function M.find_session_for_dir(sessions_list, dir)
   return nil
 end
 
+-- ─── Routing an eval by working directory ───────────────────────────────────
+-- A session belongs to a working directory, and a git worktree is its own
+-- boundary (SageFs AGENTS.md, "Multi-agent / worktree sessions"): the main
+-- checkout's session is not the session of a worktree nested under it, even
+-- though the paths nest textually. An eval is never silently sent to another
+-- directory's session; when nothing matches the caller says so and asks.
+
+local function within(outer_norm, inner_norm)
+  if outer_norm == "" or inner_norm == "" then return false end
+  return inner_norm == outer_norm or inner_norm:sub(1, #outer_norm + 1) == (outer_norm .. "/")
+end
+
+local function short_id(id) return (id or ""):sub(1, 8) end
+
+local function project_label(s)
+  local p = s.projects and s.projects[1]
+  return (p and p ~= "") and p or "(no project)"
+end
+
+---@class sagefs.RouteTarget
+---@field file string|nil     absolute path of the buffer, if it has one
+---@field cwd string|nil      working directory (used when there is no file)
+---@field root string|nil     checkout root of the file (nearest ancestor with .git, a file for a worktree)
+---@field active_id string|nil  the session the plugin currently treats as active
+---@field override_id string|nil  a session the user explicitly chose for this directory
+
+--- Decide which session an eval from `target` goes to.
+---@param list table[] normalized sessions
+---@param target sagefs.RouteTarget
+---@return { kind: "match", session: table }
+---      | { kind: "ambiguous", candidates: table[], dir: string }
+---      | { kind: "none", others: table[], dir: string }
+function M.route(list, target)
+  list = list or {}
+  local dir = target.root or target.cwd or ""
+
+  if target.override_id then
+    for _, s in ipairs(list) do
+      if s.id == target.override_id and s.status ~= "Stopped" then
+        return { kind = "match", session = s }
+      end
+    end
+  end
+
+  local probe = M.normalize_path(target.file or target.cwd or "")
+  local root = target.root and M.normalize_path(target.root) or nil
+
+  local best, best_len = {}, -1
+  for _, s in ipairs(list) do
+    local d = M.normalize_path(s.working_directory)
+    if s.status ~= "Stopped" and within(d, probe) and (root == nil or within(root, d)) then
+      if #d > best_len then
+        best, best_len = { s }, #d
+      elseif #d == best_len then
+        best[#best + 1] = s
+      end
+    end
+  end
+
+  if #best == 1 then return { kind = "match", session = best[1] } end
+  if #best > 1 then
+    if target.active_id then
+      for _, s in ipairs(best) do
+        if s.id == target.active_id then return { kind = "match", session = s } end
+      end
+    end
+    local ready = {}
+    for _, s in ipairs(best) do
+      if s.status == "Ready" then ready[#ready + 1] = s end
+    end
+    if #ready == 1 then return { kind = "match", session = ready[1] } end
+    return { kind = "ambiguous", candidates = best, dir = dir }
+  end
+  return { kind = "none", others = list, dir = dir }
+end
+
+--- One line per session: short id, project, directory, status.
+---@param list table[]
+---@param cap number|nil  show at most this many (default 6)
+---@return string[]
+function M.overview_lines(list, cap)
+  cap = cap or 6
+  local lines = {}
+  for i, s in ipairs(list or {}) do
+    if i > cap then
+      lines[#lines + 1] = string.format("  … and %d more", #list - cap)
+      break
+    end
+    lines[#lines + 1] = string.format("  %s  %s  %s  [%s]",
+      short_id(s.id), project_label(s),
+      (s.working_directory and s.working_directory ~= "") and s.working_directory or "(no directory)",
+      s.status or "?")
+  end
+  return lines
+end
+
+--- The message for "nothing in this directory can take the eval".
+---@param dir string
+---@param others table[] sessions that exist (all of them belong elsewhere)
+---@return string
+function M.no_session_message(dir, others)
+  local msg = string.format("No active session for this directory (%s); nothing was sent.", dir)
+  if others and #others > 0 then
+    msg = msg .. string.format(" %d other session%s on this daemon %s in other directories.",
+      #others, #others == 1 and "" or "s", #others == 1 and "lives" or "live")
+  end
+  return msg
+end
+
+--- Picker label: the line the picker always showed, plus the working directory
+--- and short id, so two sessions of one project can be told apart (and so the
+--- picker's label -> session lookup cannot collide).
+---@param s table normalized session
+---@return string
+function M.picker_label(s)
+  local label = M.format_session_line(s)
+  if s.working_directory and s.working_directory ~= "" then
+    label = label .. "  " .. s.working_directory
+  end
+  return label .. "  [" .. short_id(s.id) .. "]"
+end
+
 function M.select_active_session(sessions_list, active_id, cwd)
   if sessions_list and active_id and active_id ~= "" then
     for _, session in ipairs(sessions_list) do
