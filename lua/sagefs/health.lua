@@ -4,6 +4,7 @@
 
 local M = {}
 local discovery = require("sagefs.daemon_discovery")
+local compat = require("sagefs.compat")
 
 --- Run SageFs CLI and extract version string, or nil on failure
 local function get_cli_version()
@@ -54,30 +55,10 @@ local function check_daemon_port(port)
 
   local probe = result and result.probe or nil
   if result and result.ok and probe then
-    return true, probe.code, probe.endpoint
+    return true, probe.code, probe.endpoint, probe.parsed
   end
 
-  return false, probe and probe.code or nil, nil
-end
-
---- Compare plugin vs daemon versions by (major, minor). Pure — no vim.
---- Patch level is ignored; the wire protocol changes on minor bumps.
----@param plugin_version string|nil
----@param daemon_version string|nil
----@return string "behind" | "ahead" | "same" | "unknown"
-function M.version_drift(plugin_version, daemon_version)
-  local function mm(v)
-    if type(v) ~= "string" then return nil end
-    local maj, min = v:match("(%d+)%.(%d+)")
-    if not maj then return nil end
-    return tonumber(maj), tonumber(min)
-  end
-  local pmaj, pmin = mm(plugin_version)
-  local dmaj, dmin = mm(daemon_version)
-  if not pmaj or not dmaj then return "unknown" end
-  if dmaj > pmaj or (dmaj == pmaj and dmin > pmin) then return "behind" end
-  if dmaj < pmaj or (dmaj == pmaj and dmin < pmin) then return "ahead" end
-  return "same"
+  return false, probe and probe.code or nil, nil, nil
 end
 
 function M.check()
@@ -105,33 +86,6 @@ function M.check()
 
   vim.health.ok("sagefs.nvim loaded (plugin v" .. (sagefs.version or "?") .. ")")
 
-  -- §5.12: drift must be measured against the actual RUNNING daemon, not
-  -- the installed global CLI tool. `sagefs --version` reports whatever
-  -- binary happens to be on PATH — a stale install can silently disagree
-  -- with the process actually holding the port (the exact stale-tool
-  -- hazard this repo has been bitten by before). `sagefs.state.daemon_version`
-  -- is the already-probed, authoritative value (init.lua's
-  -- update_health_metadata, sourced from /health or /version's own
-  -- `version` field) and wins whenever it's present; the CLI subprocess is
-  -- only a fallback for when the plugin has never connected to a daemon at
-  -- all, so :checkhealth still says SOMETHING before a connection exists.
-  local daemon_version = (sagefs.state and sagefs.state.daemon_version) or cli_version
-  if daemon_version and daemon_version ~= "" and sagefs.version then
-    local drift = M.version_drift(sagefs.version, daemon_version)
-    if drift == "behind" then
-      vim.health.warn(
-        string.format("Plugin v%s is behind the SageFs daemon (%s)", sagefs.version, daemon_version),
-        {
-          "The daemon may emit wire-protocol changes this plugin does not handle yet.",
-          "Update the plugin (git pull), or run ./sync-version.sh to re-sync.",
-        })
-    elseif drift == "ahead" then
-      vim.health.info(
-        string.format("Plugin v%s is ahead of the SageFs daemon (%s) — update the daemon: dotnet tool update -g SageFs",
-          sagefs.version, daemon_version))
-    end
-  end
-
   -- ── 3. Plugin configuration ─────────────────────────────────────────────
   local cfg = sagefs.config or {}
   local config_lines = {
@@ -147,7 +101,7 @@ function M.check()
 
   -- ── 4. Daemon connectivity ──────────────────────────────────────────────
   local port = cfg.port or 37749
-  local daemon_ok, http_code, endpoint = check_daemon_port(port)
+  local daemon_ok, http_code, endpoint, daemon_parsed = check_daemon_port(port)
   if daemon_ok then
     local suffix = endpoint == "/version" and " via /version fallback" or ""
     vim.health.ok("Daemon reachable on port " .. port .. suffix)
@@ -157,6 +111,40 @@ function M.check()
       "Start the daemon: sagefs --proj <your.fsproj>",
       "Or run :SageFsStart from Neovim",
     })
+  end
+
+  -- ── 4b. Compatibility ───────────────────────────────────────────────────
+  -- Whether plugin and daemon can talk is decided by the daemon's wire
+  -- apiVersion against the range declared in sagefs/compat.lua. That is the
+  -- only thing here that can be an error. The release numbers are in
+  -- lockstep, so a difference is information.
+  local api_version = (sagefs.state and sagefs.state.api_version)
+    or (daemon_parsed and daemon_parsed.apiVersion)
+  local compat_result = compat.check(api_version)
+  if compat_result.status == "compatible" then
+    vim.health.ok(compat_result.message)
+  elseif compat_result.warn then
+    vim.health.error(compat_result.message, { compat_result.advice })
+  else
+    vim.health.info(compat_result.message)
+  end
+
+  -- §5.12: the version must come from the daemon actually holding the port
+  -- (state.daemon_version, or the /health probe just made), not the
+  -- installed CLI, which can silently be a different binary. The CLI is only
+  -- a fallback so there is something to compare before any connection.
+  local daemon_version = (sagefs.state and sagefs.state.daemon_version)
+    or (daemon_parsed and daemon_parsed.version)
+    or cli_version
+  if daemon_version and daemon_version ~= "" and sagefs.version then
+    local relation = compat.version_relation(sagefs.version, daemon_version)
+    local plain = tostring(daemon_version):match("%d+%.%d+%.%d+") or tostring(daemon_version)
+    if relation == "plugin_older" then
+      vim.health.info(string.format("plugin %s, daemon %s: update the plugin when you can", sagefs.version, plain))
+    elseif relation == "plugin_newer" then
+      vim.health.info(string.format("plugin %s, daemon %s: update the daemon when you can (dotnet tool update --global sagefs)",
+        sagefs.version, plain))
+    end
   end
 
   -- ── 5. SSE connection status ────────────────────────────────────────────
