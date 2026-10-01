@@ -1,0 +1,19 @@
+Cohort ledger head: v14021
+Conductor: mcp:BBBBBBBBBBBBBBBBBBBBBB
+Members (2):
+  - mcp:BBBBBBBBBBBBBBBBBBBBBB [Implementer] present
+  - mcp:CCCCCCCCCCCCCCCCCCCCCC [Verifier] departed 2026-10-02 08:11:09Z
+Claims (1):
+  - c-1 File "src/Web/Program.fs" held-by=mcp:BBBBBBBBBBBBBBBBBBBBBB fence=3 state=Held (Mcp "BBBBBBBBBBBBBBBBBBBBBB")
+Integration head: 09e824af17c04b884be4132353111a44801975d1
+Landings (4):
+  - l-1 requester=mcp:BBBBBBBBBBBBBBBBBBBBBB state=Landed "a1b2c3d" not queued statement="greeting reads from config" commits=[a1b2c3d]
+  - l-2 requester=mcp:CCCCCCCCCCCCCCCCCCCCCC state=Landed "0c1d2e3" not queued statement="rename the shape" commits=[e4f5a6b,0c1d2e3]
+  - l-3 requester=mcp:BBBBBBBBBBBBBBBBBBBBBB state=Rebasing "09e824a" front of queue statement="route table" commits=[9f8e7d6]
+  - l-4 requester=mcp:CCCCCCCCCCCCCCCCCCCCCC state=Verifying ("09e824a", "5b6c7d8", 2, 0) position 1 in queue statement="say \"hi\" twice" commits=[1a2b3c4]
+Integration session: 7f3a9c21 (started)
+Trunk: checkout=/home/will/.local/share/sagefs/cohort-trunk landings (4):
+  trunk l-1: session 5d2e8b10: Program.fs PatchPending by metadata-delta
+  trunk l-2: session 5d2e8b10: Shape.fs Restarted (TypeShapeChanged: the shape of type Shape changed)
+  trunk l-3: following (waiting on session 5d2e8b10)
+  trunk l-4: queued behind the landing in flight

@@ -1,0 +1,9 @@
+Trunk: checkout=/data/cohort-trunk landings (8):
+  trunk l-1: no session works in the trunk checkout
+  trunk l-2: the trunk checkout did not move: git refused: dirty tree
+  trunk l-3: session aa11: no running app to update (the trunk checkout holds the landing; rebuild the session before run_app, so the app starts from it)
+  trunk l-4: session aa11: Program.fs Patched by metadata-delta; Handlers.fs NeverEntered by detour
+  trunk l-5: session aa11: Rude.fs RestartRequired (FieldsChanged: the fields of Shape changed, which changes the layout of every object of it)
+  trunk l-6: session aa11: did not answer: connection refused
+  trunk l-7: session aa11: Program.fs NoEffect; session bb22: not available: stopped
+  trunk l-8: session aa11: Lib.fs needs a rebuild: project file changed; Other.fs is not watched, so nothing ran
