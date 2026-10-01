@@ -16,6 +16,8 @@ local function info(overrides)
     warmup = nil,
   }
   for k, v in pairs(overrides or {}) do base[k] = v end
+  if base.session == false then base.session = nil end -- `false` means "no session" (nil would drop the override)
+  if base.daemon_reachable == "unprobed" then base.daemon_reachable = nil end -- no fresh probe yet
   return base
 end
 
@@ -37,17 +39,22 @@ describe("sagefs.pending.classify", function()
   end)
 
   it("says the daemon is unreachable when the event stream is disconnected", function()
-    local c = pending.classify(info({ connection = "disconnected", daemon_reachable = nil }))
+    local c = pending.classify(info({ connection = "disconnected", daemon_reachable = "unprobed" }))
     assert.are.equal("daemon_unreachable", c.kind)
   end)
 
+  it("trusts a fresh successful probe over a dropped event stream (the answer comes over HTTP)", function()
+    local c = pending.classify(info({ connection = "disconnected", daemon_reachable = true }))
+    assert.are.equal("evaluating", c.kind)
+  end)
+
   it("says it is reconnecting while the event stream retries", function()
-    local c = pending.classify(info({ connection = "reconnecting", daemon_reachable = nil }))
+    local c = pending.classify(info({ connection = "reconnecting", daemon_reachable = "unprobed" }))
     assert.are.equal("daemon_reconnecting", c.kind)
   end)
 
   it("says there is no session when nothing is attached", function()
-    local c = pending.classify(info({ session = nil }))
+    local c = pending.classify(info({ session = false }))
     assert.are.equal("no_session", c.kind)
     assert.is_truthy(c.long:find(":SageFsCreateSession", 1, true))
   end)
@@ -88,7 +95,7 @@ describe("sagefs.pending.classify", function()
 
   it("keeps the inline form short enough to sit at the end of a code line", function()
     for _, i in ipairs({
-      info({ daemon_reachable = false }), info({ session = nil }), info({}),
+      info({ daemon_reachable = false }), info({ session = false }), info({}),
       info({ session = { id = "x", name = "X", status = "Faulted", fault_reason = string.rep("long reason ", 20) } }),
     }) do
       assert.is_true(#pending.classify(i).short <= 60, pending.classify(i).short)

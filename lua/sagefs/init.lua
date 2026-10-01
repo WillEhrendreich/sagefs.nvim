@@ -653,6 +653,62 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_
   end)
 end
 
+-- ─── Why is nothing happening? ───────────────────────────────────────────────
+-- After config.EVAL_SLOW_AFTER_MS with no result, ask the daemon for the real
+-- state of the session the eval went to and show it on the running cell (and
+-- once on the message line), then keep it fresh every EVAL_STATUS_POLL_MS.
+
+local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
+  local limits = require("sagefs.config")
+  local pending = require("sagefs.pending")
+  local last_kind = nil
+
+  local function still_pending()
+    return eval_id == my_eval_id and model.is_cell_running(M.state, cell_id)
+  end
+
+  local function tick()
+    if not still_pending() then return end
+    M.list_sessions(function(result)
+      if not still_pending() then return end
+      local session = nil
+      if result.ok then
+        for _, s in ipairs(result.sessions) do
+          if s.id == session_id then session = s end
+        end
+        if not session_id then session = M.active_session end
+      else
+        session = M.active_session
+      end
+      local warmup = nil
+      if M.warmup_phase and M.warmup_phase ~= "" then
+        warmup = { phase = M.warmup_phase, step = M.warmup_step, total = M.warmup_total }
+      end
+      local c = pending.classify({
+        elapsed_ms = math.floor((vim.uv.hrtime() - start_ns) / 1e6),
+        connection = M.state.status,
+        daemon_reachable = result.ok,
+        port = M.config.port,
+        session = session,
+        warmup = warmup,
+      })
+      local cell = M.state.cells[cell_id]
+      if cell then cell.pending_text = c.short end
+      if c.kind ~= last_kind then
+        last_kind = c.kind
+        local levels = { info = vim.log.levels.INFO, warn = vim.log.levels.WARN, error = vim.log.levels.ERROR }
+        notify(c.long, levels[c.level])
+      end
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) then render.render_all(buf, M.state) end
+      end)
+      vim.defer_fn(tick, limits.EVAL_STATUS_POLL_MS)
+    end)
+  end
+
+  vim.defer_fn(tick, limits.EVAL_SLOW_AFTER_MS)
+end
+
 local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line, anchor_line)
   -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
   if model.is_cell_running(M.state, cell_id) then
@@ -676,6 +732,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
     eval_mode = eval_mode or "",
     block_start_line = block_start_line or 0,
   }
+  watch_pending(buf, cell_id, my_eval_id, body.sessionId, start_time)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
