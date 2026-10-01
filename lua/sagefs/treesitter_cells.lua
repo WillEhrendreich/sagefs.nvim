@@ -165,7 +165,8 @@ function M.find_all_cells(buf)
   end
 
   collect_cells(root)
-  return cells
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  return require("sagefs.cells").refine_inferred(lines, cells)
 end
 
 --- Extract open/import statements for FSI evaluation context.

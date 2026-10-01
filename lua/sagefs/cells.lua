@@ -218,6 +218,47 @@ function M.cell_mode(lines)
   return M.has_manual_cells(lines) and "manual" or "inferred"
 end
 
+local function is_blank_or_comment(line)
+  if not line then return true end
+  return line:match("^%s*$") ~= nil or line:match("^%s*//") ~= nil
+end
+
+--- Tidy tree-sitter cell ranges. The F# grammar folds the blank line and the
+--- `///` doc comment that belong to the NEXT declaration into the END of the
+--- previous node, so a result drawn at a cell's end lands on another
+--- declaration's doc comment. Trim trailing blank/comment-only lines off each
+--- cell, and give the run of comment lines directly above the next cell to
+--- that cell (it documents it).
+---@param lines string[] buffer lines
+---@param ranges {id: number, start_line: number, end_line: number}[] in document order
+---@return table[] new ranges (other fields copied through)
+function M.refine_inferred(lines, ranges)
+  local out = {}
+  for i, r in ipairs(ranges) do
+    local copy = {}
+    for k, v in pairs(r) do copy[k] = v end
+    out[i] = copy
+  end
+  for i, c in ipairs(out) do
+    local old_end = c.end_line
+    local new_end = old_end
+    while new_end > c.start_line and is_blank_or_comment(lines[new_end]) do
+      new_end = new_end - 1
+    end
+    c.end_line = new_end
+    local nxt = out[i + 1]
+    if nxt and nxt.start_line == old_end + 1 then
+      -- the comment run ending right above the next cell belongs to it
+      local run_start = old_end + 1
+      while run_start - 1 > new_end and (lines[run_start - 1] or ""):match("^%s*//") do
+        run_start = run_start - 1
+      end
+      nxt.start_line = run_start
+    end
+  end
+  return out
+end
+
 --- Find cell using auto-detection: manual mode (;;) or inferred (tree-sitter).
 --- This is the primary entry point for eval_cell — it picks the right strategy.
 ---@param buf number buffer handle
