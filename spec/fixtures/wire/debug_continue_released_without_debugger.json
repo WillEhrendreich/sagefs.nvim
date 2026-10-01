@@ -1,0 +1,16 @@
+{
+  "status": "released_without_debugger",
+  "message": "The test was released but no debugger was attached to the test host, so it did not run. Check the debug console for why the attach failed, then start debugging again.",
+  "pid": 0,
+  "ticket": "",
+  "testId": "",
+  "testName": "",
+  "symbols": "",
+  "symbolsNote": "",
+  "access": "",
+  "accessNote": "",
+  "holdMs": 0,
+  "outcome": "",
+  "detail": "",
+  "durationMs": 0
+}
