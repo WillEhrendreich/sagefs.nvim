@@ -173,9 +173,12 @@ describe("sagefs.placement.place", function()
           assert.is_true((p.line - c.top + 1) + drawn <= c.rows, "overflows window: " .. ctx)
           -- accounting: nothing is lost silently
           assert.are.equal(math.min(c.height, c.height), p.shown + p.hidden, "lost lines: " .. ctx)
-          if p.hidden > 0 then assert.is_true(p.footer, "hidden without footer: " .. ctx) end
+          -- the one case with no room beneath the line at all (the cell's visible part is the
+          -- window's last row): the inline text on the line itself is what the user sees
+          local room = c.rows - (p.line - c.top + 1)
+          if p.hidden > 0 and room >= 1 then assert.is_true(p.footer, "hidden without footer: " .. ctx) end
           -- something is always on screen for the user to see
-          assert.is_true(drawn >= 1 or c.rows - (p.line - c.top + 1) < 1, "nothing drawn: " .. ctx)
+          assert.is_true(drawn >= 1 or room < 1, "nothing drawn: " .. ctx)
         else
           assert.is_false(p.visible)
         end
