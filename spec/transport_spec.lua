@@ -174,3 +174,40 @@ describe("transport.connect_sse", function()
     assert.is_false(handle.active())
   end)
 end)
+
+-- A missing curl used to raise out of start() with a raw E475 traceback.
+describe("transport.connect_sse when curl cannot be spawned", function()
+  local original_jobstart, original_defer_fn, transport, deferred
+
+  before_each(function()
+    unload_transport()
+    package.loaded["sagefs.spawn"] = nil
+    original_jobstart, original_defer_fn = vim.fn.jobstart, vim.defer_fn
+    deferred = {}
+    vim.defer_fn = function(fn, delay) table.insert(deferred, { fn = fn, delay = delay }) end
+    vim.fn.jobstart = function()
+      error("Vim:E475: Invalid value for argument cmd: 'curl' is not executable", 0)
+    end
+    transport = require("sagefs.transport")
+  end)
+
+  after_each(function()
+    unload_transport()
+    package.loaded["sagefs.spawn"] = nil
+    vim.fn.jobstart, vim.defer_fn = original_jobstart, original_defer_fn
+  end)
+
+  it("does not raise, reports once through on_spawn_error, and does not retry", function()
+    local errors = {}
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      on_spawn_error = function(msg) table.insert(errors, msg) end,
+      auto_reconnect = true,
+    })
+    assert.has_no.errors(function() handle.start() end)
+    assert.equals(1, #errors)
+    assert.is_truthy(errors[1]:find("curl", 1, true))
+    assert.equals(0, #deferred, "a missing binary will not appear by retrying")
+    assert.is_false(handle.active())
+  end)
+end)

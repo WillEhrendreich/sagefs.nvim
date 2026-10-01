@@ -409,3 +409,40 @@ describe("sagefs.health compatibility section", function()
     end
   end)
 end)
+
+describe("sagefs.health when the sagefs binary is missing", function()
+  local original_system, original_v, original_health, original_loaded
+
+  before_each(function()
+    package.loaded["sagefs.health"] = nil
+    original_system, original_v = vim.fn.system, vim.v
+    original_health, original_loaded = vim.health, package.loaded["sagefs"]
+    vim.v = { shell_error = 127 }
+    vim.fn.system = function() return "" end
+  end)
+
+  after_each(function()
+    vim.fn.system, vim.v = original_system, original_v
+    vim.health, package.loaded["sagefs"] = original_health, original_loaded
+    package.loaded["sagefs.health"] = nil
+  end)
+
+  it("says it is not on PATH, how to install it, and how to point the plugin at a binary", function()
+    local errors = {}
+    package.loaded["sagefs"] = {} -- not initialised: only the CLI section runs
+    vim.health = {
+      start = function() end, ok = function() end, info = function() end, warn = function() end,
+      error = function(m, hints) table.insert(errors, { msg = m, hints = hints or {} }) end,
+    }
+    require("sagefs.health").check()
+    local found
+    for _, e in ipairs(errors) do
+      if e.msg:find("SageFs CLI not found", 1, true) then found = e end
+    end
+    assert.is_truthy(found)
+    local text = found.msg .. "\n" .. table.concat(found.hints, "\n")
+    assert.is_truthy(text:find("PATH", 1, true))
+    assert.is_truthy(text:find("dotnet tool install --global sagefs", 1, true))
+    assert.is_truthy(text:find("sagefs_path", 1, true))
+  end)
+end)

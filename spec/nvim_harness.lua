@@ -1647,6 +1647,34 @@ describe("welcome marker in a missing data directory", function()
   end)
 end)
 
+describe("sagefs_path option", function()
+  it("defaults to the bare sagefs command", function()
+    assert_eq("sagefs", require("sagefs").config.sagefs_path, "default sagefs_path")
+  end)
+
+  it(":SageFsStart reports a missing binary as a message, not a traceback", function()
+    local sagefs = require("sagefs")
+    local prev_port = sagefs.config.port
+    -- Never aim a test at the shared dev daemon's port, in case a regression
+    -- lets this spawn a real sagefs.
+    sagefs.setup({ auto_connect = false, sagefs_path = "/nonexistent/dir/sagefs", port = 59999,
+      welcome_marker_path = vim.fn.tempname() })
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+    local ok, err = pcall(vim.cmd, "SageFsStart App.fsproj")
+    vim.notify = original_notify
+    sagefs.config.sagefs_path = "sagefs"
+    sagefs.config.port = prev_port
+    assert_truthy(ok, "must not raise: " .. tostring(err))
+    local found = false
+    for _, n in ipairs(notifications) do
+      if n.msg:find("/nonexistent/dir/sagefs", 1, true) and n.msg:find("dotnet tool install", 1, true) then found = true end
+    end
+    assert_truthy(found, "should name the configured path and how to install")
+  end)
+end)
+
 -- ─── which-key group registration (roast §5.13 / item 13) ────────────────────
 -- 53 commands, no which-key group — pressing <leader> showed a bare
 -- "+prefix" instead of "+SageFs". Best-effort: registers a group label for
