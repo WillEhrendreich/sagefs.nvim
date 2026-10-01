@@ -718,6 +718,156 @@ describe("SSE session-scoping (§5.4)", function()
   end)
 end)
 
+-- ─── Session lifecycle over SSE: Ready must reach the statusline ─────────────
+-- The daemon sends `state {"sessionReady": sid}` when warmup finishes. It was
+-- classified as "session_ready" and dropped, so the statusline kept the
+-- snapshot taken right after create ("(Starting)") forever. Warmup events also
+-- were not session-scoped (another session's warmup took over this statusline
+-- and notified), and the `state` variant of warmup progress (no Phase) erased
+-- the phase and notified an empty "Warming up: ".
+
+describe("session lifecycle over SSE", function()
+  local function with_sse(fn)
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_connect_sse = transport.connect_sse
+    local original_notify = vim.notify
+    local saved = {
+      active = sagefs.active_session, list = sagefs.session_list, phase = sagefs.warmup_phase,
+      step = sagefs.warmup_step, total = sagefs.warmup_total, state = sagefs.state,
+    }
+    local captured, notes = nil, {}
+    transport.connect_sse = function(_url, opts)
+      captured = opts
+      return { start = function() end, stop = function() end }
+    end
+    vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
+    sagefs.start_sse()
+    local ok, err = pcall(fn, sagefs, captured, notes)
+    transport.connect_sse = original_connect_sse
+    vim.notify = original_notify
+    sagefs.active_session, sagefs.session_list, sagefs.warmup_phase = saved.active, saved.list, saved.phase
+    sagefs.warmup_step, sagefs.warmup_total, sagefs.state = saved.step, saved.total, saved.state
+    if not ok then error(err, 0) end
+  end
+
+  local function starting_session(id)
+    return { id = id, name = "DemoEnv.Tests", status = "Starting", projects = { "DemoEnv.Tests.fsproj" },
+      working_directory = "/w", eval_count = 0 }
+  end
+
+  local function send(captured, type_, tbl)
+    captured.on_events({ { type = type_, data = vim.json.encode(tbl) } })
+  end
+
+  it("sessionReady turns (Starting) into (Ready) on the statusline", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      assert_contains(sagefs.statusline(), "Starting", "precondition")
+      send(cap, "state", { sessionReady = "s1" })
+      local sl = sagefs.statusline()
+      assert_contains(sl, "(Ready)", "statusline after sessionReady")
+      assert_falsy(sl:find("Starting", 1, true), "must not still say Starting")
+      assert_eq("Ready", sagefs.session_list[1].status, "the list entry is updated too")
+    end)
+  end)
+
+  it("sessionReady for another session leaves the active session alone", function()
+    with_sse(function(sagefs, cap)
+      local s, other = starting_session("s1"), starting_session("s2")
+      sagefs.session_list, sagefs.active_session = { s, other }, s
+      send(cap, "state", { sessionReady = "s2" })
+      assert_contains(sagefs.statusline(), "Starting", "active session is not s2")
+      assert_eq("Ready", sagefs.session_list[2].status)
+    end)
+  end)
+
+  it("sessionReady clears a warmup label left on the statusline", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      sagefs.warmup_phase = "finalizing"
+      send(cap, "state", { sessionReady = "s1" })
+      assert_falsy(sagefs.warmup_phase, "warmup phase cleared")
+      assert_falsy(sagefs.statusline():find("⏳ SageFs", 1, true), "no warmup label once Ready")
+    end)
+  end)
+
+  it("another session's warmup progress does not take over this statusline or notify", function()
+    with_sse(function(sagefs, cap, notes)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      sagefs.warmup_phase = nil
+      send(cap, "warmup_progress", { SessionId = "someone-else", Phase = "creating_fsi", Step = 1, Total = 4, Progress = 0.25 })
+      assert_falsy(sagefs.warmup_phase, "foreign warmup must not set the phase")
+      assert_falsy(sagefs.statusline():find("⏳ SageFs", 1, true), "statusline unchanged")
+      assert_eq(0, #notes, "no notification for someone else's warmup")
+    end)
+  end)
+
+  it("this session's warmup progress still shows", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "warmup_progress", { SessionId = "s1", Phase = "loading_assemblies", Step = 3, Total = 4 })
+      assert_contains(sagefs.statusline(), "Loading assemblies", "own warmup shown")
+    end)
+  end)
+
+  it("the state variant of warmup progress (no Phase) keeps the phase and says nothing", function()
+    with_sse(function(sagefs, cap, notes)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "warmup_progress", { SessionId = "s1", Phase = "creating_fsi", Step = 1, Total = 4 })
+      local before = #notes
+      send(cap, "state", { sessionId = "s1", step = 1, total = 4, warmupProgress = true })
+      assert_eq("creating_fsi", sagefs.warmup_phase, "phase survives the phase-less variant")
+      for i = before + 1, #notes do
+        assert_falsy(notes[i].msg:match("Warming up:%s*$"), "no empty 'Warming up:' notification")
+      end
+    end)
+  end)
+
+  it("sessionFaulted marks the session Faulted on the statusline", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "state", { sessionFaulted = "s1", error = "worker died" })
+      assert_contains(sagefs.statusline(), "(Faulted)", "faulted shown")
+    end)
+  end)
+
+  it("session_health_changed Degraded reaches the statusline", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      s.status = "Ready"
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "session", { type = "session_health_changed", sessionId = "s1",
+        health = { status = "Degraded", reason = "gc pressure" } })
+      assert_contains(sagefs.statusline(), "gc pressure", "degraded reason shown")
+    end)
+  end)
+
+  it("a (re)connect refreshes the session list, so a missed Ready event cannot stick", function()
+    with_sse(function(sagefs, cap)
+      local transport = require("sagefs.transport")
+      local original_http_json = transport.http_json
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      transport.http_json = function(opts)
+        if opts.url:find("/api/sessions$") then
+          opts.callback(true, vim.json.encode({ sessions = {
+            { id = "s1", status = "Ready", projects = { "DemoEnv.Tests.fsproj" }, workingDirectory = "/w" } } }))
+        end
+      end
+      cap.on_connect()
+      transport.http_json = original_http_json
+      assert_contains(sagefs.statusline(), "(Ready)", "refreshed on connect")
+    end)
+  end)
+end)
+
 -- ─── Testing module integration ──────────────────────────────────────────────
 
 describe("testing module with real JSON", function()
