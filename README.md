@@ -123,6 +123,7 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
+| **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtD` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
@@ -223,6 +224,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rtp` | n | Test trace |
 | `<leader>rte` | n | Enable live testing |
 | `<leader>rtd` | n | Disable live testing |
+| `<leader>rtD` | n | Debug the failing test on this line (nvim-dap) |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
 | `<C-g>` | n | Explicit jump to source — telescope picker only (warns if no location) |
@@ -286,6 +288,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsTestPolicy` | Configure test run policies per category |
 | `:SageFsEnableTesting` | Enable live testing |
 | `:SageFsDisableTesting` | Disable live testing |
+| `:SageFsDebugTest [name or id]` | Debug a failing test with nvim-dap. No argument: the failing test on this line, or the only failing test in the file |
+| `:SageFsDebugRelease` | Release the test SageFs is holding for the debugger and stop the debug run |
 | `:SageFsWorkflow` | Show the current workflow label (no argument — does not switch workflow; the daemon gained `POST /api/sessions/{id}/workflow` recently, so wiring this command up is now a small follow-up rather than blocked) |
 | `:SageFsPickTest` | Pick a test to run/jump-to via Telescope |
 | `:SageFsSwitchProject` | Switch the active project for a session |
@@ -378,6 +382,25 @@ Cycle with `<leader>rD`:
 - **Minimal** — signs only, cleanest view
 - **Normal** — signs + CodeLens + inline results
 - **Full** — everything + branch EOL annotations
+
+## Debugging a failing test
+
+A test runs in the process that loaded your code, so debugging it means attaching a .NET debugger to that process. SageFs has two routes for that, and the plugin drives them: `POST /api/live-testing/debug` holds the test and answers a process id, and `POST /api/live-testing/debug/continue` releases it and waits for the result.
+
+Put the cursor on a line that shows the `▸ debug` hint (the daemon marks a failing test's lens with a debug command, and I draw it as quiet virtual text at the end of the line) and press `<leader>rtD`, or run `:SageFsDebugTest`. With an argument it takes a test id or a name pattern. If more than one test fails on the line it asks which.
+
+What happens, in order:
+
+1. I look for the `coreclr` adapter before I hold anything. If you have set `dap.adapters.coreclr` I leave it alone. Otherwise I look for `netcoredbg` on `PATH`, then under mason (`stdpath("data")/mason`). I never install anything. If I find nothing I say what to install and the test is not held.
+2. The daemon holds the test and answers the pid. I warn you if the test code was evaluated in the session (no PDB, so breakpoints will not bind) or if ptrace is blocked.
+3. nvim-dap attaches to the pid. I release the test only after the attach has finished, which is when the adapter answers `configurationDone`. Releasing earlier would run the test before your breakpoints bind.
+4. I keep asking the daemon while it answers `still_running`, so a test sitting on a breakpoint for an hour is fine. When it finishes I detach without killing the host and show the result.
+
+The hold never outlives the debugger. I release it when the debug session ends, when `dap.run` fails, when the two minute hold window runs out, when the buffer you started from is deleted and when Neovim exits. One debug run at a time, because the host holds one test at a time.
+
+nvim-dap is optional. Without it I still hold the test and print the pid and the instruction (attach to process N with any coreclr debugger), and `:SageFsDebugRelease` lets the test run once you are attached. Install [nvim-dap](https://github.com/mfussenegger/nvim-dap) and netcoredbg (`:MasonInstall netcoredbg`) and the whole thing is automatic.
+
+Breakpoints bind in your project's compiled assemblies. A test file SageFs re-evaluated after a save has no PDB, so hard reset the session with a rebuild to debug the compiled copy. On Linux, `kernel.yama.ptrace_scope` at 1 is fine (the host opens the door for the length of the hold), at 2 or 3 the attach is refused.
 
 ## 🏥 Health Check
 
