@@ -1584,6 +1584,50 @@ describe("welcome hint persistence (roast item 13)", function()
   end)
 end)
 
+
+-- E482 regression: stdpath("data") does not exist on a fresh machine. setup()
+-- must create it, and a directory it cannot create must be a message, never
+-- an error out of setup().
+describe("welcome marker in a missing data directory", function()
+  it("creates the missing directory instead of dying with E482", function()
+    local sagefs = require("sagefs")
+    local root = vim.fn.tempname()  -- does not exist (tempname makes the parent only)
+    local marker = root .. "/nested/data/sagefs_welcomed"
+    local original_notify = vim.notify
+    vim.notify = function() end
+    local ok, err = pcall(sagefs.setup, { auto_connect = false, welcome_marker_path = marker })
+    vim.notify = original_notify
+    assert_truthy(ok, "setup() must not raise: " .. tostring(err))
+    assert_eq(1, vim.fn.filereadable(marker), "marker must exist after setup()")
+    vim.fn.delete(root, "rf")
+  end)
+
+  it("reports an unwritable marker location as a message, not an error", function()
+    local sagefs = require("sagefs")
+    local blocker = vim.fn.tempname()
+    vim.fn.writefile({ "i am a file, not a directory" }, blocker)
+    local marker = blocker .. "/sub/sagefs_welcomed"  -- parent is a file: mkdir must fail
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+    local ok, err = pcall(sagefs.setup, { auto_connect = false, welcome_marker_path = marker })
+    vim.wait(1500, function()
+      for _, n in ipairs(notifications) do
+        if n.msg:find("could not remember", 1, true) then return true end
+      end
+      return false
+    end, 20)
+    vim.notify = original_notify
+    vim.fn.delete(blocker)
+    assert_truthy(ok, "setup() must not raise: " .. tostring(err))
+    local warned = false
+    for _, n in ipairs(notifications) do
+      if n.msg:find("could not remember", 1, true) and n.level == vim.log.levels.WARN then warned = true end
+    end
+    assert_truthy(warned, "an unwritable marker must produce a clear WARN message")
+  end)
+end)
+
 -- ─── which-key group registration (roast §5.13 / item 13) ────────────────────
 -- 53 commands, no which-key group — pressing <leader> showed a bare
 -- "+prefix" instead of "+SageFs". Best-effort: registers a group label for
