@@ -55,7 +55,7 @@ function M.check(api_version)
       status = "daemon_too_old",
       message = string.format("daemon speaks api %d, this plugin needs api %s (%s)",
         api_version, range, r.min_reason),
-      advice = "update the daemon: " .. UPDATE_DAEMON,
+      advice = "update the daemon (" .. UPDATE_DAEMON .. ")",
       warn = true,
     }
   end
@@ -65,7 +65,7 @@ function M.check(api_version)
       status = "plugin_too_old",
       message = string.format("daemon speaks api %d, this plugin understands api %s (%s)",
         api_version, range, r.max_reason),
-      advice = "update the plugin: pull the latest sagefs.nvim (its version tracks the SageFs release)",
+      advice = "update the plugin (pull the latest sagefs.nvim; its version tracks the SageFs release)",
       warn = true,
     }
   end
@@ -83,7 +83,7 @@ end
 function M.startup_warning(api_version)
   local r = M.check(api_version)
   if not r.warn then return nil end
-  return string.format("[SageFs] %s. Some features may not work: %s. Run :checkhealth sagefs for details.",
+  return string.format("%s. Some features may not work, so %s. Run :checkhealth sagefs for details.",
     r.message, r.advice)
 end
 
