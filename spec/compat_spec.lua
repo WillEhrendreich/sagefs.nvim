@@ -81,6 +81,15 @@ describe("sagefs.compat", function()
       assert.is_truthy(w:find("api 99", 1, true))
       assert.is_truthy(w:find("update the plugin", 1, true))
     end)
+
+    it("carries no [SageFs] prefix, because notify adds one", function()
+      assert.is_nil(compat.startup_warning(99):find("[SageFs]", 1, true))
+    end)
+
+    it("reads as one plain instruction for each side", function()
+      assert.is_truthy(compat.startup_warning(2):find("update the daemon (dotnet tool update --global sagefs)", 1, true))
+      assert.is_truthy(compat.startup_warning(99):find("update the plugin (", 1, true))
+    end)
   end)
 
   describe("version_relation", function()
