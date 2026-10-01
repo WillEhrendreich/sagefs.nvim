@@ -153,22 +153,16 @@ describe("sagefs.health", function()
     assert.is_false(found_table_leak, "must never print a raw table address")
   end)
 
-  -- §5.12: the version-drift oracle shelled out to `sagefs --version` — the
-  -- INSTALLED global tool — instead of the already-parsed `/version` probe
-  -- (daemon_discovery.lua) or `apiVersion`/`version` off `/health`
-  -- (init.lua's update_health_metadata), which is the actual PROCESS
-  -- holding the port. A stale global-tool install can silently disagree
-  -- with what's actually running — exactly the hazard this repo has been
-  -- bitten by before (project_stale_deployed_daemon-class bugs). The
-  -- authoritative, already-probed `state.daemon_version` must win when
-  -- present; the CLI subprocess is only a fallback for when the plugin has
-  -- never connected yet.
-  it("uses the already-probed daemon version, not a stale installed CLI, for drift detection", function()
-    local warn_messages = {}
+  -- §5.12 (kept): version information must come from the daemon actually
+  -- holding the port (state.daemon_version), never from a stale installed
+  -- CLI. Since the plugin and SageFs are released in lockstep, a different
+  -- number is now only a quiet info line, never a warning.
+  it("cites the live daemon version, not a stale installed CLI, in the version info line", function()
+    local warn_messages, info_messages = {}, {}
 
     package.loaded["sagefs"] = {
-      version = "0.5.543",
-      state = { status = "connected", daemon_version = "0.6.708" },
+      version = "0.6.875",
+      state = { status = "connected", daemon_version = "0.6.880", api_version = 3 },
       config = { port = 37749, dashboard_port = 37750, auto_connect = false, check_on_save = false },
       session_list = {},
       active_session = nil,
@@ -179,14 +173,14 @@ describe("sagefs.health", function()
       start = function(_) end,
       ok = function(_) end,
       warn = function(msg, hints) table.insert(warn_messages, msg) end,
-      info = function(_) end,
+      info = function(msg) table.insert(info_messages, msg) end,
       error = function(_) end,
     }
 
     vim.fn.system = function(cmd)
       if cmd == "sagefs --version" then
         vim.v.shell_error = 0
-        return "0.6.283" -- a stale installed global tool — must NOT be used for drift
+        return "0.6.283" -- a stale installed global tool: must NOT be cited
       end
       vim.v.shell_error = 1
       return ""
@@ -194,15 +188,18 @@ describe("sagefs.health", function()
 
     require("sagefs.health").check()
 
-    local found_correct_drift = false
-    local found_stale_drift = false
+    local found_correct, found_stale = false, false
+    for _, msg in ipairs(info_messages) do
+      if msg:find("0.6.880", 1, true) and msg:find("update the plugin when you can", 1, true) then found_correct = true end
+      if msg:find("0.6.283", 1, true) then found_stale = true end
+    end
     for _, msg in ipairs(warn_messages) do
-      if msg:find("0.6.708", 1, true) then found_correct_drift = true end
-      if msg:find("0.6.283", 1, true) then found_stale_drift = true end
+      assert.is_nil(msg:find("version", 1, true) and msg:find("behind", 1, true),
+        "a version-number difference must never be a warning: " .. msg)
     end
 
-    assert.is_true(found_correct_drift, "drift warning should cite the live daemon version (0.6.708)")
-    assert.is_false(found_stale_drift, "drift warning must not cite the stale installed CLI version (0.6.283)")
+    assert.is_true(found_correct, "info line should cite the live daemon version (0.6.880)")
+    assert.is_false(found_stale, "must not cite the stale installed CLI version (0.6.283)")
   end)
 
   -- roast §5.3: "Live testing: enabled, no tests discovered yet" used to
@@ -323,5 +320,114 @@ describe("sagefs.health.version_drift", function()
   it("returns unknown for unparseable input", function()
     assert.are.equal("unknown", health.version_drift(nil, "0.6.0"))
     assert.are.equal("unknown", health.version_drift("0.6.0", "garbage"))
+  end)
+end)
+
+-- The :checkhealth compatibility section: wire (apiVersion) compatibility is
+-- the thing that can fail; the version-number comparison is information.
+describe("sagefs.health compatibility section", function()
+  local original_system, original_v, original_trim, original_health, original_loaded
+
+  before_each(function()
+    package.loaded["sagefs.health"] = nil
+    package.loaded["sagefs.compat"] = nil
+    original_system, original_v, original_trim = vim.fn.system, vim.v, vim.trim
+    original_health, original_loaded = vim.health, package.loaded["sagefs"]
+    vim.v = { shell_error = 1 }
+    vim.trim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+  end)
+
+  after_each(function()
+    vim.fn.system, vim.v, vim.trim = original_system, original_v, original_trim
+    vim.health, package.loaded["sagefs"] = original_health, original_loaded
+    package.loaded["sagefs.health"] = nil
+  end)
+
+  local function run(plugin, state, health_json)
+    local out = { ok = {}, info = {}, warn = {}, error = {}, hints = {} }
+    package.loaded["sagefs"] = {
+      version = plugin,
+      state = state,
+      config = { port = 37749, dashboard_port = 37750, auto_connect = false, check_on_save = false },
+      session_list = {}, active_session = nil, testing_state = nil,
+    }
+    vim.health = {
+      start = function(_) end,
+      ok = function(m) table.insert(out.ok, m) end,
+      info = function(m) table.insert(out.info, m) end,
+      warn = function(m, h) table.insert(out.warn, m); out.hints[m] = h end,
+      error = function(m, h) table.insert(out.error, m); out.hints[m] = h end,
+    }
+    vim.fn.system = function(cmd)
+      if health_json and cmd:find("localhost:37749/health", 1, true) then
+        vim.v.shell_error = 0
+        return health_json .. "\n200"
+      end
+      vim.v.shell_error = 1
+      return ""
+    end
+    require("sagefs.health").check()
+    return out
+  end
+
+  local function has(list, needle)
+    for _, m in ipairs(list) do if m:find(needle, 1, true) then return true end end
+    return false
+  end
+
+  it("says compatible when plugin and daemon agree on the api version", function()
+    local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
+    assert.is_true(has(out.ok, "plugin understands api 3, daemon speaks api 3: compatible"))
+    assert.equals(0, #out.warn)
+    assert.equals(0, #out.error)
+  end)
+
+  it("reads the api version off the /health probe when the plugin has not connected", function()
+    local out = run("0.6.875", { status = "disconnected" },
+      [[{"healthy":true,"status":"Ready","apiVersion":3,"version":"0.6.875.0","features":[]}]])
+    assert.is_true(has(out.ok, "plugin understands api 3, daemon speaks api 3: compatible"))
+  end)
+
+  it("names the incompatibility and the fix when the daemon is newer than the plugin understands", function()
+    local out = run("0.6.875", { status = "connected", api_version = 99, daemon_version = "0.6.875" })
+    local msg
+    for _, m in ipairs(out.error) do if m:find("api 99", 1, true) then msg = m end end
+    assert.is_truthy(msg, "a real incompatibility is reported as an error")
+    assert.is_truthy(table.concat(out.hints[msg], "\n"):find("update the plugin", 1, true))
+  end)
+
+  it("names the incompatibility and the fix when the daemon is older than the plugin needs", function()
+    local out = run("0.6.875", { status = "connected", api_version = 2, daemon_version = "0.6.700" })
+    local msg
+    for _, m in ipairs(out.error) do if m:find("api 2", 1, true) then msg = m end end
+    assert.is_truthy(msg)
+    assert.is_truthy(table.concat(out.hints[msg], "\n"):find("dotnet tool update --global sagefs", 1, true))
+  end)
+
+  it("stays silent about versions when plugin and daemon numbers match", function()
+    local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.875.0" })
+    assert.is_false(has(out.info, "update the plugin when you can"))
+    assert.is_false(has(out.info, "update the daemon when you can"))
+    assert.equals(0, #out.warn)
+  end)
+
+  it("prints a quiet info line, not a warning, when the daemon number is higher", function()
+    local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.880" })
+    assert.is_true(has(out.info, "plugin 0.6.875, daemon 0.6.880: update the plugin when you can"))
+    assert.equals(0, #out.warn)
+    assert.equals(0, #out.error)
+  end)
+
+  it("prints a quiet info line when the plugin number is higher", function()
+    local out = run("0.6.880", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
+    assert.is_true(has(out.info, "plugin 0.6.880, daemon 0.6.875: update the daemon when you can"))
+    assert.equals(0, #out.warn)
+  end)
+
+  it("never says the plugin is behind just because the numbers differ", function()
+    local out = run("0.5.543", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
+    for _, list in ipairs({ out.warn, out.error }) do
+      assert.is_false(has(list, "behind"))
+    end
   end)
 end)

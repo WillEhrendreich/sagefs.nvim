@@ -272,47 +272,66 @@ describe("smart eval session check (§5.6)", function()
   end)
 end)
 
--- §5.12: version drift used to be visible ONLY inside :checkhealth — a user
--- who never runs it never learns their plugin is a minor behind. This test
--- runs BEFORE the "health check discovery" tests below (both of which also
--- happen to hit a "behind" drift scenario) so it deterministically
--- consumes the one-time drift_warning_shown flag; the pre-existing tests
--- after it don't assert the flag's state either way.
-describe("version drift notification (§5.12)", function()
-  it("notifies once, outside :checkhealth, the first time the daemon is found ahead", function()
-    local sagefs = require("sagefs")
-    local transport = require("sagefs.transport")
-    local original_http_json = transport.http_json
-    local original_notify = vim.notify
-    local notifications = {}
-    local healthy = nil
+-- Compatibility is decided by the daemon's wire apiVersion, not by comparing
+-- version numbers (the two schemes were unrelated, so the old check said
+-- "plugin is behind" on every start). The startup warning appears only for
+-- a real incompatibility.
+local function probe_health_with(payload)
+  local sagefs = require("sagefs")
+  local transport = require("sagefs.transport")
+  local original_http_json = transport.http_json
+  local original_notify = vim.notify
+  local notifications = {}
+  local healthy = nil
 
-    transport.http_json = function(opts)
-      if opts.url:find("/health$") then
-        opts.callback(true, vim.json.encode({ healthy = true, status = "ready", features = {}, apiVersion = 7, version = "9.9.9" }))
-        return
-      end
-      error("unexpected discovery request: " .. opts.url)
+  transport.http_json = function(opts)
+    if opts.url:find("/health$") then
+      opts.callback(true, vim.json.encode(payload))
+      return
     end
+    error("unexpected discovery request: " .. opts.url)
+  end
+  vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
 
-    vim.notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end
+  sagefs.health_check(function(result) healthy = result end)
+  vim.wait(1000, function() return healthy ~= nil end, 10)
+  vim.wait(200, function() return false end, 10) -- let deferred notices land
 
-    sagefs.health_check(function(result) healthy = result end)
-    vim.wait(1000, function() return healthy ~= nil end, 10)
-    -- the drift notify is deliberately deferred a tick past the connect notify
-    vim.wait(200, function() return #notifications >= 2 end, 10)
+  transport.http_json = original_http_json
+  vim.notify = original_notify
+  return notifications
+end
 
-    transport.http_json = original_http_json
-    vim.notify = original_notify
-
-    local found_drift = false
+describe("startup compatibility warning", function()
+  it("stays silent when only the version numbers differ and the api matches", function()
+    local notifications = probe_health_with({
+      healthy = true, status = "ready", features = {}, apiVersion = 3, version = "9.9.9" })
     for _, n in ipairs(notifications) do
-      if n.msg:find("behind the SageFs daemon", 1, true) and n.msg:find("9.9.9", 1, true) then
-        found_drift = true
-        assert_eq(vim.log.levels.WARN, n.level, "drift notice should be a warning")
+      assert_falsy(n.level == vim.log.levels.WARN, "no warning for a version-number difference: " .. n.msg)
+    end
+  end)
+
+  it("warns once, naming the fix, when the daemon speaks an api the plugin does not understand", function()
+    local notifications = probe_health_with({
+      healthy = true, status = "ready", features = {}, apiVersion = 99, version = "9.9.9" })
+    local found = false
+    for _, n in ipairs(notifications) do
+      if n.msg:find("api 99", 1, true) and n.msg:find("update the plugin", 1, true) then
+        found = true
+        assert_eq(vim.log.levels.WARN, n.level, "an incompatibility is a warning")
       end
     end
-    assert_truthy(found_drift, "should notify about version drift outside :checkhealth")
+    assert_truthy(found, "should warn about the incompatible api version outside :checkhealth")
+  end)
+
+  it("warns for a daemon older than the plugin needs, and says to update the daemon", function()
+    local notifications = probe_health_with({
+      healthy = true, status = "ready", features = {}, apiVersion = 2, version = "0.6.100" })
+    local found = false
+    for _, n in ipairs(notifications) do
+      if n.msg:find("api 2", 1, true) and n.msg:find("update the daemon", 1, true) then found = true end
+    end
+    assert_truthy(found)
   end)
 end)
 
