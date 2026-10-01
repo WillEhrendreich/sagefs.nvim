@@ -34,6 +34,8 @@ describe("commands.register_simple_commands", function()
       clear_and_render = function() table.insert(calls, "clear_and_render") end,
       stop_sse = function() table.insert(calls, "stop_sse") end,
       notify = function(msg) table.insert(calls, "notify:" .. msg) end,
+      -- eval commands go through the session-routing guard; here it just runs the eval
+      smart_eval = function(eval_fn) return eval_fn end,
     }
   end)
 

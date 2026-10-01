@@ -15,14 +15,14 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       name = "SageFsEval",
       desc = "Evaluate current cell",
       handler = function()
-        plugin.eval_cell()
+        helpers.smart_eval(function() plugin.eval_cell() end)()
       end,
     },
     {
       name = "SageFsEvalAdvance",
       desc = "Evaluate current cell and move to next",
       handler = function()
-        plugin.eval_cell_and_advance()
+        helpers.smart_eval(function() plugin.eval_cell_and_advance() end)()
       end,
     },
     {
@@ -36,14 +36,14 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       name = "SageFsEvalFile",
       desc = "Evaluate entire file",
       handler = function()
-        plugin.eval_file()
+        helpers.smart_eval(function() plugin.eval_file() end)()
       end,
     },
     {
       name = "SageFsEvalLine",
       desc = "Evaluate current line only",
       handler = function()
-        plugin.eval_current_line()
+        helpers.smart_eval(function() plugin.eval_current_line() end)()
       end,
     },
     {
@@ -164,6 +164,7 @@ function M.register_commands(plugin, helpers)
         coverage_state = plugin.coverage_state,
         daemon_state = plugin.daemon_state,
         active_session = plugin.active_session,
+        eval_route = plugin.describe_eval_route and plugin.describe_eval_route() or nil,
         config = plugin.config,
       })
       local status_label = healthy and "✓ Connected" or "✗ Disconnected"
@@ -1473,12 +1474,12 @@ function M.register_keymaps(plugin, helpers, bufnr)
   -- Alt-Enter keymaps (no prefix, always available)
   km("n", "<A-CR>", smart_eval, "SageFs: Evaluate cell")
   km("v", "<A-CR>", smart_eval_sel, "SageFs: Evaluate selection")
-  km("n", "<S-A-CR>", function() plugin.eval_cell_and_advance() end,
+  km("n", "<S-A-CR>", helpers.smart_eval(function() plugin.eval_cell_and_advance() end),
     "SageFs: Evaluate cell and advance")
 
   -- Core eval
   km("n", "<leader>re", smart_eval, "SageFs: Evaluate cell")
-  km("n", "<leader>rl", function() plugin.eval_current_line() end,
+  km("n", "<leader>rl", helpers.smart_eval(function() plugin.eval_current_line() end),
     "SageFs: Evaluate current line")
   km("n", "<leader>rf", "<cmd>SageFsEvalFile<CR>", "SageFs: Evaluate file")
   km("n", require("sagefs.config").EXPAND_RESULT_KEY, "<cmd>SageFsResult<CR>",

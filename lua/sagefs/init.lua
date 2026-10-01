@@ -1059,6 +1059,9 @@ function M.switch_session(session_id, callback)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
       notify("Switched to session " .. (result.session_id or session_id))
+      -- list_sessions keeps the CURRENT active id, so without this the plugin
+      -- kept evaluating in the session the user just switched away from.
+      M.active_session = { id = result.session_id or session_id }
       M.list_sessions()
     else
       notify(result.error or "Failed to switch", vim.log.levels.ERROR)
@@ -1194,7 +1197,7 @@ function M.session_picker()
     local items = {}
     local lookup = {}
     for _, s in ipairs(result.sessions) do
-      local line = sessions.format_session_line(s)
+      local line = sessions.picker_label(s)
       table.insert(items, line)
       lookup[line] = s
     end
@@ -1238,7 +1241,7 @@ function M.session_picker()
   end)
 end
 
-function M.discover_and_create(working_dir)
+function M.discover_and_create(working_dir, prompt, quiet_if_none)
   working_dir = working_dir or vim.fn.getcwd()
   local fsproj_files = vim.fn.glob(working_dir .. "/**/*.fsproj", false, true)
 
@@ -1250,11 +1253,13 @@ function M.discover_and_create(working_dir)
   items = format.filter_excluded_paths(items)
 
   if #items == 0 then
-    notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    if not quiet_if_none then
+      notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    end
     return
   end
 
-  vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)
+  vim.ui.select(items, { prompt = prompt or "Select project to load:" }, function(choice)
     if not choice then return end
     M.create_session({ choice }, working_dir)
   end)
@@ -1287,46 +1292,169 @@ local function check_code(code)
 end
 
 -- ─── Smart Eval ───────────────────────────────────────────────────────────────
+-- Evals route by working directory (sessions.route). A session belongs to a
+-- directory and a git worktree is its own boundary, so the plugin never
+-- silently evaluates in another directory's session: when nothing here can
+-- take the eval it says which sessions exist and asks.
+
+--- Explicit "use this session for this directory" choices, keyed by the
+--- normalized directory. Set only by the user picking a session in the prompt.
+M.session_overrides = {}
+
+--- Nearest ancestor of `file` holding a `.git` (a directory in a plain
+--- checkout, a FILE in a git worktree): the checkout the file belongs to.
+local function checkout_root_of_dir(dir)
+  local found = vim.fs.find(".git", { upward = true, path = dir })[1]
+  return found and vim.fs.dirname(found) or nil
+end
+
+local function is_fsharp_path(path)
+  local lower = path:lower()
+  return lower:match("%.fsx?$") ~= nil or lower:match("%.fsi$") ~= nil
+end
+
+--- Where `buf` lives, as sessions.route wants it.
+---@param buf number|nil
+---@return sagefs.RouteTarget
+function M.eval_target(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buf)
+  -- Only an F# buffer says where we are; anything else (a help page, a
+  -- scratch buffer, the startup screen) routes by the working directory.
+  local file = (name ~= "" and is_fsharp_path(name)) and vim.fn.fnamemodify(name, ":p") or nil
+  local cwd = vim.fn.getcwd()
+  local root = checkout_root_of_dir(file and vim.fs.dirname(file) or cwd)
+  return {
+    file = file,
+    cwd = cwd,
+    root = root,
+    active_id = M.active_session and M.active_session.id or nil,
+    override_id = M.session_overrides[sessions.normalize_path(root or cwd)],
+  }
+end
+
+--- Offer to create a session for the directory (explicit project choice, the
+--- plugin never infers one), listing the sessions that exist. `eval_fn`, when
+--- given, runs if the user picks an existing session explicitly.
+function M.offer_session_for(target, others, eval_fn)
+  local dir = target.root or target.cwd
+  notify(sessions.no_session_message(dir, others), vim.log.levels.WARN)
+
+  local items = { "Create a session for " .. dir }
+  local picks = { { create = true } }
+  local shown = 0
+  for _, s in ipairs(others) do
+    if s.status ~= "Stopped" and shown < 5 then
+      shown = shown + 1
+      items[#items + 1] = "Evaluate in " .. sessions.picker_label(s) .. " (not this directory)"
+      picks[#picks + 1] = { session = s }
+    end
+  end
+  items[#items + 1] = "Cancel"
+
+  vim.ui.select(items, { prompt = "SageFs: no session for " .. dir .. ". Nothing was sent. Choose:" }, function(choice, idx)
+    if not choice then return end
+    local pick = picks[idx]
+    if not pick then return end -- Cancel
+    if pick.create then
+      M.discover_and_create(dir)
+    elseif pick.session then
+      M.session_overrides[sessions.normalize_path(dir)] = pick.session.id
+      M.active_session = pick.session
+      if eval_fn then eval_fn() end
+    end
+  end)
+end
 
 local function smart_eval_with_session_check(eval_fn)
   return function()
+    local target = M.eval_target()
+
+    -- Fast path: the session we already hold is the one this directory routes
+    -- to, so there is nothing to ask the daemon.
     if M.active_session then
-      eval_fn()
-      return
+      local r = sessions.route(M.session_list, target)
+      if r.kind == "match" and r.session.id == M.active_session.id then
+        eval_fn()
+        return
+      end
     end
 
     M.list_sessions(function(result)
-      if result.ok and #result.sessions > 0 then
-        local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
-        if cwd_session then
-          M.active_session = cwd_session
-          eval_fn()
-          return
-        end
-      end
-
       -- §5.6: `result.ok == false` (the transport/daemon itself is
-      -- unreachable) and "the daemon answered with zero sessions" used to
-      -- collapse into the identical "No active session for this directory"
-      -- message — the plugin HAD the transport failure in hand and rendered
-      -- the opposite of the truth, sending the user to "Create session now"
-      -- against a daemon that was never going to answer. Say what's
-      -- actually wrong and name the one command that fixes it.
+      -- unreachable) and "the daemon answered with no session for here" used
+      -- to collapse into the identical "No active session for this
+      -- directory" message — the plugin HAD the transport failure in hand and
+      -- rendered the opposite of the truth. Say what's actually wrong and
+      -- name the one command that fixes it.
       if not result.ok then
         notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
         return
       end
 
-      notify("No active session for this directory", vim.log.levels.WARN)
-      vim.ui.select({ "Create session now", "Cancel" }, {
-        prompt = "No SageFs session found. Create one?",
-      }, function(choice)
-        if choice == "Create session now" then
-          M.discover_and_create(vim.fn.getcwd())
+      target.active_id = M.active_session and M.active_session.id or nil
+      local r = sessions.route(result.sessions, target)
+
+      if r.kind == "match" then
+        M.active_session = r.session
+        eval_fn()
+        return
+      end
+
+      if r.kind == "ambiguous" then
+        local items, byname = {}, {}
+        for _, s in ipairs(r.candidates) do
+          local label = sessions.picker_label(s)
+          items[#items + 1] = label
+          byname[label] = s
         end
-      end)
+        vim.ui.select(items, { prompt = "SageFs: several sessions serve " .. r.dir .. ". Evaluate in:" }, function(choice)
+          local s = choice and byname[choice]
+          if not s then return end
+          M.session_overrides[sessions.normalize_path(r.dir)] = s.id
+          M.active_session = s
+          eval_fn()
+        end)
+        return
+      end
+
+      M.offer_session_for(target, result.sessions, eval_fn)
     end)
   end
+end
+
+--- One line for :SageFsStatus: which session an eval from the current buffer
+--- would go to, and why not when there is none.
+function M.describe_eval_route()
+  local target = M.eval_target()
+  local r = sessions.route(M.session_list, target)
+  if r.kind == "match" then
+    return string.format("%s [%s] (%s)", r.session.name or r.session.id, (r.session.id or ""):sub(1, 8), r.session.status or "?")
+  elseif r.kind == "ambiguous" then
+    return string.format("ambiguous: %d sessions serve %s", #r.candidates, r.dir)
+  end
+  return string.format("nothing (no session for %s)", r.dir)
+end
+
+--- At startup, on a shared daemon: if no session belongs to this directory,
+--- offer to create one for it. The daemon having OTHER sessions is not a
+--- reason to stay quiet (it used to need zero).
+---@param result { ok: boolean, sessions: table[] }
+function M.offer_session_for_startup(result)
+  if not result or not result.ok then return end
+  local target = M.eval_target()
+  target.active_id = nil
+  local r = sessions.route(result.sessions, target)
+  if r.kind ~= "none" then return end
+  local dir = target.root or target.cwd
+  local prompt
+  if #result.sessions > 0 then
+    prompt = string.format("SageFs: no session for %s (%d other session%s exist). Create one with project:",
+      dir, #result.sessions, #result.sessions == 1 and "" or "s")
+  else
+    prompt = string.format("SageFs: no session for %s. Create one with project:", dir)
+  end
+  M.discover_and_create(dir, prompt, true)
 end
 
 -- Exposed for tests — see the start_sse/stop_sse note above.
@@ -1629,18 +1757,7 @@ function M.setup(opts)
         if healthy then
           start_sse()
           M.list_sessions(function(result)
-            if result.ok and not M.active_session and #result.sessions == 0 then
-              local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
-              if #fsproj_files > 0 then
-                local names = {}
-                for _, f in ipairs(fsproj_files) do
-                  table.insert(names, vim.fn.fnamemodify(f, ":~:."))
-                end
-                vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                  if choice then M.create_session({ choice }) end
-                end)
-              end
-            end
+            M.offer_session_for_startup(result)
           end)
         end
       end)

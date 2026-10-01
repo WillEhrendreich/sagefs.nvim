@@ -398,6 +398,7 @@ describe("startup offers a session for this directory on a shared daemon", funct
     vim.cmd("cd " .. vim.fn.fnameescape(root))
     local sagefs = require("sagefs")
     sagefs.setup({ auto_connect = false })
+    vim.cmd("enew") -- a fresh buffer: the previous test's file must not decide where we are
     local original_select = vim.ui.select
     local asked = 0
     vim.ui.select = function(_, _, cb) asked = asked + 1; cb(nil) end
@@ -407,6 +408,34 @@ describe("startup offers a session for this directory on a shared daemon", funct
     } })
     vim.ui.select = original_select
     eq(0, asked)
+  end)
+end)
+
+describe("switching sessions", function()
+  it("makes the switched session the one evals go to (it used to keep the old active id)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local list = vim.json.encode({ sessions = {
+      { id = "s1", status = "Ready", projects = { "A.fsproj" }, workingDirectory = "/a" },
+      { id = "s2", status = "Ready", projects = { "B.fsproj" }, workingDirectory = "/b" },
+    } })
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions/switch", 1, true) then
+        opts.callback(true, vim.json.encode({ success = true, sessionId = "s2", message = "ok" }))
+      elseif opts.url:find("/api/sessions$") then
+        opts.callback(true, list)
+      end
+    end
+    local original_notify = vim.notify
+    vim.notify = function() end
+    sagefs.active_session = { id = "s1", status = "Ready", projects = { "A.fsproj" }, working_directory = "/a" }
+    sagefs.switch_session("s2")
+    transport.http_json = original
+    vim.notify = original_notify
+    eq("s2", sagefs.active_session and sagefs.active_session.id, "active session after switch")
+    eq("Ready", sagefs.active_session.status, "and it is the full record from the list")
   end)
 end)
 

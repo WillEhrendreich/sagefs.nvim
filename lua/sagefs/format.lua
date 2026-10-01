@@ -322,6 +322,9 @@ function M.format_status_report(info)
   else
     table.insert(lines, "Session:   (none)")
   end
+  if info.eval_route then
+    table.insert(lines, "Eval here: " .. info.eval_route)
+  end
 
   -- Tests
   local ts = info.testing_state

@@ -317,6 +317,23 @@ end)
 
 -- ─── format_status_report ─────────────────────────────────────────────────────
 
+describe("format_status_report: where an eval goes", function()
+  it("says which session an eval from the current buffer would go to", function()
+    local lines = format.format_status_report({
+      active_session = { id = "ab12cd34", name = "DemoEnv" },
+      eval_route = "DemoEnv [ab12cd34] (Ready)",
+      config = { port = 37749, dashboard_port = 37750 },
+    })
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("Eval here: DemoEnv [ab12cd34] (Ready)", 1, true))
+  end)
+
+  it("says nothing when it was not asked", function()
+    local lines = format.format_status_report({ config = { port = 37749 } })
+    assert.is_falsy(table.concat(lines, "\n"):find("Eval here", 1, true))
+  end)
+end)
+
 describe("format_status_report", function()
   local testing = require("sagefs.testing")
   local coverage = require("sagefs.coverage")
