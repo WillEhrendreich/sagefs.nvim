@@ -200,6 +200,25 @@ local TARGET_MAP = {
   annotations = { key = "annotations_state", mod = function() return annotations end },
 }
 
+--- Fold a session lifecycle announcement (sessions.lifecycle_update) into
+--- the session list and the active session. Returns whether the session was
+--- known, plus its id.
+local function fold_session_update(data)
+  local sid, fields = sessions.lifecycle_update(data)
+  if not sid then return false, nil end
+  local found
+  M.session_list, M.active_session, found = sessions.apply_update(M.session_list, M.active_session, sid, fields)
+  return found, sid
+end
+
+local function clear_warmup_state()
+  M.warmup_phase = nil
+  M.warmup_step = 0
+  M.warmup_total = 0
+  M.warmup_message = ""
+  M.warmup_progress = 0
+end
+
 local function build_handlers()
   local handlers = {}
 
@@ -250,19 +269,36 @@ local function build_handlers()
       M.apply_diagnostics(data.diagnostics)
     end
   end
+  -- `state {"sessionReady": <sid>}`: the daemon says warmup finished. This
+  -- was classified as "session_ready" and then dropped, so the statusline
+  -- kept the "(Starting)" snapshot taken right after create.
+  handlers.session_ready = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local found, sid = fold_session_update(data)
+    if not sid then return end
+    if not found then
+      -- Ready arrived before the session list knew this session (the list
+      -- request after create is still in flight): fetch it.
+      M.list_sessions()
+    end
+    if not M.active_session or M.active_session.id == sid then
+      clear_warmup_state()
+    end
+  end
   handlers.session_event = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
     local event_type = data.type
     if event_type == "warmup_context_snapshot" then
+      -- Another session's warmup context is not this session's.
+      if data.sessionId and M.active_session and data.sessionId ~= M.active_session.id then return end
       M.warmup_context = data.context
       -- Clear warmup progress state — session is ready
-      M.warmup_phase = nil
-      M.warmup_step = 0
-      M.warmup_total = 0
-      M.warmup_message = ""
-      M.warmup_progress = 0
+      clear_warmup_state()
       fire_user_event("warmup_context", data)
+    elseif event_type == "session_health_changed" then
+      fold_session_update(data)
     elseif event_type == "hotreload_snapshot" then
       M.hotreload_files = data.watchedFiles or {}
       fire_user_event("hotreload_snapshot", data)
@@ -298,8 +334,18 @@ local function build_handlers()
   handlers.warmup_progress = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
+    -- Only the active session's warmup belongs on this statusline (and in
+    -- these notifications); another session on a shared daemon must not
+    -- take it over. With no active session yet, show everything.
+    local event_sid = data.SessionId or data.sessionId
+    if event_sid and M.active_session and event_sid ~= M.active_session.id then return end
+    -- The `state` variant of warmup progress carries only step/total (no
+    -- Phase). It used to erase the phase and notify an empty "Warming up: ".
+    -- The phase-bearing SseWriter event says everything it does.
+    local phase = data.Phase or data.phase
+    if phase == nil then return end
     local prev_phase = M.warmup_phase
-    M.warmup_phase = data.Phase or data.phase
+    M.warmup_phase = phase
     M.warmup_step = data.Step or data.step or 0
     M.warmup_total = data.Total or data.total or 0
     M.warmup_message = data.Message or data.message or ""
@@ -325,6 +371,7 @@ local function build_handlers()
     -- 0.6 wire: { sessionFaulted = <sid>, error = <msg> }; older: session_id/reason.
     local sid = data.sessionFaulted or data.session_id or data.SessionId or "?"
     local reason = data.error or data.reason or data.Reason or "unknown"
+    fold_session_update(data)
     -- Clear all session-specific state so stale results don't linger
     M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
     M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
@@ -482,6 +529,12 @@ local function start_sse()
     end,
     on_connect = function()
       M.state = model.set_status(M.state, "connected")
+      -- A status change announced while disconnected (or before this stream
+      -- existed) is never replayed as an event; re-read the snapshot so a
+      -- session cannot stay "(Starting)" because we missed its Ready.
+      if M.active_session or #M.session_list > 0 then
+        M.list_sessions()
+      end
       -- Cancel eval watchdog on reconnect
       if eval_watchdog_timer then
         pcall(vim.fn.timer_stop, eval_watchdog_timer)

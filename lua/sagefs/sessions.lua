@@ -172,6 +172,71 @@ function M.format_statusline(s, conn_status)
   return string.format("%s %s (%s)%s", icon, name, s.status or "?", health_str)
 end
 
+-- ─── Lifecycle updates (SSE) ─────────────────────────────────────────────────
+-- `active_session` and `session_list` are snapshots of /api/sessions. The
+-- daemon announces status changes over SSE; these two pure functions fold
+-- such an announcement into the snapshots (the plugin used to drop them, so
+-- a session stayed "(Starting)" on the statusline forever).
+
+--- Merge `fields` into the session with id `sid`, in the list and in the
+--- active session. Pure: the inputs are not mutated; only the changed entry
+--- is copied. `found` is false when no list entry and not the active session
+--- has that id.
+---@param session_list table[]|nil
+---@param active_session table|nil
+---@param sid string
+---@param fields table
+---@return table[] new_list, table|nil new_active, boolean found
+function M.apply_update(session_list, active_session, sid, fields)
+  local function patched(s)
+    local copy = {}
+    for k, v in pairs(s) do copy[k] = v end
+    for k, v in pairs(fields) do copy[k] = v end
+    return copy
+  end
+
+  local found = false
+  local new_list = {}
+  for i, s in ipairs(session_list or {}) do
+    if s.id == sid then
+      new_list[i] = patched(s)
+      found = true
+    else
+      new_list[i] = s
+    end
+  end
+
+  local new_active = active_session
+  if active_session and active_session.id == sid then
+    new_active = patched(active_session)
+    found = true
+  end
+
+  return new_list, new_active, found
+end
+
+--- Read a session lifecycle announcement. Returns the session id and the
+--- fields to merge (for apply_update), or nil when `data` is not one.
+---   state envelope  { sessionReady = <sid> }
+---   state envelope  { sessionFaulted = <sid>, error = <msg> }
+---   session event   { type = "session_health_changed", sessionId, health }
+---@param data table|nil decoded JSON
+---@return string|nil sid, table|nil fields
+function M.lifecycle_update(data)
+  if type(data) ~= "table" then return nil end
+  if type(data.sessionReady) == "string" then
+    return data.sessionReady, { status = "Ready" }
+  end
+  if type(data.sessionFaulted) == "string" then
+    return data.sessionFaulted, { status = "Faulted", fault_reason = data.error }
+  end
+  if data.type == "session_health_changed"
+    and type(data.sessionId) == "string" and type(data.health) == "table" then
+    return data.sessionId, { health = { status = data.health.status, reason = data.health.reason } }
+  end
+  return nil
+end
+
 -- ─── Find session for working directory ──────────────────────────────────────
 
 function M.find_session_for_dir(sessions_list, dir)
