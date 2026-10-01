@@ -59,13 +59,13 @@ describe("sagefs.format.wrap_lines", function()
   end)
 
   it("does not split a multi-byte character", function()
-    local wrapped = format.wrap_lines({ { text = string.rep("✓", 30), hl = "A" } }, 10)
+    local wrapped = format.wrap_lines({ { text = string.rep("✓", 30), hl = "A" } }, 14)
     for _, row in ipairs(wrapped) do
       -- every row is whole characters: re-encoding it is valid
       assert.is_nil(row.text:find("^[\128-\191]"))
       local chars = 0
       for _ in row.text:gmatch("[^\128-\191][\128-\191]*") do chars = chars + 1 end
-      assert.is_true(chars <= 10)
+      assert.is_true(chars <= 14)
     end
   end)
 

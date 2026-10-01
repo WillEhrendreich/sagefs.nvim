@@ -138,6 +138,111 @@ function M.format_virtual_lines(result)
   return lines
 end
 
+-- ─── Always-visible result display ────────────────────────────────────────────
+-- Pure helpers behind placement.lua's decisions: the whole result as lines,
+-- wrapped to the window, an inline summary that fits, and the expand footer.
+
+--- Hard ceiling on result lines we build (a runaway result must not stall a redraw).
+M.MAX_RESULT_LINES = 500
+
+--- Narrowest inline summary worth drawing at the end of a code line.
+M.MIN_INLINE_BUDGET = 8
+
+--- Split a string into UTF-8 characters (LuaJIT-safe: no utf8 library).
+local function chars_of(text)
+  local out = {}
+  for ch in text:gmatch("[^\128-\191][\128-\191]*") do out[#out + 1] = ch end
+  return out
+end
+
+--- The whole result as display lines (two-space indent), up to MAX_RESULT_LINES.
+---@param result {ok: boolean, output: string?, error: string?, stale: boolean?}
+---@return {text: string, hl: string}[]
+function M.result_lines(result)
+  local hl = result.stale and "SageFsStale" or (result.ok and "SageFsOutput" or "SageFsError")
+  local raw = result.ok and (result.output or "") or (result.error or "error")
+  raw = raw:gsub("\r", "")
+  if raw == "" then
+    return { { text = "  (no output)", hl = hl } }
+  end
+  local lines = {}
+  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
+    if #lines >= M.MAX_RESULT_LINES then
+      lines[#lines + 1] = { text = "  … (truncated)", hl = hl }
+      break
+    end
+    lines[#lines + 1] = { text = "  " .. line, hl = hl }
+  end
+  -- (raw .. "\n") yields a final empty entry when raw already ended in a newline
+  if #lines > 1 and lines[#lines].text == "  " then lines[#lines] = nil end
+  return lines
+end
+
+--- Wrap display lines to `width` characters. Continuation rows are indented
+--- four spaces and keep the line's highlight. Too narrow to wrap: unchanged.
+---@param lines {text: string, hl: string}[]
+---@param width number
+---@return {text: string, hl: string}[]
+function M.wrap_lines(lines, width)
+  if not width or width < 12 then return lines end
+  local cont = "    "
+  local out = {}
+  for _, line in ipairs(lines) do
+    local chars = chars_of(line.text)
+    if #chars <= width then
+      out[#out + 1] = line
+    else
+      local pos = 1
+      local first = true
+      while pos <= #chars do
+        local room = first and width or (width - #cont)
+        local stop = math.min(pos + room - 1, #chars)
+        if stop < #chars then
+          -- prefer breaking after a space in the last half of the row
+          for k = stop, pos + math.floor(room / 2), -1 do
+            if chars[k] == " " then stop = k; break end
+          end
+        end
+        out[#out + 1] = {
+          text = (first and "" or cont) .. table.concat(chars, "", pos, stop),
+          hl = line.hl,
+        }
+        pos = stop + 1
+        first = false
+      end
+    end
+  end
+  return out
+end
+
+--- Cut an inline summary to `budget` display characters (ending in "…").
+--- nil when the budget is too small to be worth drawing.
+---@param text string
+---@param budget number
+---@return string|nil
+function M.fit_inline(text, budget)
+  if not budget or budget < M.MIN_INLINE_BUDGET then return nil end
+  local chars = chars_of(text)
+  if #chars <= budget then return text end
+  return table.concat(chars, "", 1, budget - 1) .. "…"
+end
+
+--- The footer under a truncated result.
+---@param hidden number lines not drawn
+---@param key string how to expand, e.g. "<leader>rE"
+---@return string
+function M.expand_footer(hidden, key)
+  return string.format("  … %d more %s, %s to expand", hidden, hidden == 1 and "line" or "lines", key)
+end
+
+--- True when the result is one line (nothing for virtual lines to add).
+---@param text string|nil
+---@return boolean
+function M.is_single_line(text)
+  local t = (text or ""):gsub("\r", ""):gsub("\n+$", "")
+  return not t:find("\n", 1, true)
+end
+
 --- Get gutter sign for a cell status
 ---@param status string "success"|"error"|"running"|"stale"|"idle"
 ---@return {text: string, hl: string}
