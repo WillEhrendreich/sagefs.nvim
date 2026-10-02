@@ -373,7 +373,11 @@ Analysis ~
     Soft reset active FSI session.
 
 :SageFsHardReset                                        *:SageFsHardReset*
-    Hard reset (rebuild) active FSI session.
+    Hard reset (rebuild) active FSI session. The daemon rebuilds in the
+    background while the current worker keeps serving. The plugin says it
+    started, then reads the session list until `lastRestart` says how the
+    build ended and reports it (an error with the compiler's words when it
+    failed).
 
 :SageFsContext                                          *:SageFsContext*
     Show session context (assemblies, namespaces, warmup).

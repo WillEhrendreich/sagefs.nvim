@@ -374,6 +374,10 @@ A different thing from the one above. `replFreshness` is the REPL behind the run
 
 The daemon reads the disk when it is asked and never pushes the answer, so the plugin asks again at the two moments it can change: after a save of an F# file (`*.fs`, `*.fsx`, `*.fsi`, `*.fsproj`, one coalesced read for a burst of saves) and when a test run completes. A daemon older than the field sends nothing, and the plugin then shows nothing: an absent field is never read as in sync.
 
+### A hard reset builds in the background
+
+`:SageFsHardReset` asks the daemon for a rebuild. The daemon answers at once (`Hard reset initiated`) and builds on in the background while the current worker keeps serving, so the plugin says `Hard reset started` and not `complete`. It then reads the session list every two seconds until `lastRestart` says how the build ended, and tells you: `Rebuild finished: the session runs the new build.`, or an error with the compiler's own words if it failed (`Rebuild FAILED, the session still runs the previous build.`). A failed rebuild also stays in the statusline as `⚠ rebuild FAILED (old build still serves)` until the next rebuild, and a running one shows as `⟳ rebuilding`. A daemon from before the background build answers when the work is done, and the plugin says `complete` for that one, as it always did.
+
 ### The cohort and the trunk
 
 `:SageFsCohort` opens a scratch buffer with the cohort's members, claims, landing queue, the integration session and, once an integration is configured, the trunk: one `trunk <landingId>: ...` line per landing, in the same words as above (`Program.fs applied, new body has not run yet (via metadata delta)`). There is no REST route for it, so the plugin makes an MCP `tools/call` of `get_cohort_status` ([`mcp_client.lua`](lua/sagefs/mcp_client.lua)). The view refreshes on the cohort events (`SageFsCohortMatrix`, `SageFsClaimChanged`, `SageFsLandingChanged`, `SageFsSaveObserved`, `SageFsCohortChanged`) and on every reload report, because a trunk line turns from applied to patched with no cohort event at all.
@@ -601,8 +605,9 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `closed_set.lua` | Closed sets of named wire tokens with a membership test; a token outside the set shows as "unrecognized", never guessed |
 | `reload_state.lua` | Hot reload report parsing, the one display function (statusline, virtual text, `:SageFsReloadStatus`, dashboard), and the per-session fold |
 | `repl_freshness.lua` | `InSync` / `BehindApp`, the statusline segment, the eval message, the WARNING banner, the announcement gate |
+| `rebuild.lua` | `lastRestart`: the statusline segment, the "started in the background" answer, and the rule for following a rebuild until it ends |
 | `source_state.lua` | `InSync` / `Stale` / `Rebuilding` / `Unknown`, the statusline segment, the panel lines, the `:SageFsStatus` line |
-| `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, `sourceState`, the next one is one `register` call) |
+| `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, `sourceState`, `lastRestart`, the next one is one `register` call) |
 | `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member-handle masking |
 | `mcp_client.lua` | Small MCP client over the daemon's streamable HTTP transport |
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |

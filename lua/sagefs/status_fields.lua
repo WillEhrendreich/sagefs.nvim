@@ -4,9 +4,9 @@
 -- Every session report the daemon sends (GET /api/sessions, the sessions://list
 -- JSON, get_session_status) carries closed fields that say something true about
 -- the session: `lastReload` (what the last save did), `replFreshness` (whether the
--- REPL runs the app's build). The plugin reads them here and nowhere else. A new
--- field the daemon adds next (sourceState, the build behind the files on disk, was the
--- last) is ONE entry in FIELDS: the JSON key, the key it is stored under, its parser,
+-- REPL runs the app's build), `sourceState` (whether the build is behind the files on
+-- disk), `lastRestart` (what the last rebuild did). The plugin reads them here and
+-- nowhere else. A new field the daemon adds next is ONE entry in FIELDS: the JSON key, the key it is stored under, its parser,
 -- and its statusline segment. sessions.lua, the statusline and the panels pick it up
 -- from this list.
 --
@@ -18,6 +18,7 @@
 local reload_state = require("sagefs.reload_state")
 local repl_freshness = require("sagefs.repl_freshness")
 local source_state = require("sagefs.source_state")
+local rebuild = require("sagefs.rebuild")
 
 local M = {}
 
@@ -48,6 +49,16 @@ local FIELDS = {
     key = "source_state",
     parse = source_state.parse,
     segment = function(value) return source_state.segment(value) end,
+  },
+  {
+    -- What the last rebuild did: running, or failed (and whether the old build serves).
+    -- Not said twice when sourceState already says Rebuilding.
+    json = "lastRestart",
+    key = "last_restart",
+    parse = rebuild.parse,
+    segment = function(value, ctx)
+      return rebuild.segment(value, ctx.session and ctx.session.source_state or nil)
+    end,
   },
 }
 

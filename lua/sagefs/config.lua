@@ -23,6 +23,10 @@ M.EXPAND_RESULT_KEY = "<leader>rE"
 --- announce readiness can come before the reply and be missed.
 M.SESSION_WARMUP_POLL_MS = 2000
 
+--- After a hard reset the daemon builds in the background; the session list is
+--- re-read this often until its lastRestart says how the rebuild ended.
+M.REBUILD_POLL_MS = 2000
+
 --- Result rows drawn under a cell before the footer takes over.
 M.RESULT_MAX_LINES = 12
 

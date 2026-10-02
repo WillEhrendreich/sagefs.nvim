@@ -25,6 +25,7 @@ local cell_highlight = require("sagefs.cell_highlight")
 local util = require("sagefs.util")
 local wire_runtime = require("sagefs.wire_runtime")
 local reload_ui = require("sagefs.reload_ui")
+local rebuild = require("sagefs.rebuild")
 
 local M = {}
 
@@ -1341,10 +1342,51 @@ function M.reset_session(callback)
   end)
 end
 
+local rebuild_follows = {} -- session id -> true while a rebuild is being followed
+
+--- Read the session list every REBUILD_POLL_MS until lastRestart says how the rebuild
+--- that was just requested ended, and say it. `before` is lastRestart as it was when
+--- the request went out. One follower per session.
+local function follow_rebuild(sid, before)
+  if rebuild_follows[sid] then return end
+  rebuild_follows[sid] = true
+  local follow = rebuild.follow_new(before)
+  local function look()
+    M.list_sessions(function(result)
+      local current
+      if result.ok then
+        for _, s in ipairs(result.sessions) do
+          if s.id == sid then current = s.last_restart end
+        end
+      end
+      local result_now
+      follow, result_now = rebuild.follow_step(follow, current)
+      -- A list that could not be read (daemon down) is not an answer, but it is not a reason to poll forever either.
+      if result_now == nil and result.ok then
+        vim.defer_fn(look, require("sagefs.config").REBUILD_POLL_MS)
+        return
+      end
+      rebuild_follows[sid] = nil
+      if result_now then notify(result_now.text, result_now.level) end
+    end)
+  end
+  vim.defer_fn(look, require("sagefs.config").REBUILD_POLL_MS)
+end
+
 function M.hard_reset(callback)
+  local sid = M.active_session and M.active_session.id or nil
+  local before = M.active_session and M.active_session.last_restart or nil
   session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
     if ok then
-      notify("Hard reset complete (rebuild)")
+      -- The daemon answers "initiated" and builds on in the background: the build has
+      -- not finished, and may still fail. Its outcome is lastRestart on the session list.
+      local decode_ok, parsed = util.json_decode(raw)
+      if sid and rebuild.started_in_background(decode_ok and parsed or nil) then
+        notify(rebuild.started_message())
+        follow_rebuild(sid, before)
+      else
+        notify("Hard reset complete (rebuild)")
+      end
       M.wire_runtime().on_hard_reset()
     else
       local decode_ok, parsed = util.json_decode(raw)
