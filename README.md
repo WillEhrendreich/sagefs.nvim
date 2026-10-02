@@ -123,7 +123,7 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
-| **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtD` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
+| **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtg` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
 | **Live bindings** | `:SageFsBindings` opens a split with the daemon's value tree, a key to run one held getter, and a Safe/Everything/Off mode switch. See [Live bindings](#live-bindings). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
@@ -226,7 +226,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rtp` | n | Test trace |
 | `<leader>rte` | n | Enable live testing |
 | `<leader>rtd` | n | Disable live testing |
-| `<leader>rtD` | n | Debug the failing test on this line (nvim-dap) |
+| `<leader>rtg` | n | Debug the failing test on this line (nvim-dap) |
 | `<leader>rtc` | n | Tests that cover this line (float, `<CR>` jumps) |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
@@ -392,7 +392,7 @@ Cycle with `<leader>rD`:
 
 A test runs in the process that loaded your code, so debugging it means attaching a .NET debugger to that process. SageFs has two routes for that, and the plugin drives them: `POST /api/live-testing/debug` holds the test and answers a process id, and `POST /api/live-testing/debug/continue` releases it and waits for the result.
 
-Put the cursor on a line that shows the `▸ debug` hint (the daemon marks a failing test's lens with a debug command, and I draw it as quiet virtual text at the end of the line) and press `<leader>rtD`, or run `:SageFsDebugTest`. With an argument it takes a test id or a name pattern. If more than one test fails on the line it asks which.
+Put the cursor on a line that shows the `▸ debug` hint (the daemon marks a failing test's lens with a debug command, and I draw it as quiet virtual text at the end of the line) and press `<leader>rtg`, or run `:SageFsDebugTest`. With an argument it takes a test id or a name pattern. If more than one test fails on the line it asks which. With the cursor on a line that has no failing test, I name the one failing test of the file and ask before I hold it, because running a test has side effects. (The key is `g` for "go debug". `<leader>rtD` sat one shifted letter away from `<leader>rtd`, which disables live testing.) The hint follows the display density: `minimal` draws none.
 
 What happens, in order:
 
@@ -401,7 +401,11 @@ What happens, in order:
 3. nvim-dap attaches to the pid. I release the test only after the attach has finished, which is when the adapter answers `configurationDone`. Releasing earlier would run the test before your breakpoints bind.
 4. I keep asking the daemon while it answers `still_running`, so a test sitting on a breakpoint for an hour is fine. When it finishes I detach without killing the host and show the result.
 
-The hold never outlives the debugger. I release it when the debug session ends, when `dap.run` fails, when the two minute hold window runs out, when the buffer you started from is deleted and when Neovim exits. One debug run at a time, because the host holds one test at a time.
+I do not leave a test held behind a debugger that is gone. I release the hold when the debug session ends, when `dap.run` fails, when the adapter dies or never starts (I look for a session of mine 5 seconds after `dap.run`), when the buffer you started from is deleted (also while the daemon is still answering the hold request) and when Neovim exits. If you quit while the daemon has not answered the hold yet, I wait up to 2 seconds for the answer and release it before Neovim goes. Whatever slips past those meets the backstop: the hold window is two minutes, and I release when it runs out.
+
+Four cases wait for that backstop. An adapter that starts and then never answers `initialize` looks alive, so I wait the two minutes. A Neovim that is killed instead of quit cannot release anything. A daemon that takes longer than 2 seconds to answer a hold you quit on leaves that hold to its own window. If the daemon cannot be reached when I release, I try twice, one second apart, and then tell you the test may stay held for up to the two minutes.
+
+One debug run at a time, because the host holds one test at a time.
 
 nvim-dap is optional. Without it I still hold the test and print the pid and the instruction (attach to process N with any coreclr debugger), and `:SageFsDebugRelease` lets the test run once you are attached. Install [nvim-dap](https://github.com/mfussenegger/nvim-dap) and netcoredbg (`:MasonInstall netcoredbg`) and the whole thing is automatic.
 

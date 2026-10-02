@@ -361,7 +361,7 @@ Testing ~
   <leader>rtp  Test trace (three-speed pipeline state)
   <leader>rte  Enable live testing
   <leader>rtd  Disable live testing
-  <leader>rtD  Debug the failing test on this line (nvim-dap)
+  <leader>rtg  Debug the failing test on this line (nvim-dap)
   <leader>rtc  Tests that cover this line (float, <CR> jumps)
   <leader>tf   Filter tests by name pattern (prompts for input)
   <leader>tF   Run all tests (clears any active filter)
@@ -442,7 +442,11 @@ Commands: |:SageFsTestPanel|, |:SageFsRunTests|, |:SageFsEnableTesting|
 A test runs in the process that loaded your code, so debugging it means
 attaching a .NET debugger to that process. Put the cursor on a line that
 shows the "debug" hint (end of line, drawn for every failing test) and
-press <leader>rtD, or run |:SageFsDebugTest|.
+press <leader>rtg, or run |:SageFsDebugTest|. With the cursor on a line that
+has no failing test, the one failing test of the file is named and you are
+asked before it is held. The hint is drawn only when the display density
+allows it (minimal draws none). <leader>rtD is not used: it sits one shifted
+letter from <leader>rtd, which disables live testing.
 
 The plugin asks the daemon to hold the test (POST /api/live-testing/debug),
 attaches the coreclr adapter through nvim-dap to the pid it answers, then
@@ -455,9 +459,19 @@ configured is used as it is. Otherwise netcoredbg is looked for on PATH and
 under the mason directory. Nothing is ever installed. If it is missing, the
 message says what to install and no test is held.
 
-The hold never outlives the debugger. It is released when the debug session
-ends, when dap.run fails, when the two minute hold window runs out, when the
-buffer you started from is deleted and when Neovim exits.
+A test is not left held behind a debugger that is gone. The hold is released
+when the debug session ends, when dap.run fails, when the adapter dies or
+never starts (a session of ours is looked for 5 seconds after dap.run), when
+the buffer you started from is deleted (also while the daemon is still
+answering the hold request) and when Neovim exits. If you quit before the
+daemon answered the hold, the answer is waited for up to 2 seconds and
+released before Neovim goes. The backstop is the two minute hold window.
+
+Four cases wait for that backstop: an adapter that starts and never answers
+initialize, a Neovim that is killed instead of quit, a daemon that takes
+longer than 2 seconds to answer a hold you quit on, and a daemon that cannot
+be reached while releasing (the release is tried twice, one second apart, and
+the message says the test may stay held for up to two minutes).
 
 nvim-dap is optional. Without it the test is still held, the pid and the
 instruction "attach to process N" are printed, and |:SageFsDebugRelease|
