@@ -31,16 +31,62 @@ describe("sagefs.version", function()
     assert.is_truthy(v:match("^%d+%.%d+%.%d+$"), "not a plain version: " .. tostring(v))
   end)
 
-  -- Opt-in lockstep guard: SAGEFS_REPO=/path/to/SageFs busted ... fails when
-  -- the plugin has fallen behind the SageFs release in that checkout.
-  local sagefs_repo = os.getenv("SAGEFS_REPO")
-  local guard = sagefs_repo and sagefs_repo ~= "" and it or pending
-  guard("matches the SageFs release in SAGEFS_REPO (lockstep)", function()
-    local props = assert(read_all(sagefs_repo .. "/Directory.Build.props"), "no Directory.Build.props in SAGEFS_REPO")
-    local release = props:match("<Version>([^<]+)</Version>")
+  -- Lockstep guard against a SageFs checkout. Why it is strict only on request:
+  -- the SageFs release script pushes SageFs first and bumps this file AFTER
+  -- (scripts/sync-nvim-version writes version.lua, then runs this suite as its
+  -- gate). So the plugin is legitimately one release behind a SageFs checkout
+  -- for a while, and a checkout that has moved on to its next version, or sits
+  -- on an older branch, must not make the plugin's suite red and block that
+  -- sync. The plugin's CI has no SageFs checkout, so it is pending there.
+  --
+  --   SAGEFS_REPO=/path/to/SageFs  strict: fails when the numbers differ
+  --   no SAGEFS_REPO, checkout found next to this repo (../SageFs, or the same
+  --     from a git worktree under .worktrees/): runs, passes when equal, and
+  --     is pending with both numbers (advisory) when they differ
+  --   no checkout: pending, says how to point at one
+  local function props_version(dir)
+    local props = read_all(dir .. "/Directory.Build.props")
+    return props and props:match("<Version>([^<]+)</Version>")
+  end
+
+  local function sibling_checkout()
+    local root = repo_root()
+    for _, rel in ipairs({ "/../SageFs", "/../../../SageFs" }) do
+      local dir = root .. rel
+      if props_version(dir) then return dir end
+    end
+    return nil
+  end
+
+  local function plugin_version()
     package.loaded["sagefs.version"] = nil
-    assert.equals(release, require("sagefs.version"))
-  end)
+    return require("sagefs.version")
+  end
+
+  local explicit = os.getenv("SAGEFS_REPO")
+  if explicit and explicit ~= "" then
+    it("matches the SageFs release in SAGEFS_REPO (lockstep)", function()
+      local release = props_version(explicit)
+      assert.is_truthy(release, "no Directory.Build.props with a <Version> in SAGEFS_REPO=" .. explicit)
+      assert.equals(release, plugin_version())
+    end)
+  else
+    local dir = sibling_checkout()
+    if not dir then
+      pending("matches the SageFs release (lockstep): no SageFs checkout found next to this repo; "
+        .. "set SAGEFS_REPO=/path/to/SageFs to check it")
+    else
+      it("matches the SageFs release in the neighbouring checkout (lockstep, advisory)", function()
+        local release, mine = props_version(dir), plugin_version()
+        if release ~= mine then
+          pending(string.format("advisory: sagefs.nvim is %s, SageFs at %s is %s. If a SageFs release just went out, "
+            .. "scripts/sync-nvim-version (or ./sync-version.sh %s) brings the plugin along. "
+            .. "SAGEFS_REPO=%s makes this strict.", mine, dir, release, dir, dir))
+        end
+        assert.equals(release, mine)
+      end)
+    end
+  end
 end)
 
 describe("sync-version.sh", function()
