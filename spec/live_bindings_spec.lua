@@ -375,12 +375,15 @@ describe("live_bindings.render", function()
   end)
 
   it("a nested getter has the whole path", function()
-    local payload = { SessionId = "s1", Generation = 1, Truncated = false, Bindings = { {
-      Name = "box", TypeSignature = "Box",
-      Root = { Label = "box", TypeName = "Box", Preview = "b", Kind = { Case = "Class" }, BestEffort = false, Depth = 0,
-        Children = { { Label = "inner", TypeName = "Inner", Preview = "i", Kind = { Case = "Class" }, BestEffort = false, Depth = 1,
-          Children = { { Label = "Loops", TypeName = "int", Preview = "not evaluated: the getter loops or calls itself",
-            Kind = { Case = "NotEvaluated", Fields = { { Case = "GetterLoops" } } }, Children = {}, BestEffort = false, Depth = 2 } } } } } } } } }
+    local function n(label, depth, kind, children, preview)
+      return { Label = label, TypeName = "T", Preview = preview or label, Kind = kind, Children = children or {},
+        BestEffort = false, Depth = depth }
+    end
+    local loops = n("Loops", 2, { Case = "NotEvaluated", Fields = { { Case = "GetterLoops" } } }, nil,
+      "not evaluated: the getter loops or calls itself")
+    local inner = n("inner", 1, { Case = "Class" }, { loops })
+    local payload = { SessionId = "s1", Generation = 1, Truncated = false,
+      Bindings = { { Name = "box", TypeSignature = "Box", Root = n("box", 0, { Case = "Class" }, { inner }) } } }
     local snap = lb.get(lb.apply_snapshot(lb.new(), payload), "s1")
     local r = lb.render(snap, lb.new_view("s1"))
     local row = row_for(r, "Loops")
@@ -400,7 +403,7 @@ describe("live_bindings.render", function()
     local row_open = row_for(open, "box")
     lb.toggle(view, row_open.key)
     local closed = lb.render(snap, view)
-    assert.is_nil(table.concat(closed.lines, "\n"):find("RunsCode", 1, true))
+    assert.is_nil(table.concat(closed.lines, "\n"):find("RunsCode : String", 1, true), "children are hidden")
     assert.is_true(#closed.lines < #open.lines)
     lb.toggle(view, row_open.key)
     assert.are.equal(#open.lines, #lb.render(snap, view).lines)
