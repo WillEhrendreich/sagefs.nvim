@@ -166,6 +166,35 @@ describe("result placement in a real window", function()
     ok_(#result_marks(a) > 0, "buffer a still shows its own result")
   end)
 
+  it("does not count the previous cell's result lines when they sit above the top of the window", function()
+    -- nvim_win_text_height counts the filler above the first row: the 8 virtual
+    -- lines under line 40 are NOT on screen when the window starts at line 41,
+    -- but they were charged to the next result, which then found "no room" and
+    -- was pushed to the top of its cell (seen in a real 14-row terminal).
+    local lines = {}
+    for i = 1, 39 do lines[i] = "let a" .. i .. " = " .. i end
+    lines[40] = "a1;;"
+    for i = 41, 99 do lines[i] = "let b" .. i .. " = " .. i end
+    lines[100] = "b41;;"
+    local buf = make_buffer(lines)
+    vim.cmd("resize 12")
+    vim.api.nvim_win_set_cursor(0, { 45, 0 })
+    vim.cmd("normal! 41Gzt45G")
+    eq(41, vim.fn.line("w0"), "window starts at the second cell")
+    local state = model.new()
+    state = model.set_cell_state(state, 1, "running", nil, { buf = buf })
+    state = model.set_cell_state(state, 1, "success", result_of(8), { buf = buf, end_line = 40, anchor_line = 40 })
+    state = model.set_cell_state(state, 2, "running", nil, { buf = buf })
+    state = model.set_cell_state(state, 2, "success", result_of(3), { buf = buf, end_line = 100, anchor_line = 45 })
+    render.render_all(buf, state)
+    local second
+    for _, m in ipairs(result_marks(buf)) do
+      if m.row0 + 1 >= 41 and (m.virt_lines > 0 or m.virt_text) then second = second or m end
+    end
+    ok_(second, "the second cell's result is drawn in the window")
+    eq(44, second.row0, "anchored on the evaluated line (45), not shoved to the top of the cell")
+  end)
+
   it("re-anchors inside the window when the view scrolls away from the first anchor", function()
     local buf = make_buffer(tall_cell_lines(200))
     vim.api.nvim_win_set_cursor(0, { 5, 0 })
