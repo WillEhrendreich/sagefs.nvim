@@ -26,6 +26,8 @@ M.MIN_ROWS = 5
 ---@field rows number        window height in screen rows
 ---@field height number      rows the whole result needs
 ---@field max_lines number|nil  cap on result rows drawn (default DEFAULT_MAX_LINES)
+---@field keep_preferred boolean|nil  stay on the preferred line even when it has little room
+---   (the caller will make room, e.g. by scrolling) instead of moving up the cell
 ---@field rows_through (fun(line: number): number)|nil
 ---   screen rows used by buffer lines `top..line` inclusive, counting wraps and
 ---   virtual lines the caller knows about. Default: one row per line.
@@ -36,6 +38,8 @@ M.MIN_ROWS = 5
 ---@field hidden number   result rows not drawn
 ---@field footer boolean  draw the "N more lines, <key> to expand" row
 ---@field visible boolean the cell has at least one line on screen
+---@field room number     rows free beneath `line` in the window
+---@field needed number   rows the result would like beneath `line` (at least this many, or all of it)
 
 local function clamp(n, lo, hi)
   if n < lo then return lo end
@@ -61,6 +65,8 @@ function M.place(a)
       hidden = math.max(height - max_lines, 0),
       footer = height > max_lines,
       visible = false,
+      room = 0,
+      needed = 0,
     }
   end
 
@@ -89,8 +95,12 @@ function M.place(a)
   -- the first line that has; failing that, the top of the cell's visible part
   -- (the most room there is).
   local line = lo
-  for l = preferred, lo, -1 do
-    if avail(l) >= min_rows then line = l; break end
+  if a.keep_preferred then
+    line = preferred
+  else
+    for l = preferred, lo, -1 do
+      if avail(l) >= min_rows then line = l; break end
+    end
   end
 
   local room = avail(line)
@@ -105,7 +115,10 @@ function M.place(a)
     shown = math.max(room - 1, 0)
   end
 
-  return { line = line, shown = shown, hidden = height - shown, footer = footer, visible = true }
+  return {
+    line = line, shown = shown, hidden = height - shown, footer = footer, visible = true,
+    room = room, needed = min_rows,
+  }
 end
 
 return M

@@ -700,7 +700,8 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_
     end)
   end
   vim.schedule(function()
-    render.render_all(buf, M.state)
+    -- reveal: this result was just produced, so make room for it on screen
+    render.render_all(buf, M.state, { reveal = cell_id })
   end)
 end
 

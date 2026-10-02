@@ -128,7 +128,8 @@ end
 ---@param cs table the cell state from the model
 ---@param opts table build_render_options result (non-nil)
 ---@param geom table geometry(buf)
-function M.draw_result(buf, cell, cs, opts, geom)
+---@param keep boolean|nil stay on the preferred line (the caller will scroll to make room)
+function M.draw_result(buf, cell, cs, opts, geom, keep)
   local ns_id = M.get_namespace()
   local limits = require("sagefs.config")
   local line_count = vim.api.nvim_buf_line_count(buf)
@@ -147,6 +148,7 @@ function M.draw_result(buf, cell, cs, opts, geom)
       height = height,
       max_lines = limits.RESULT_MAX_LINES,
       rows_through = geom.rows_through,
+      keep_preferred = keep,
     })
   end
 
@@ -204,6 +206,7 @@ function M.draw_result(buf, cell, cs, opts, geom)
       virt_lines_above = false,
     })
   end
+  return p
 end
 
 --- Render one cell's result (kept for callers that draw a single cell).
@@ -220,8 +223,16 @@ function M.render_cell(buf, cell, state, geom)
   return opts
 end
 
-function M.render_all(buf, state)
+---@param buf number
+---@param state table model
+---@param view_opts { reveal: number|nil }|nil
+---   reveal: a cell id whose result was just produced. When there is not
+---   enough room beneath its anchor line, scroll the window a few rows (never
+---   past the anchor line) so there is. Plain re-renders never move the view.
+function M.render_all(buf, state, view_opts)
   local ns_id = M.get_namespace()
+  local reveal_id = view_opts and view_opts.reveal or nil
+  local reveal_scroll = nil
   M.clear_extmarks(buf)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -244,7 +255,24 @@ function M.render_all(buf, state)
         virt_lines_above = true,
       })
     end
-    if opts then M.draw_result(buf, cell, cs, opts, geom) end
+    if opts then
+      local revealing = reveal_id ~= nil and cell.id == reveal_id
+      local p = M.draw_result(buf, cell, cs, opts, geom, revealing)
+      if revealing and p and p.visible and geom.win and p.room < p.needed then
+        reveal_scroll = { win = geom.win, top = geom.top, line = p.line, by = p.needed - p.room }
+      end
+    end
+  end
+
+  if reveal_scroll then
+    local new_top = math.min(reveal_scroll.top + reveal_scroll.by, reveal_scroll.line)
+    if new_top > reveal_scroll.top then
+      vim.api.nvim_win_call(reveal_scroll.win, function()
+        vim.fn.winrestview({ topline = new_top })
+      end)
+      -- draw again against the new view; this pass never scrolls
+      M.render_all(buf, state)
+    end
   end
 end
 
