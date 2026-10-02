@@ -10,6 +10,7 @@
 :SageFsConnect	sagefs.txt	/*:SageFsConnect*
 :SageFsContext	sagefs.txt	/*:SageFsContext*
 :SageFsCoverage	sagefs.txt	/*:SageFsCoverage*
+:SageFsCoveringTests	sagefs.txt	/*:SageFsCoveringTests*
 :SageFsCreateSession	sagefs.txt	/*:SageFsCreateSession*
 :SageFsDebugRelease	sagefs.txt	/*:SageFsDebugRelease*
 :SageFsDebugTest	sagefs.txt	/*:SageFsDebugTest*
@@ -56,6 +57,7 @@ SageFsBindingsSnapshot	sagefs.txt	/*SageFsBindingsSnapshot*
 SageFsCellDependencies	sagefs.txt	/*SageFsCellDependencies*
 SageFsConnected	sagefs.txt	/*SageFsConnected*
 SageFsCoverageUpdated	sagefs.txt	/*SageFsCoverageUpdated*
+SageFsCoverageView	sagefs.txt	/*SageFsCoverageView*
 SageFsDisconnected	sagefs.txt	/*SageFsDisconnected*
 SageFsEvalCompleted	sagefs.txt	/*SageFsEvalCompleted*
 SageFsEvalDiff	sagefs.txt	/*SageFsEvalDiff*
@@ -89,6 +91,7 @@ sagefs-commands	sagefs.txt	/*sagefs-commands*
 sagefs-config	sagefs.txt	/*sagefs-config*
 sagefs-contents	sagefs.txt	/*sagefs-contents*
 sagefs-coverage	sagefs.txt	/*sagefs-coverage*
+sagefs-covering-tests	sagefs.txt	/*sagefs-covering-tests*
 sagefs-debug-test	sagefs.txt	/*sagefs-debug-test*
 sagefs-diagnostics	sagefs.txt	/*sagefs-diagnostics*
 sagefs-events	sagefs.txt	/*sagefs-events*

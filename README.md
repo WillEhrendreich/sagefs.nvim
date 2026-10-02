@@ -127,6 +127,7 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Live bindings** | `:SageFsBindings` opens a split with the daemon's value tree, a key to run one held getter, and a Safe/Everything/Off mode switch. See [Live bindings](#live-bindings). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
+| **Covering tests** | `:SageFsCoveringTests` / `<leader>rtc` lists the tests that cover the line under the cursor with their last result, `<CR>` jumps to one. A per-symbol badge sits on the definition line. See [Which tests cover a line](#which-tests-cover-a-line). |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
 | **Type explorer** | `:SageFsTypeExplorer` → completions-based namespace/type drill-down. |
 | **History browser** | `:SageFsHistory` → eval history for the cell under cursor with snapshot preview. |
@@ -226,6 +227,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rte` | n | Enable live testing |
 | `<leader>rtd` | n | Disable live testing |
 | `<leader>rtD` | n | Debug the failing test on this line (nvim-dap) |
+| `<leader>rtc` | n | Tests that cover this line (float, `<CR>` jumps) |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
 | `<C-g>` | n | Explicit jump to source — telescope picker only (warns if no location) |
@@ -297,6 +299,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsDashboard` | Toggle the floating SageFS dashboard |
 | `:SageFsTestTrace` | Show the three-speed test pipeline state |
 | `:SageFsCoverage` | Show coverage summary with per-file breakdown |
+| `:SageFsCoveringTests` | Float with the tests that cover the line under the cursor, name and last result; `<CR>` jumps to one |
 | `:SageFsTypeExplorer` | Browse namespaces → types → members via completions |
 | `:SageFsHistory` | Eval history for cell under cursor |
 | `:SageFsExport` | Export session history as `.fsx` file |
@@ -419,6 +422,16 @@ Some members are held back, and every held row says why, on the row, in the daem
 The daemon has no call that returns the current snapshot, it only pushes one. `r` (and opening the pane with nothing folded yet) re-posts the current mode, which makes the daemon walk again and push. That also drops the containment line of the last click.
 
 The old list the plugin builds from eval output, with shadow counts, is now `:SageFsBindingList`.
+
+## Which tests cover a line
+
+The daemon records coverage per test, and runs the tests of an instrumented project one at a time so each reading belongs to one test. It tells the editor two things, and I use both.
+
+On every covered line, `file_annotations` lists exactly the tests whose own recorded coverage reaches that line, by name, in discovery order. `:SageFsCoveringTests` (or `<leader>rtc`) opens a float at the cursor with those tests, each with its last result from the live testing state. Press `<CR>` on a test to jump to it. When the innermost annotation has no covering tests I look at the ones around it, and when the daemon marked the line covered but sent no per-test reading I say that, instead of claiming no test covers it.
+
+Per symbol, `coverage_view` sends one aggregate badge (`✓ 97 ✗ 3`, plus `+N more` when some did not fit). I draw it at the end of the symbol's definition line, colored by health. The events are merged per file and run generation: a newer generation replaces the file's whole set (a renamed or deleted symbol loses its badge), the same generation adds one badge per symbol, an older generation is a straggler and is dropped, and an event with no generation counts as 0 and never replaces anything. The badges follow the density setting, so `minimal` turns them off.
+
+The older per-batch coverage events (`coverage_updated`) are folded the way they always were.
 
 ## 🏥 Health Check
 

@@ -306,6 +306,10 @@ Analysis ~
 :SageFsCoverage                                         *:SageFsCoverage*
     Show coverage summary with per-file breakdown.
 
+:SageFsCoveringTests                                     *:SageFsCoveringTests*
+    Float at the cursor with the tests that cover this line (name and last
+    result). <CR> jumps to a test. See |sagefs-covering-tests|.
+
 :SageFsTestPolicy                                       *:SageFsTestPolicy*
     Configure test run policies per category.
 
@@ -357,6 +361,8 @@ Testing ~
   <leader>rtp  Test trace (three-speed pipeline state)
   <leader>rte  Enable live testing
   <leader>rtd  Disable live testing
+  <leader>rtD  Debug the failing test on this line (nvim-dap)
+  <leader>rtc  Tests that cover this line (float, <CR> jumps)
   <leader>tf   Filter tests by name pattern (prompts for input)
   <leader>tF   Run all tests (clears any active filter)
   <leader>tp   Fuzzy-pick and run a test (telescope, SageFsPickTest)
@@ -515,6 +521,28 @@ Coverage gutters appear automatically when live testing is enabled: >
   ┃  Line not covered (red)
   ┃  Line partially covered (yellow)
 <
+------------------------------------------------------------------------------
+8.1 Which tests cover a line                             *sagefs-covering-tests*
+
+The daemon records coverage per test. On every covered line, the
+file_annotations event lists exactly the tests whose own recorded coverage
+reaches it. |:SageFsCoveringTests| (<leader>rtc) opens a float at the cursor
+with those tests, each with its last result. <CR> on a test jumps to it, q
+closes. When the daemon marked the line covered but sent no per-test reading,
+the float says so.
+
+Per symbol, the coverage_view event sends one badge (for example "✓ 97 ✗ 3",
+with "+N more" when some did not fit). It is drawn at the end of the symbol's
+definition line, colored by health, and follows |sagefs-config| density
+(minimal turns it off).
+
+coverage_view events are merged per file and run generation. A newer
+generation replaces the file's whole set, the same generation adds one badge
+per symbol, an older generation is dropped as a straggler, and an event with
+no generation counts as 0 and never replaces anything.
+
+The older per-batch coverage_updated events are folded as before.
+
 ==============================================================================
 9. SESSIONS                                              *sagefs-sessions*
 
@@ -714,6 +742,10 @@ Event reference ~
 *SageFsFileAnnotations*
     Fired with per-file annotation data (coverage signs, CodeLens,
     inline failure messages).
+
+*SageFsCoverageView*
+    Fired with one per-symbol coverage badge (symbol, definition line, total
+    covering tests, one-line badge text, health, run generation).
 
 *SageFsBindingsSnapshot*
     Fired with a snapshot of all active FSI bindings (name → type_sig).
