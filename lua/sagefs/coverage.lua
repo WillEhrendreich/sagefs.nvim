@@ -131,10 +131,12 @@ function M.apply_coverage_response(state, data)
   return state
 end
 
--- ─── coverage_view: per-symbol badges, merged per (file, generation) ─────────
+-- ─── coverage_view: per-symbol badges, merged per (session, file, generation) ─
 --
 -- One `coverage_view` event per symbol, each stamped with the run Generation
--- that produced the burst. Per file: a NEWER generation replaces the file's
+-- that produced the burst. Generations are counted per session, so views are
+-- kept per (session, file) and a generation never sweeps another session's
+-- views. Per file: a NEWER generation replaces the file's
 -- whole set (symbols the burst no longer names were renamed or deleted), the
 -- SAME generation appends one view per symbol (a symbol sent again replaces its
 -- own view), an OLDER generation is a straggler from a superseded burst and is
@@ -146,16 +148,45 @@ local function norm_path(path)
   return (path:gsub("\\", "/"))
 end
 
---- Find a key of `map` for `file`: exact, then separator-normalized, then by suffix
---- (buffer paths and daemon paths can differ by a prefix).
+local function is_relative(path)
+  return path:sub(1, 1) ~= "/" and not path:match("^%a:/")
+end
+
+--- Find a key of `map` for `file`: exact, then separator-normalized, then a
+--- relative path (a daemon path relative to the project) against the absolute
+--- buffer path that ends with it, on a whole path component. Two absolute paths
+--- never match by suffix: /b/a/Util.fs is not /a/Util.fs.
 local function resolve_key(map, file)
   if not map or type(file) ~= "string" or file == "" then return nil end
   local key = norm_path(file)
   if map[key] ~= nil then return key end
   for candidate in pairs(map) do
-    if key:sub(-#candidate) == candidate or candidate:sub(-#key) == key then
+    local short, long = key, candidate
+    if #short > #long then short, long = long, short end
+    if #short < #long and is_relative(short) and long:sub(-(#short + 1)) == "/" .. short then
       return candidate
     end
+  end
+  return nil
+end
+
+--- The entry for `file` as seen by `session_id`: that session's own views, else
+--- views the daemon sent without a session id. With no session given, the first
+--- session (in id order) that has the file.
+local function find_entry(state, file, session_id)
+  local views = state.views
+  if not views then return nil end
+  local order = {}
+  if session_id ~= nil then
+    order = { tostring(session_id), "" }
+  else
+    for sid in pairs(views) do table.insert(order, sid) end
+    table.sort(order)
+  end
+  for _, sid in ipairs(order) do
+    local bucket = views[sid]
+    local key = bucket and resolve_key(bucket, file)
+    if key then return bucket[key] end
   end
   return nil
 end
@@ -197,13 +228,20 @@ function M.apply_coverage_view(state, data)
   if type(file) ~= "string" or file == "" then return state end
   local generation = tonumber(data.Generation or data.generation) or 0
   state.views = state.views or {}
+  local sid = data.SessionId or data.sessionId
+  sid = sid and tostring(sid) or ""
+  local bucket = state.views[sid]
+  if not bucket then
+    bucket = {}
+    state.views[sid] = bucket
+  end
   local key = norm_path(file)
-  local entry = state.views[key]
+  local entry = bucket[key]
   local existing = entry and entry.generation or 0
   if generation < existing then return state end -- a straggler: already superseded
   local view = normalize_view(data, generation)
   if not entry or generation > existing then
-    state.views[key] = { generation = generation, by_symbol = { [view.symbol] = view } }
+    bucket[key] = { generation = generation, by_symbol = { [view.symbol] = view } }
   else
     entry.by_symbol[view.symbol] = view
   end
@@ -212,12 +250,13 @@ function M.apply_coverage_view(state, data)
 end
 
 --- The views of a file, ordered by definition line.
+---@param session_id string|nil the session whose views to read (the active one)
 ---@return table[]
-function M.views_for_file(state, file)
-  local key = resolve_key(state.views, file)
+function M.views_for_file(state, file, session_id)
+  local entry = find_entry(state, file, session_id)
   local out = {}
-  if not key then return out end
-  for _, view in pairs(state.views[key].by_symbol) do table.insert(out, view) end
+  if not entry then return out end
+  for _, view in pairs(entry.by_symbol) do table.insert(out, view) end
   table.sort(out, function(a, b)
     if a.definition_line ~= b.definition_line then return a.definition_line < b.definition_line end
     return a.symbol < b.symbol
@@ -226,9 +265,9 @@ function M.views_for_file(state, file)
 end
 
 ---@return number|nil
-function M.generation_for_file(state, file)
-  local key = resolve_key(state.views, file)
-  return key and state.views[key].generation or nil
+function M.generation_for_file(state, file, session_id)
+  local entry = find_entry(state, file, session_id)
+  return entry and entry.generation or nil
 end
 
 --- The one-line badge of a view and its health, or nil when no test covers the

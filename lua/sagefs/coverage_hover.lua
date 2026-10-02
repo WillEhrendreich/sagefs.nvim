@@ -99,7 +99,7 @@ end
 local badge_ns = nil
 
 --- Draw the badge on each symbol's definition line.
----@param opts { api: table|nil, density: table|nil }|nil
+---@param opts { api: table|nil, density: table|nil, session_id: string|nil }|nil
 function M.render_badges(buf, coverage_state, opts)
   opts = opts or {}
   local api = opts.api or vim.api
@@ -109,7 +109,7 @@ function M.render_badges(buf, coverage_state, opts)
   local file = api.nvim_buf_get_name(buf)
   if file == "" then return end
   local line_count = api.nvim_buf_line_count(buf)
-  for _, view in ipairs(coverage.views_for_file(coverage_state, file)) do
+  for _, view in ipairs(coverage.views_for_file(coverage_state, file, opts.session_id)) do
     local spec = M.badge_extmark(view)
     if spec and view.definition_line > 0 and view.definition_line <= line_count then
       pcall(api.nvim_buf_set_extmark, buf, badge_ns, view.definition_line - 1, 0, spec)

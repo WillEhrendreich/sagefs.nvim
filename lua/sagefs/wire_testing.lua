@@ -26,7 +26,10 @@ end
 function M.render(buf, plugin)
   require("sagefs.debug_test_ui").render_hints(buf, plugin.testing_state, plugin.annotations_state, { density = plugin.density_state })
   if plugin.coverage_state then
-    require("sagefs.coverage_hover").render_badges(buf, plugin.coverage_state, { density = plugin.density_state })
+    require("sagefs.coverage_hover").render_badges(buf, plugin.coverage_state, {
+      density = plugin.density_state,
+      session_id = plugin.active_session and plugin.active_session.id or nil,
+    })
   end
 end
 
