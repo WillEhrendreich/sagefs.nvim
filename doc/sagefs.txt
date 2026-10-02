@@ -384,7 +384,9 @@ Pass configuration to setup(): >lua
     port = 37749,                -- SageFs daemon port
     dashboard_port = 37750,      -- Dashboard/hot-reload port
     sagefs_path = "sagefs",      -- Binary |:SageFsStart| runs (full path if
-                                 -- PATH does not see it)
+                                 -- PATH does not see it; ~ and $VAR expand)
+    session_refresh_debounce_ms = 250, -- Burst of "session ready" events
+                                       -- makes one session-list refresh
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
     density = "normal",          -- "minimal" | "normal" | "full"
