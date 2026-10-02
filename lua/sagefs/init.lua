@@ -774,9 +774,18 @@ local function show_shadow_warnings(buf, cell_id, shadows)
   end)
 end
 
+-- Evals whose status watcher read the session list while they were out. The
+-- daemon called the session "Evaluating" then, and that is what the list now
+-- holds; the result arriving is the moment to read it again.
+local evals_that_polled = {}
+
 local function handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
   -- Take the daemon's "REPL is BEHIND the app" banner off the output and say it once, with the remedy.
   result = M.wire_runtime().on_eval(result)
+  if evals_that_polled[my_eval_id] then
+    evals_that_polled[my_eval_id] = nil
+    vim.schedule(function() M.list_sessions() end)
+  end
   -- Only clear eval_id if we're still the current eval
   if eval_id == my_eval_id then
     eval_id = 0
@@ -846,6 +855,7 @@ local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
 
   local function tick()
     if not still_pending() then return end
+    evals_that_polled[my_eval_id] = true
     M.list_sessions(function(result)
       if not still_pending() then return end
       local session = nil
