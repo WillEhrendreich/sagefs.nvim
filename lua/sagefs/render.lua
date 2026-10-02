@@ -88,10 +88,26 @@ local function geometry(buf)
   }
   if vim.api.nvim_win_text_height then
     -- Screen rows used by top..line, counting wraps and the virtual lines
-    -- already drawn above it (earlier results, codelens).
+    -- already drawn between them (earlier results, codelens).
+    -- nvim_win_text_height counts the "filler" ABOVE its first row, and
+    -- virtual lines hung below line N are that filler for line N+1: for the
+    -- window's top line those belong to a line that is scrolled off, so they
+    -- are not on screen. Take the top line's own rows by themselves and the
+    -- rest of the range from the next line down.
+    local function height(from_row, to_row)
+      local ok, r = pcall(vim.api.nvim_win_text_height, win, { start_row = from_row, end_row = to_row })
+      if ok and type(r) == "table" and r.all then return r end
+      return nil
+    end
+    local top_rows
+    do
+      local r = height(g.top - 1, g.top - 1)
+      top_rows = r and math.max(r.all - (r.fill or 0), 1) or 1
+    end
     g.rows_through = function(line)
-      local ok, r = pcall(vim.api.nvim_win_text_height, win, { start_row = g.top - 1, end_row = line - 1 })
-      if ok and type(r) == "table" and r.all then return r.all end
+      if line <= g.top then return top_rows end
+      local r = height(g.top, line - 1)
+      if r then return top_rows + r.all end
       return line - g.top + 1
     end
   end
