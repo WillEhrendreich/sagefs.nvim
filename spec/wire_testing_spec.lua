@@ -87,4 +87,30 @@ describe("wire_testing command registration", function()
     assert.is_truthy(registered.SageFsBindings)
     assert.is_truthy(registered.SageFsDebugTest)
   end)
+
+  it("keeps the plugin-side list as :SageFsBindingList, defined by commands.lua", function()
+    local registered = {}
+    local prev_api = vim.api
+    -- commands.lua registers a lot besides commands (augroups, ...): everything
+    -- but the command registry is a no-op here.
+    vim.api = setmetatable({
+      nvim_create_user_command = function(name, handler, opts) registered[name] = { handler = handler, opts = opts } end,
+    }, { __index = function(_, key)
+      local real = prev_api[key]
+      if real ~= nil then return real end
+      return function() return 0 end
+    end })
+    package.loaded["sagefs.commands"] = nil
+    local ok, err = pcall(function()
+      require("sagefs.commands").register_commands(
+        { binding_tracker = { bindings = {} } },
+        { notify = function() end, base_url = function() return "" end, clear_and_render = function() end, stop_sse = function() end })
+    end)
+    vim.api = prev_api
+    package.loaded["sagefs.commands"] = nil
+    assert.is_true(ok, tostring(err))
+    assert.is_truthy(registered.SageFsBindingList, ":SageFsBindingList is registered")
+    assert.is_truthy(registered.SageFsBindings, ":SageFsBindings is registered next to it")
+    assert.are_not.equal(registered.SageFsBindingList.handler, registered.SageFsBindings.handler, "two different commands")
+  end)
 end)

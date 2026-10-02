@@ -422,6 +422,18 @@ describe("debug_test.failing_tests_at", function()
     assert.are.same({ "D39C4D7B318839A9", "OTHER" }, ids)
   end)
 
+  it("leaves out a failing test of another file (live testing state)", function()
+    local state = testing.new()
+    testing.update_test(state, {
+      testId = "ELSEWHERE", displayName = "fails in another file", fullName = "z", status = "Failed",
+      origin = { Case = "SourceMapped", Fields = { "/x/Other.fs", 8 } },
+    })
+    assert.are.same({}, dt.failing_tests_at(state, nil, file, nil))
+    assert.are.same({}, dt.failing_tests_at(state, nil, file, 8))
+    assert.are.same({}, dt.hint_marks(state, nil, file), "no hint is drawn for another file's failure")
+    assert.are.equal(1, #dt.failing_tests_at(state, nil, "/x/Other.fs", 8), "and it is found in its own file")
+  end)
+
   it("marks lines that carry a debuggable failure so the hint can be drawn", function()
     local marks = dt.hint_marks(testing.new(), annotation_state(), file)
     assert.are.equal(1, marks[8])
@@ -536,14 +548,18 @@ describe("debug_test.start, the happy path", function()
     env.dap.fire("after", "event_initialized")
     assert.are.equal(0, env.continues(), "initialized alone is not enough: breakpoints are not set yet")
     env.dap.fire("after", "configurationDone")
-    assert.is_true(env.continues() >= 1)
+    -- The fake answers synchronously: still_running, still_running, attached are
+    -- three continue requests for ONE release. A second release would add more.
+    assert.are.equal(3, env.continues())
   end)
 
   it("releases after the grace period if the adapter never answers configurationDone", function()
     env.dap.fire("after", "event_initialized")
     assert.are.equal(0, env.continues())
     env.fire_timers()
-    assert.is_true(env.continues() >= 1)
+    -- Three requests for one release (see above). fire_timers() also fires the
+    -- hold window watchdog and the start check, which must not release again.
+    assert.are.equal(3, env.continues())
   end)
 
   it("loops on still_running, then detaches and shows the result", function()
