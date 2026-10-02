@@ -833,6 +833,58 @@ describe("debug_test.start, a debugger that never comes up or goes away early", 
   end)
 end)
 
+describe("debug_test.start, the daemon cannot be reached while releasing", function()
+  local FAILED = { false, "curl: (7) Failed to connect to localhost port 37749" }
+  local ATTACHED = { true, { status = "attached", outcome = "failed", detail = "boom", durationMs = 4 } }
+
+  local function retry_timers(env)
+    local out = {}
+    for _, t in ipairs(env.timers) do
+      if t.ms == dt.CONTINUE_RETRY_MS and not t.cancelled then table.insert(out, t) end
+    end
+    return out
+  end
+
+  local function release_by_terminate(env)
+    env.dap.fire("before", "event_terminated")
+  end
+
+  it("retries a failed continue once, after a short pause, and shows the result", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { FAILED, ATTACHED } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    release_by_terminate(env)
+    assert.are.equal(1, env.continues())
+    assert.are.equal("released", run.state(), "not over yet: a retry is pending")
+    local timers = retry_timers(env)
+    assert.are.equal(1, #timers)
+    assert.is_true(dt.CONTINUE_RETRY_MS <= 5000)
+    timers[1].fn()
+    assert.are.equal(2, env.continues())
+    assert.are.equal("finished", run.state())
+    assert.is_truthy(env.all_notes():find("boom", 1, true))
+  end)
+
+  it("a second failure in a row ends the run and says the test may stay held", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { FAILED, FAILED } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    release_by_terminate(env)
+    retry_timers(env)[1].fn()
+    assert.are.equal(2, env.continues())
+    assert.are.equal("finished", run.state())
+    assert.are.equal(0, #retry_timers(env), "only one retry")
+    local text = env.all_notes()
+    assert.is_truthy(text:find("may stay held", 1, true))
+    assert.is_truthy(text:find("120 seconds", 1, true), "the daemon's own hold window, from holdMs")
+  end)
+
+  it("a failure on the hold route holds nothing, so it does not claim a held test", function()
+    local env = make_env({ debug = { FAILED } })
+    dt.start(env.deps, { test_id = "X" })
+    assert.is_nil(env.all_notes():find("may stay held", 1, true))
+  end)
+
+end)
+
 describe("debug_test.start, one debug run at a time", function()
   it("a second start while one is open is refused locally and sends nothing", function()
     local env = make_env({ debug = { { true, HELD } } })
