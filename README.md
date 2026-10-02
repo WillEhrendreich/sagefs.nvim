@@ -364,6 +364,16 @@ When a save is patched into an app that `:SageFsRunApp` started, the app runs th
 
 The rebuild replaces the worker, so the running app stops with it. The message says so because that is the price of the fix. The daemon also appends a `WARNING: The REPL is BEHIND the app` line after the text of an eval result; the plugin takes that line off the cell output and turns it into the message above.
 
+### The build can be behind the files on disk
+
+A different thing from the one above. `replFreshness` is the REPL behind the running app. `sourceState` is the disk ahead of the build: a file the session's build was made from was written after that build, so the REPL and the tests run code that is not what the files say. A test that passes over that is not green. The daemon sends it on every session report ([`SourceState.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/SourceState.fs)), and the plugin shows it three ways:
+
+- the statusline says `⚠ STALE SOURCE (2 files)` while a build is behind, `⟳ rebuilding` while a rebuild runs (the old worker keeps serving), and `source ?` when the daemon could not tell (a worker that did not say when it loaded, a file it could not read). A session with no project and a daemon that never looked stay quiet;
+- `:SageFsStatus` has a `Source:` line (and a `REPL:` line when the REPL is behind the app);
+- `:SageFsReloadStatus` names the changed files, up to five, and the fix: `:SageFsHardReset` builds the files and loads them.
+
+The daemon reads the disk when it is asked and never pushes the answer, so the plugin asks again at the two moments it can change: after a save of an F# file (`*.fs`, `*.fsx`, `*.fsi`, `*.fsproj`, one coalesced read for a burst of saves) and when a test run completes. A daemon older than the field sends nothing, and the plugin then shows nothing: an absent field is never read as in sync.
+
 ### The cohort and the trunk
 
 `:SageFsCohort` opens a scratch buffer with the cohort's members, claims, landing queue, the integration session and, once an integration is configured, the trunk: one `trunk <landingId>: ...` line per landing, in the same words as above (`Program.fs applied, new body has not run yet (via metadata delta)`). There is no REST route for it, so the plugin makes an MCP `tools/call` of `get_cohort_status` ([`mcp_client.lua`](lua/sagefs/mcp_client.lua)). The view refreshes on the cohort events (`SageFsCohortMatrix`, `SageFsClaimChanged`, `SageFsLandingChanged`, `SageFsSaveObserved`, `SageFsCohortChanged`) and on every reload report, because a trunk line turns from applied to patched with no cohort event at all.
@@ -372,7 +382,7 @@ A member id in the cohort is `mcp:` followed by that agent's MCP session id, whi
 
 ### Adding the next field
 
-The daemon's session report fields are read in one list, [`status_fields.lua`](lua/sagefs/status_fields.lua). A new closed field, such as the `sourceState` that is coming, is one `register` call with its JSON key, its parser and its statusline segment. Nothing else enumerates the fields.
+The daemon's session report fields are read in one list, [`status_fields.lua`](lua/sagefs/status_fields.lua). A new closed field is one `register` call with its JSON key, its parser and its statusline segment. Nothing else enumerates the fields.
 
 ## ✂️ Snippets
 
@@ -591,7 +601,8 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `closed_set.lua` | Closed sets of named wire tokens with a membership test; a token outside the set shows as "unrecognized", never guessed |
 | `reload_state.lua` | Hot reload report parsing, the one display function (statusline, virtual text, `:SageFsReloadStatus`, dashboard), and the per-session fold |
 | `repl_freshness.lua` | `InSync` / `BehindApp`, the statusline segment, the eval message, the WARNING banner, the announcement gate |
-| `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, the next one is one `register` call) |
+| `source_state.lua` | `InSync` / `Stale` / `Rebuilding` / `Unknown`, the statusline segment, the panel lines, the `:SageFsStatus` line |
+| `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, `sourceState`, the next one is one `register` call) |
 | `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member-handle masking |
 | `mcp_client.lua` | Small MCP client over the daemon's streamable HTTP transport |
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |

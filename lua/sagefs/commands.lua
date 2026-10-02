@@ -1722,6 +1722,18 @@ function M.register_autocmds(plugin, helpers)
     end
   end
 
+  -- A save is when the files on disk move ahead of the build the session runs, so it
+  -- is when the daemon's sourceState can change. Ask for the session list again (one
+  -- coalesced read for a burst of saves); the statusline then says STALE SOURCE.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = group,
+    pattern = { "*.fs", "*.fsx", "*.fsi", "*.fsproj" },
+    callback = function()
+      if not helpers.has_active_session() then return end
+      if plugin.refresh_sessions_soon then plugin.refresh_sessions_soon() end
+    end,
+  })
+
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = group,
     pattern = "*.fsx",

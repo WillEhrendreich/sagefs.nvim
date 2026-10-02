@@ -330,7 +330,9 @@ Analysis ~
     Show the current test trace state.
 
 :SageFsStatus                                           *:SageFsStatus*
-    Show connection status and session information.
+    Show connection status and session information, including a "Source:"
+    line (the build is in sync with the files on disk, or STALE, or a
+    rebuild is running) and a "REPL:" line when the REPL is behind the app.
 
 :SageFsCellStyle [style]                                *:SageFsCellStyle*
     Set cell highlight style, or cycle if no argument given.
@@ -404,7 +406,8 @@ Analysis ~
 :SageFsReloadStatus                                   *:SageFsReloadStatus*
     Show what the last save did to the running app, how it got there
     (detour or metadata delta), the named causes and the remedy, and whether
-    the REPL is behind the app. See |sagefs-hotreload|.
+    the REPL is behind the app, and whether the build is behind the files on
+    disk (naming the changed files and the fix). See |sagefs-hotreload|.
 
 :SageFsCohort                                               *:SageFsCohort*
     Show the daemon's cohort in a scratch buffer: members, claims, the

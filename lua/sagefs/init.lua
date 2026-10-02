@@ -231,7 +231,9 @@ local SSE_HANDLER_DEFS = {
   { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing", session_scoped = true },
   { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
   { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
-  { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed" },
+  -- A finished run asks for the session list again: whether the build it ran against is
+  -- behind the files on disk (sourceState) is read when asked, never pushed.
+  { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed", refresh_sessions = true },
   { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing", session_scoped = true },
   { action = "test_locations_detected", fn = "handle_test_locations", target = "testing", session_scoped = true },
   { action = "test_source_locations", fn = "handle_source_locations", target = "testing", session_scoped = true, event = "test_source_locations" },
@@ -323,6 +325,7 @@ local function build_handlers()
         M[t.key] = t.mod()[def.fn](M[t.key], data)
       end
       if def.event then fire_user_event(def.event, data) end
+      if def.refresh_sessions then refresh_sessions_soon() end
     end
   end
 

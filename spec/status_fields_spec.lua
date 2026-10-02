@@ -1,7 +1,6 @@
 -- status_fields: the one registry of per-session report fields the plugin reads
 -- from /api/sessions (and get_session_status). A new closed field the daemon
--- adds, such as the `sourceState` that is coming, is one entry here: its parser
--- and its statusline segment. Nothing else in the plugin enumerates the fields.
+-- adds is one entry here: its parser and its statusline segment. Nothing else in the plugin enumerates the fields.
 require("spec.helper")
 local status_fields = require("sagefs.status_fields")
 local sessions = require("sagefs.sessions")
@@ -87,10 +86,10 @@ describe("status_fields.register: a new closed field is one entry", function()
     status_fields.restore(original)
   end)
 
-  it("a sourceState field added in one place is parsed, shown, and read back by name", function()
+  it("a field added in one place is parsed, shown, and read back by name", function()
     status_fields.register({
-      json = "sourceState",
-      key = "source_state",
+      json = "nextField",
+      key = "next_field",
       parse = function(v)
         if type(v) ~= "table" or type(v.state) ~= "string" then return nil end
         return { state = v.state }
@@ -100,22 +99,22 @@ describe("status_fields.register: a new closed field is one entry", function()
         return ""
       end,
     })
-    local parsed = status_fields.parse({ id = "x", sourceState = { state = "StaleEdited" } })
-    assert.are.equal("StaleEdited", parsed.source_state.state)
+    local parsed = status_fields.parse({ id = "x", nextField = { state = "StaleEdited" } })
+    assert.are.equal("StaleEdited", parsed.next_field.state)
     local segs = status_fields.segments(parsed, { reload_model = reload_state.model_new() })
     assert.are.same({ "⚠ source edited since the run" }, segs)
   end)
 
   it("sessions.parse_sessions_response carries the new field through without touching sessions.lua", function()
     status_fields.register({
-      json = "sourceState", key = "source_state",
+      json = "nextField", key = "next_field",
       parse = function(v) return type(v) == "table" and { state = v.state } or nil end,
       segment = function() return "" end,
     })
-    local json = '{"sessions":[{"id":"s1","status":"Ready","sourceState":{"state":"Fresh"}}]}'
+    local json = '{"sessions":[{"id":"s1","status":"Ready","nextField":{"state":"Fresh"}}]}'
     local result = sessions.parse_sessions_response(json)
     assert.is_true(result.ok)
-    assert.are.equal("Fresh", result.sessions[1].source_state.state)
+    assert.are.equal("Fresh", result.sessions[1].next_field.state)
   end)
 
   it("refuses to register a field twice under one key", function()

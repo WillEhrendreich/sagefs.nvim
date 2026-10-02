@@ -19,6 +19,7 @@
 
 local reload_state = require("sagefs.reload_state")
 local repl_freshness = require("sagefs.repl_freshness")
+local source_state = require("sagefs.source_state")
 local status_fields = require("sagefs.status_fields")
 
 local M = {}
@@ -213,6 +214,7 @@ function M.new(deps)
     end
     local f = freshness_of(session)
     for _, l in ipairs(repl_freshness.lines(f)) do table.insert(lines, l) end
+    for _, l in ipairs(source_state.lines(session and session.source_state or nil)) do table.insert(lines, l) end
     return lines
   end
 

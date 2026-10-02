@@ -5,18 +5,19 @@
 -- JSON, get_session_status) carries closed fields that say something true about
 -- the session: `lastReload` (what the last save did), `replFreshness` (whether the
 -- REPL runs the app's build). The plugin reads them here and nowhere else. A new
--- field, such as the `sourceState` the daemon is about to add, is ONE entry in
--- FIELDS: the JSON key, the key it is stored under, its parser, and its
--- statusline segment. sessions.lua, the statusline and the panels pick it up from
--- this list.
+-- field the daemon adds next (sourceState, the build behind the files on disk, was the
+-- last) is ONE entry in FIELDS: the JSON key, the key it is stored under, its parser,
+-- and its statusline segment. sessions.lua, the statusline and the panels pick it up
+-- from this list.
 --
 --   status_fields.register({
---     json = "sourceState", key = "source_state",
---     parse = source_state.parse, segment = source_state.segment,
+--     json = "nextField", key = "next_field",
+--     parse = next_field.parse, segment = next_field.segment,
 --   })
 
 local reload_state = require("sagefs.reload_state")
 local repl_freshness = require("sagefs.repl_freshness")
+local source_state = require("sagefs.source_state")
 
 local M = {}
 
@@ -40,6 +41,13 @@ local FIELDS = {
     key = "repl_freshness",
     parse = repl_freshness.parse,
     segment = function(value) return repl_freshness.segment(value) end,
+  },
+  {
+    -- The disk ahead of the build: a different fact from the REPL behind the app.
+    json = "sourceState",
+    key = "source_state",
+    parse = source_state.parse,
+    segment = function(value) return source_state.segment(value) end,
   },
 }
 

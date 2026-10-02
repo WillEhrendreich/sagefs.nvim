@@ -346,6 +346,19 @@ function M.format_status_report(info)
   if info.eval_route then
     table.insert(lines, "Eval here: " .. info.eval_route)
   end
+  -- The two ways a session can run code that is not what you are looking at: the
+  -- files on disk ahead of the build, and the REPL behind the running app. Each line
+  -- is there only when the daemon said something worth a line.
+  if sess then
+    local source_text = require("sagefs.source_state").status_text(sess.source_state)
+    if source_text then table.insert(lines, "Source:    " .. source_text) end
+    local fresh = sess.repl_freshness
+    if fresh and fresh.state == "BehindApp" then
+      local saves = fresh.saves_since
+      local what = saves and string.format(" (%d save%s)", saves, saves == 1 and "" or "s") or ""
+      table.insert(lines, "REPL:      BEHIND the app" .. what)
+    end
+  end
 
   -- Tests
   local ts = info.testing_state
