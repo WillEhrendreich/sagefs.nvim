@@ -589,6 +589,59 @@ describe("warmup events from other sessions", function()
   end)
 end)
 
+describe("fault and ready messages from other sessions", function()
+  local function run(active, events)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    sagefs.active_session = active
+    sagefs.warmup_expected_until = nil
+    local notices = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg) notices[#notices + 1] = msg end
+    local transport = require("sagefs.transport")
+    local original = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.start_sse()
+    transport.connect_sse = original
+    captured(events)
+    vim.notify = original_notify
+    return notices
+  end
+
+  it("does not announce another session's fault (a faulted agent session is not this editor's problem)", function()
+    local notices = run({ id = "mine0001", status = "Ready" }, {
+      { type = "state", data = vim.json.encode({ sessionFaulted = "other001", error = "McpAnalysis.fs(105,93): error FS0039" }) },
+    })
+    eq(0, #notices, "no message: " .. table.concat(notices, " | "))
+  end)
+
+  it("still announces a fault in the active session", function()
+    local notices = run({ id = "mine0001", status = "Ready" }, {
+      { type = "state", data = vim.json.encode({ sessionFaulted = "mine0001", error = "runtime 99 missing" }) },
+    })
+    eq(1, #notices)
+    ok_(notices[1]:find("runtime 99 missing", 1, true), notices[1])
+  end)
+
+  it("does not announce another session becoming ready", function()
+    local notices = run({ id = "mine0001", status = "Ready" }, {
+      { type = "warmup_completed", data = vim.json.encode({ session_id = "other001", project_count = 2 }) },
+    })
+    eq(0, #notices, "no message: " .. table.concat(notices, " | "))
+  end)
+
+  it("still announces the active session becoming ready", function()
+    local notices = run({ id = "mine0001", status = "WarmingUp" }, {
+      { type = "warmup_completed", data = vim.json.encode({ session_id = "mine0001", project_count = 2 }) },
+    })
+    eq(1, #notices)
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
