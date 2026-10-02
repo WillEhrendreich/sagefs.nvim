@@ -121,6 +121,7 @@ local function make_env(script, dap_opts, extra)
     exit_hooks = {},
     buffer_hooks = {},
     sync_releases = {},
+    waits = {},
     pending = {},
   }
   if dap_opts == false then env.dap = nil else env.dap = fake_dap(dap_opts) end
@@ -158,6 +159,12 @@ local function make_env(script, dap_opts, extra)
       return function() timer.cancelled = true end
     end,
     release_sync = function(url, body) table.insert(env.sync_releases, { url = url, body = body }) end,
+    -- vim.wait: runs `during` (the event loop turning) and reports whether cond held
+    wait = function(ms, cond)
+      table.insert(env.waits, ms)
+      if env.during_wait then env.during_wait() end
+      return cond()
+    end,
     on_exit = function(fn)
       if extra.exit_hook_throws then error("exit hook refused") end
       table.insert(env.exit_hooks, fn)
@@ -794,6 +801,35 @@ describe("debug_test.start, a hold that is still in flight", function()
     assert.is_truthy(env.sync_releases[1].body:find("debug-31337-1", 1, true))
     assert.are.equal(0, #env.dap.runs)
     assert.are.equal("finished", run.state())
+  end)
+
+  it("waits briefly at quit for the hold answer, then releases it synchronously", function()
+    local env = make_env({ debug = { "hang" } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.during_wait = function() env.pending[1].callback(true, answer_json(HELD)) end
+    env.exit_hooks[1]()
+    assert.are.equal(1, #env.waits)
+    assert.is_true(env.waits[1] <= dt.EXIT_WAIT_MS)
+    assert.is_true(dt.EXIT_WAIT_MS <= 3000, "a quit does not hang on a dead daemon")
+    assert.are.equal(1, #env.sync_releases, "the answer that arrived during the wait was released")
+    assert.is_truthy(env.sync_releases[1].body:find("debug-31337-1", 1, true))
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("gives up waiting when the answer never comes", function()
+    local env = make_env({ debug = { "hang" } })
+    dt.start(env.deps, { test_id = "X" })
+    env.exit_hooks[1]()
+    assert.are.equal(1, #env.waits)
+    assert.are.equal(0, #env.sync_releases)
+  end)
+
+  it("does not wait at quit when the hold is already answered", function()
+    local env = make_env({ debug = { { true, HELD } } })
+    dt.start(env.deps, { test_id = "X" })
+    env.exit_hooks[1]()
+    assert.are.equal(0, #env.waits)
+    assert.are.equal(1, #env.sync_releases)
   end)
 
   it("still arms the watchdog and starts the debugger when the buffer hook throws", function()
