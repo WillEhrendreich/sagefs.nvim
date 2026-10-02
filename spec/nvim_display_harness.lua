@@ -535,6 +535,60 @@ describe(":SageFsHelp and the first-run hint", function()
   end)
 end)
 
+describe("warmup events from other sessions", function()
+  --- Push raw SSE events through the real dispatch pipeline (stub only
+  --- transport.connect_sse, as spec/nvim_harness.lua does for §5.4).
+  local function push(sagefs, events)
+    local transport = require("sagefs.transport")
+    local original = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.start_sse()
+    transport.connect_sse = original
+    captured(events)
+  end
+
+  it("do not notify or move this editor's warmup state when our session is Ready", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    sagefs.active_session = { id = "mine0001", status = "Ready" }
+    sagefs.warmup_phase = nil
+    local notices = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg) notices[#notices + 1] = msg end
+    -- legacy shape (no session id) and the 0.6 state shape (with one) for ANOTHER session
+    push(sagefs, {
+      { type = "warmup_progress", data = vim.json.encode({ Phase = "creating_fsi", Step = 1, Total = 4 }) },
+      { type = "state", data = vim.json.encode({ warmupProgress = true, sessionId = "other001", step = 2, total = 4 }) },
+      { type = "warmup_progress", data = vim.json.encode({ Phase = "loading_assemblies", Step = 3, Total = 4 }) },
+    })
+    vim.notify = original_notify
+    eq(0, #notices, "no messages: " .. table.concat(notices, " | "))
+    eq(nil, sagefs.warmup_phase, "warmup phase untouched")
+  end)
+
+  it("still show our own session's warmup progress, and never an empty 'Warming up:'", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    sagefs.active_session = { id = "mine0001", status = "WarmingUp" }
+    local notices = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg) notices[#notices + 1] = msg end
+    push(sagefs, {
+      { type = "warmup_progress", data = vim.json.encode({ Phase = "creating_fsi", Step = 1, Total = 4 }) },
+      -- the 0.6 state-shaped progress event carries no phase: it must not announce "Warming up:" with nothing after it
+      { type = "state", data = vim.json.encode({ warmupProgress = true, sessionId = "mine0001", step = 2, total = 4 }) },
+    })
+    vim.notify = original_notify
+    eq(1, #notices, "one message: " .. table.concat(notices, " | "))
+    ok_(notices[1]:find("Creating FSI session", 1, true), notices[1])
+    for _, n in ipairs(notices) do ok_(not n:match("Warming up:%s*$"), "empty label: " .. n) end
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

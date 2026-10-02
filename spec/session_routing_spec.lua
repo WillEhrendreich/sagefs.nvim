@@ -194,3 +194,40 @@ describe("sagefs.sessions.picker_label", function()
     assert.are.equal(sessions.format_session_line(s), sessions.picker_label(s):sub(1, #sessions.format_session_line(s)))
   end)
 end)
+
+-- On a shared daemon, other people's sessions warm up all day. Their
+-- warmup_progress events used to drive this editor's message line ("Warming
+-- up:" flipping with an empty phase), and the stream of messages produced
+-- hit-enter prompts that froze every scheduled callback, including the render
+-- of this eval's result.
+describe("sagefs.sessions.warmup_event_is_ours", function()
+  local active = { id = "mine0001", status = "Ready" }
+
+  it("accepts an event for the active session", function()
+    assert.is_true(sessions.warmup_event_is_ours({ sessionId = "mine0001" }, active, false))
+  end)
+
+  it("rejects an event for another session", function()
+    assert.is_false(sessions.warmup_event_is_ours({ sessionId = "other001" }, active, false))
+    assert.is_false(sessions.warmup_event_is_ours({ SessionId = "other001" }, active, true))
+  end)
+
+  it("rejects an event with no session id when our session is Ready and we expect nothing", function()
+    assert.is_false(sessions.warmup_event_is_ours({ Phase = "creating_fsi" }, active, false))
+  end)
+
+  it("accepts an event with no session id while our own session is warming", function()
+    assert.is_true(sessions.warmup_event_is_ours({ Phase = "creating_fsi" }, { id = "x", status = "WarmingUp" }, false))
+    assert.is_true(sessions.warmup_event_is_ours({ Phase = "creating_fsi" }, { id = "x", status = "Starting" }, false))
+  end)
+
+  it("accepts events while we have just created a session and have none active yet", function()
+    assert.is_true(sessions.warmup_event_is_ours({ Phase = "creating_fsi" }, nil, true))
+    assert.is_true(sessions.warmup_event_is_ours({ sessionId = "new00001" }, nil, true))
+  end)
+
+  it("rejects everything when we have no session and expect none", function()
+    assert.is_false(sessions.warmup_event_is_ours({ Phase = "creating_fsi" }, nil, false))
+    assert.is_false(sessions.warmup_event_is_ours({ sessionId = "new00001" }, nil, false))
+  end)
+end)
