@@ -312,7 +312,11 @@ describe("sagefs.health compatibility section", function()
     package.loaded["sagefs.health"] = nil
   end)
 
+  -- A healthy, reachable daemon, so a test that expects no warnings and no
+  -- errors is not tripped by an unrelated "daemon not reachable".
+  local REACHABLE = [[{"healthy":true,"status":"ready","apiVersion":3,"version":"0.6.875","features":[]}]]
   local function run(plugin, state, health_json)
+    health_json = health_json or REACHABLE
     local out = { ok = {}, info = {}, warn = {}, error = {}, hints = {} }
     package.loaded["sagefs"] = {
       version = plugin,
@@ -332,6 +336,11 @@ describe("sagefs.health compatibility section", function()
         vim.v.shell_error = 0
         return health_json .. "\n200"
       end
+      -- The CLI and curl are installed; anything else (other probes) is unreachable.
+      if cmd == "sagefs --version" or cmd == "curl --version" then
+        vim.v.shell_error = 0
+        return "0.6.875"
+      end
       vim.v.shell_error = 1
       return ""
     end
@@ -344,20 +353,11 @@ describe("sagefs.health compatibility section", function()
     return false
   end
 
-  -- Unrelated warnings (an unreachable daemon in these mocks) are fine; any
-  -- warning about plugin/daemon versions or the api is not.
-  local function mentions_versions(list)
-    for _, m in ipairs(list) do
-      if m:find("plugin", 1, true) or m:find("api ", 1, true) or m:find("behind", 1, true) then return true end
-    end
-    return false
-  end
-
   it("says compatible when plugin and daemon agree on the api version", function()
     local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
     assert.is_true(has(out.ok, "plugin understands api 3, daemon speaks api 3: compatible"))
-    assert.is_false(mentions_versions(out.warn))
-    assert.is_false(mentions_versions(out.error))
+    assert.equals(0, #out.warn)
+    assert.equals(0, #out.error)
   end)
 
   it("reads the api version off the /health probe when the plugin has not connected", function()
@@ -386,20 +386,20 @@ describe("sagefs.health compatibility section", function()
     local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.875.0" })
     assert.is_false(has(out.info, "update the plugin when you can"))
     assert.is_false(has(out.info, "update the daemon when you can"))
-    assert.is_false(mentions_versions(out.warn))
+    assert.equals(0, #out.warn)
   end)
 
   it("prints a quiet info line, not a warning, when the daemon number is higher", function()
     local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.880" })
     assert.is_true(has(out.info, "plugin 0.6.875, daemon 0.6.880: update the plugin when you can"))
-    assert.is_false(mentions_versions(out.warn))
-    assert.is_false(mentions_versions(out.error))
+    assert.equals(0, #out.warn)
+    assert.equals(0, #out.error)
   end)
 
   it("prints a quiet info line when the plugin number is higher", function()
     local out = run("0.6.880", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
     assert.is_true(has(out.info, "plugin 0.6.880, daemon 0.6.875: update the daemon when you can"))
-    assert.is_false(mentions_versions(out.warn))
+    assert.equals(0, #out.warn)
   end)
 
   it("never says the plugin is behind just because the numbers differ", function()
