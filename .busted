@@ -5,7 +5,6 @@ return {
     pattern = "_spec",
     ["exclude-pattern"] = "e2e",
     ROOT = {"spec/"},
-    lua = "lua",
     helper = "spec/helper.lua",
   },
 }
