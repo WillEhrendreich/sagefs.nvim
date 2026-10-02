@@ -8,7 +8,7 @@ require("spec.helper")
 local function read_all(path)
   local f = io.open(path, "r")
   if not f then return nil end
-  local s = f:read("a")
+  local s = f:read("*a")
   f:close()
   return s
 end
@@ -48,7 +48,7 @@ describe("sync-version.sh", function()
 
   before_each(function()
     local p = io.popen("mktemp -d")
-    tmp = p:read("l")
+    tmp = p:read("*l")
     p:close()
     assert.is_truthy(tmp and tmp ~= "")
     sh("mkdir -p " .. tmp .. "/plugin/lua/sagefs " .. tmp .. "/SageFs")
