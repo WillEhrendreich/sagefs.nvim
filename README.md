@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **60 Lua modules under `lua/sagefs/` (61 under `lua/`), 1546 passing tests (1480 busted + 66 headless-Neovim integration) as of the latest run, 53 user commands.**
+This plugin provides the Neovim integration layer. **63 Lua modules under `lua/sagefs/` (64 under `lua/`), 1707 passing tests (1602 busted + 105 headless-Neovim integration) as of the latest run, 55 user commands.**
 
 ### New in Latest
 
@@ -175,6 +175,7 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
     auto_connect = true,    -- Connect SSE on startup
     check_on_save = false,  -- Type-check .fsx files on save (diagnostics via SSE)
     density = "normal",     -- "minimal" | "normal" | "full"
+    hint = true,            -- one-time hint of the three first commands on the first F# buffer
   },
 }
 ```
@@ -208,6 +209,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>re` | n | Evaluate cell |
 | `<leader>rl` | n | Evaluate current line |
 | `<leader>rf` | n | Evaluate file |
+| `<leader>rE` | n | Open the full result of the cell under the cursor in a float |
 | `<leader>rc` | n | Clear all results |
 | `<leader>rx` | n | Cancel eval |
 | **Sessions & connection** | | |
@@ -259,6 +261,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsEval` | Evaluate current cell |
 | `:SageFsEvalAdvance` | Evaluate current cell and advance to next |
 | `:SageFsEvalFile` | Evaluate entire file |
+| `:SageFsResult` | Open the full result of the cell under the cursor in a float |
+| `:SageFsHelp` | List every command and keymap, one line each (built from the live command table) |
 | `:SageFsCancel` | Cancel a running evaluation |
 | `:SageFsClear` | Clear all extmarks |
 | `:SageFsConnect` | Connect SSE stream |
@@ -349,7 +353,47 @@ opts = {
 
 ### Inline Results
 
-After evaluating with `<Alt-Enter>`, results appear as virtual text to the right of your code. Multi-line results render as virtual lines below the `;;` boundary.
+After you evaluate with `<Alt-Enter>`, the result is on screen. I used to draw every result on the cell's last line. In a cell taller than the window that line is off screen, so the result existed and you could not see it. Now each result hangs off a line of the cell that is visible ([`placement.lua`](lua/sagefs/placement.lua) decides which, as a pure function, and the property that the result lands inside the window is checked against 8000 generated windows in [`spec/placement_spec.lua`](spec/placement_spec.lua)):
+
+- A one-line result is ghost text at the end of the line, and nothing else.
+- A longer result goes under the cell's last line when that line is on screen and has room. When the cell is taller than the window, it goes under the line you evaluated from.
+- What does not fit is cut, and the last row says how much is left and how to get it: `… 14 more lines, <leader>rE to expand`. `<leader>rE` (or `:SageFsResult`) opens the whole result in a float.
+- Long lines wrap at the window edge, and the one-line summary is cut to the room that line has left.
+- Scrolling re-places the result so it stays in the window.
+
+A result belongs to the buffer you evaluated in. The Playground used to show the results of whichever `.fs` file you evaluated last. Cell state is still one slot per cell number, so if two buffers both evaluate their cell 1, the later one owns the slot.
+
+In a file without `;;`, a `///` doc comment belongs to the declaration under it, so a result never lands on the next declaration's doc comment.
+
+### When nothing seems to happen
+
+If an eval has no result after 4 seconds (`EVAL_SLOW_AFTER_MS` in [`lua/sagefs/config.lua`](lua/sagefs/config.lua)), the running cell says why, from what the daemon reports about the session the eval went to. It refreshes every 3 seconds.
+
+| You see | It means |
+|---------|----------|
+| `⏳ 6s: still running` | The session is Ready and the code is still evaluating. `:SageFsCancel` stops it. |
+| `⏳ 5s: session still warming` | The session is Starting, Building, Restarting or WarmingUp. |
+| `⏳ 5s: daemon not reachable` | The plugin could not reach the daemon on the configured port. |
+| `⏳ 5s: session X faulted: <reason>` | The daemon faulted the session, and gave a reason. |
+| `⏳ 5s: no session attached` | Nothing is attached to this buffer. `:SageFsCreateSession`. |
+
+Everything except "still running" also goes to the message line once.
+
+### Which session an eval goes to
+
+An eval goes to the session whose working directory holds the file you are editing. A git worktree is its own directory: the main checkout's session is not used for a worktree nested under it, even though the paths nest.
+
+If no session matches, the plugin sends nothing. It says so, lists the sessions that exist (short id, project, directory tail, status), and offers two things: create a session for this directory (you pick the project, the plugin never guesses one), or evaluate in a named session you pick. That pick is remembered for the directory. The same check runs at startup, so on a daemon that already has other people's sessions you still get the offer.
+
+`:SageFsStatus` has an `Eval here:` line that says which session an eval from the current buffer would reach, and `:SageFsSessions` shows each session's directory and id so two sessions of one project can be told apart.
+
+Other sessions' warmups and faults no longer print in your message line.
+
+### Finding your way around
+
+`:SageFsHelp` lists every `:SageFs*` command with its description. It reads the registered command table when you run it, so it cannot drift from what exists. It also lists the SageFs keymaps in the current buffer. Typing `:Sage<Tab>` completes the same names.
+
+The first time the plugin attaches to an F# buffer it shows a small float with the three commands I would learn first. Any cursor move dismisses it, a marker file (`sagefs_hint_seen` under `stdpath("data")`) keeps it from coming back, and `hint = false` in `setup()` turns it off.
 
 ### Telescope Picker
 
@@ -490,16 +534,18 @@ test_e2e.cmd                    # Run E2E tests against a real SageFs daemon
 busted spec/cells_spec.lua      # Run a single busted spec
 busted --filter "find_cell"     # Filter by test name
 nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
+nvim --headless --clean -u NONE -l spec/nvim_display_harness.lua  # Result placement, session routing, help (real Neovim, stubbed daemon)
+nvim --headless -u NONE -l spec/treesitter_cells_spec.lua  # needs the fsharp parser installed
 ```
 
 ### Test architecture
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1480 (latest run on Linux: 1480 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 66 (latest run: 66 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping. |
+| **Busted (pure)** | `busted` via LuaRocks | 1605 (latest run on Linux: 1602 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 105 (latest run: 72 in `nvim_harness.lua` + 33 in `nvim_display_harness.lua`, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping, result placement in a real window, session routing against a stubbed daemon, `:SageFsHelp` and the first-run hint, slow-eval status. |
 | **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1546 unit+integration passing** | 1480 busted + 66 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
+| **Total** | | **1707 unit+integration passing** | 1602 busted + 105 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
