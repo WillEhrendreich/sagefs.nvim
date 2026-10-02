@@ -213,6 +213,55 @@ describe("command reference integrity (§5.7)", function()
   end)
 end)
 
+describe("help file doc/sagefs.txt", function()
+  local function read(path)
+    local fh = assert(io.open(path, "rb"))
+    local text = fh:read("*a")
+    fh:close()
+    return text
+  end
+  local help = read(plugin_root .. "/doc/sagefs.txt")
+
+  it("has a help tag for every registered :SageFs command", function()
+    local missing = {}
+    for name in pairs(vim.api.nvim_get_commands({})) do
+      if name:match("^SageFs") and not help:find("*:" .. name .. "*", 1, true) then
+        table.insert(missing, name)
+      end
+    end
+    table.sort(missing)
+    assert_eq(0, #missing, "commands without a tag: " .. table.concat(missing, ", "))
+  end)
+
+  it("has a help tag for every User event", function()
+    local missing = {}
+    for _, name in ipairs(require("sagefs.events").EVENT_NAMES) do
+      if not help:find("*" .. name .. "*", 1, true) then table.insert(missing, name) end
+    end
+    assert_eq(0, #missing, "events without a tag: " .. table.concat(missing, ", "))
+  end)
+
+  it("only names commands that are registered", function()
+    local cmds = vim.api.nvim_get_commands({})
+    local phantom, seen = {}, {}
+    for name in help:gmatch("|:(SageFs%w+)|") do
+      if not cmds[name] and not seen[name] then seen[name] = true; table.insert(phantom, name) end
+    end
+    table.sort(phantom)
+    assert_eq(0, #phantom, "help links to unregistered commands: " .. table.concat(phantom, ", "))
+  end)
+
+  it("doc/tags is what :helptags generates, byte for byte", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. "/doc", "p")
+    local out = assert(io.open(dir .. "/doc/sagefs.txt", "wb"))
+    out:write(help)
+    out:close()
+    vim.cmd("helptags " .. vim.fn.fnameescape(dir .. "/doc"))
+    assert_truthy(read(dir .. "/doc/tags") == read(plugin_root .. "/doc/tags"), "doc/tags is stale: run :helptags doc/")
+  end)
+end)
+
 -- §5.6: transport failure vs. zero-sessions-returned must produce different
 -- messages. Previously both collapsed into "No active session for this
 -- directory" even when the plugin had `result.ok == false` (the daemon is
