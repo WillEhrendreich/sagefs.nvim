@@ -24,7 +24,7 @@ end
 
 --- Draw whatever these features put in a buffer. Called from the render paths.
 function M.render(buf, plugin)
-  require("sagefs.debug_test_ui").render_hints(buf, plugin.testing_state, plugin.annotations_state)
+  require("sagefs.debug_test_ui").render_hints(buf, plugin.testing_state, plugin.annotations_state, { density = plugin.density_state })
   if plugin.coverage_state then
     require("sagefs.coverage_hover").render_badges(buf, plugin.coverage_state, { density = plugin.density_state })
   end

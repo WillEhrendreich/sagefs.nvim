@@ -12,13 +12,15 @@ local M = {}
 
 local LEVELS = (vim and vim.log and vim.log.levels) or { INFO = 1, WARN = 2, ERROR = 3 }
 
-M.KEY = "<leader>rtD"
+-- Not <leader>rtD: that is one shifted letter from <leader>rtd, which disables
+-- live testing for the daemon's session.
+M.KEY = "<leader>rtg"
 
 -- ─── Pure: which test ────────────────────────────────────────────────────────
 
 --- Decide which test a :SageFsDebugTest call means.
 ---@param ctx { args: string, testing_state: table, annotations_state: table, file: string, line: number }
----@return table { kind = "start", target, name } | { kind = "choose", choices } | { kind = "none", message }
+---@return table { kind = "start", target, name } | { kind = "confirm", target, name, line, message } | { kind = "choose", choices } | { kind = "none", message }
 function M.resolve_target(ctx)
   local args = ctx.args or ""
   if args ~= "" then
@@ -41,7 +43,20 @@ function M.resolve_target(ctx)
   local here = dt.failing_tests_at(ctx.testing_state, ctx.annotations_state, ctx.file, ctx.line)
   local picked = decide(here)
   if picked then return picked end
-  picked = decide(dt.failing_tests_at(ctx.testing_state, ctx.annotations_state, ctx.file, nil))
+  -- Running a test is a side effect: off the failing line, name the only failing
+  -- test in the file and let the user confirm it.
+  local elsewhere = dt.failing_tests_at(ctx.testing_state, ctx.annotations_state, ctx.file, nil)
+  if #elsewhere == 1 then
+    local only = elsewhere[1]
+    return {
+      kind = "confirm",
+      target = { test_id = only.test_id },
+      name = only.name,
+      line = only.line,
+      message = string.format('No failing test on this line. Debug "%s" (line %s) instead?', only.name, tostring(only.line)),
+    }
+  end
+  picked = decide(elsewhere)
   if picked then return picked end
   return {
     kind = "none",
@@ -74,12 +89,14 @@ end
 local hint_ns = nil
 
 --- Draw the hint on every line of `buf` that carries a debuggable failure.
----@param opts { api: table|nil, leader: string|nil }|nil
+---@param opts { api: table|nil, leader: string|nil, density: table|nil }|nil
 function M.render_hints(buf, testing_state, annotations_state, opts)
   opts = opts or {}
   local api = opts.api or vim.api
   hint_ns = hint_ns or api.nvim_create_namespace("sagefs_debug_hint")
   api.nvim_buf_clear_namespace(buf, hint_ns, 0, -1)
+  -- The hint is a CodeLens-class layer: density minimal turns it off.
+  if opts.density and opts.density.codelens == false then return end
   local file = api.nvim_buf_get_name(buf)
   if file == "" then return end
   local line_count = api.nvim_buf_line_count(buf)
@@ -125,6 +142,11 @@ function M.run(plugin, helpers, args, env)
     helpers.notify(resolved.message, LEVELS.WARN)
   elseif resolved.kind == "start" then
     start(resolved.target)
+  elseif resolved.kind == "confirm" then
+    local select = env.select or vim.ui.select
+    select({ "Debug it", "Cancel" }, { prompt = resolved.message }, function(choice)
+      if choice == "Debug it" then start(resolved.target) end
+    end)
   else
     local select = env.select or vim.ui.select
     select(resolved.choices, {
@@ -146,7 +168,7 @@ function M.register_commands(plugin, helpers, create_user_command)
     M.run(plugin, helpers, vim.trim and vim.trim(cmd.args or "") or (cmd.args or ""))
   end, {
     nargs = "?",
-    desc = "Debug a failing test with nvim-dap (no argument: the failing test on this line; or a test name or id)",
+    desc = "Debug a failing test with nvim-dap (no argument: the failing test on this line, or the file's only one after you confirm; or a test name or id)",
   })
 
   create_user_command("SageFsDebugRelease", function()
