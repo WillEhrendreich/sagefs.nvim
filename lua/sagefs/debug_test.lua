@@ -56,6 +56,9 @@ local CONFIGURED_GRACE_MS = 1500
 M.SESSION_START_GRACE_MS = 5000
 -- A continue that fails to reach the daemon is tried once more after this pause.
 M.CONTINUE_RETRY_MS = 1000
+-- At quit, a hold request still in flight gets this long to be answered, so the
+-- answer can be released before Neovim goes. A dead daemon costs a quit this much.
+M.EXIT_WAIT_MS = 2000
 
 -- ─── Pure: adapter discovery ─────────────────────────────────────────────────
 
@@ -436,8 +439,12 @@ local function new_run(deps)
     if state == "finished" or release_sent then return end
     if not held then
       -- The hold request is still in flight: there is no ticket to release yet.
-      -- A late "held" answer is released the moment it arrives (see on_held).
+      -- A late "held" answer is released the moment it arrives (see on_held), so
+      -- give the request a moment to come back before Neovim goes.
       exit_pending = true
+      if deps.wait then
+        deps.wait(M.EXIT_WAIT_MS, function() return held ~= nil or state == "finished" end)
+      end
       return
     end
     release_sent = true
@@ -659,6 +666,7 @@ function M.default_deps(plugin, helpers, bufnr)
         if not timer:is_closing() then timer:stop(); timer:close() end
       end
     end,
+    wait = function(ms, cond) vim.wait(ms, cond, 10) end,
     release_sync = function(url, body)
       vim.fn.system({ "curl", "-s", "-m", "5", "-X", "POST", "-H", "Content-Type: application/json", "-d", body, url })
     end,
