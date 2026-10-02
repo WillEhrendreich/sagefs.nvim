@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **60 Lua modules under `lua/sagefs/` (61 under `lua/`), 1546 passing tests (1480 busted + 66 headless-Neovim integration) as of the latest run, 53 user commands.**
+This plugin provides the Neovim integration layer: 53 user commands on top of a pure-Lua core that busted tests outside Neovim, plus a thin layer that a headless-Neovim harness tests. How to run both is under [Running Tests](#running-tests). I keep test and module counts out of this README because they go stale with every release; each runner prints its own summary line, and that is where the current numbers live.
 
 ### New in Latest
 
@@ -395,7 +395,7 @@ Run `:checkhealth sagefs` to verify:
 
 ### Versions
 
-The plugin's version always matches the SageFs release it was tested against. SageFs 0.6.875 goes with sagefs.nvim 0.6.875, and `lua/sagefs/version.lua` holds the number. `sync-version.sh` (or `sync-version.ps1` on Windows) copies it from SageFs's `Directory.Build.props`.
+The plugin's version always matches the SageFs release it was tested against. Release N of SageFs goes with release N of sagefs.nvim (for example SageFs 0.6.875 with sagefs.nvim 0.6.875), and `lua/sagefs/version.lua` holds the number. `sync-version.sh` (or `sync-version.ps1` on Windows) copies it from SageFs's `Directory.Build.props`.
 
 Whether the plugin and a daemon can talk to each other is a separate question, and the release number does not answer it. The daemon reports an integer `apiVersion` on `/health` and `/version`. The plugin declares the range it understands in [`lua/sagefs/compat.lua`](lua/sagefs/compat.lua) (api 3 today), with the reason for each bound next to it.
 
@@ -412,66 +412,66 @@ Whether the plugin and a daemon can talk to each other is a separate question, a
 
 Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) outside Neovim) + a thin integration layer:
 
-| Module | Lines | Purpose |
-|--------|-------|---------|
-| `cells.lua` | 312 | `;;` boundary detection, cell finding, treesitter boundary support |
-| `format.lua` | 439 | Result formatting, status report builder, `build_render_options` |
-| `model.lua` | 232 | Elmish state machine with validated transitions (idle→running→success/error→stale) |
-| `sse.lua` | 208 | SSE parser, event classification, dispatch table, pcall batch dispatch |
-| `sessions.lua` | 341 | Session response parsing, context-sensitive action filtering, folding daemon lifecycle events (`sessionReady`, `sessionFaulted`, session health) into the session snapshot |
-| `compat.lua` | 111 | Wire compatibility: the `apiVersion` range the plugin understands (with reasons), `check`, `startup_warning`, and the information-only `version_relation` |
-| `fileio.lua` | 39 | The one place the plugin writes files: makes the parent directory first, returns a message on failure |
-| `spawn.lua` | 64 | The one place the plugin starts processes: `jobstart` that never raises, with the "sagefs is not on PATH" and "curl is not on PATH" messages |
-| `diagnostics.lua` | 99 | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
-| `testing.lua` | 1368 | Live testing state — SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
-| `coverage.lua` | 132 | Line-level coverage state, file/total summaries, gutter signs, statusline |
-| `type_explorer.lua` | 94 | Assembly/namespace/type/member formatting for pickers and floats |
-| `type_explorer_cache.lua` | 37 | In-memory cache for type explorer data, invalidated on hard reset |
-| `history.lua` | 69 | FSI event history formatting for picker and preview |
-| `export.lua` | 25 | Session export to .fsx format |
-| `events.lua` | 73 | User autocmd event definitions (37 event types) |
-| `completions.lua` | 30 | Omnifunc completion parsing and formatting |
-| `util.lua` | 52 | Shared utilities (json_decode) |
-| `hotreload_model.lua` | 66 | Pure hot reload URL builder, state, picker formatting |
-| `daemon.lua` | 72 | Daemon lifecycle state machine (idle→starting→running→stopped) |
-| `test_trace.lua` | 75 | Test trace parsing and formatting |
-| `app_run.lua` | 166 | Run/stop the session's application — request building, `AppStateView` parsing, notify/statusline formatting |
-| `annotations.lua` | 263 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
-| `density.lua` | 63 | Display density presets (minimal/normal/full), layer visibility control |
-| `diff.lua` | 81 | Semantic diff between cell evaluation results |
-| `depgraph.lua` | 101 | Cross-cell dependency graph with reactive staleness tracking |
-| `depgraph_viz.lua` | 134 | ASCII arrow rendering for dependency visualization |
-| `timeline.lua` | 106 | Eval timeline recording and flame-chart formatting |
-| `time_travel.lua` | 115 | Cell history recording with snapshot management |
-| `scope_map.lua` | 81 | Binding scope map — tracks what each cell defines |
-| `notebook.lua` | 112 | Literate notebook export (markdown + fsx formats) |
-| `type_flow.lua` | 114 | Cross-cell type propagation analysis and visualization |
-| `config.lua` | 39 | Per-project `.SageFs/config.fsx` helpers |
-| `daemon_discovery.lua` | 154 | Daemon discovery via `/health` + `/version` probes |
-| `telescope_picker.lua` | 256 | Telescope picker with source-jump / run / failure-narrative actions |
-| `version.lua` | 1 | Plugin version string (the SageFs release it was tested against; written by `sync-version.sh`) |
-| **Pure modules using vim APIs (integration-tested)** | | |
-| `cell_highlight.lua` | 308 | Dynamic eval region visuals — `╭│╰` bracket, 4 styles, eval-state color hints (uses `vim.api`/`vim.uv`) |
-| `treesitter_cells.lua` | 215 | Tree-sitter based cell detection for F# (inferred mode; requires `vim.treesitter`) |
-| `health.lua` | 289 | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
-| `annotations.lua` | 263 | (listed above; uses `vim.NIL` guard) |
-| **Integration layer** | | |
-| `init.lua` | 1650 | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
-| `transport.lua` | 248 | HTTP via curl, SSE connections with exponential backoff reconnect |
-| `render.lua` | 454 | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | 1768 | All 53 commands, keymaps, autocmds |
-| `hotreload.lua` | 130 | Hot reload file toggle API |
-| **Dashboard** | | |
-| `dashboard/init.lua` | 460 | Floating dashboard (SageFsDashboard) |
-| `dashboard/compositor.lua` | 121 | Dashboard layout compositor |
-| `dashboard/state.lua` | 279 | Dashboard state |
-| `dashboard/event_index.lua` | 56 | SSE event index |
-| `dashboard/section.lua` | 88 | Dashboard section base |
-| `dashboard/highlights.lua` | 59 | Dashboard highlight groups |
-| `dashboard/statusline.lua` | 59 | Dashboard statusline |
-| `dashboard/sections/*.lua` | ~600 total | 12 dashboard sections (alarms, bindings, coverage, diagnostics, failures, filmstrip, health, help, hot_reload, output, session, tests) |
-| **Telescope extension** | | |
-| `lua/telescope/_extensions/sagefs.lua` | 188 | Telescope extension source-jump/run integration |
+| Module | Purpose |
+|--------|---------|
+| `cells.lua` | `;;` boundary detection, cell finding, treesitter boundary support |
+| `format.lua` | Result formatting, status report builder, `build_render_options` |
+| `model.lua` | Elmish state machine with validated transitions (idle→running→success/error→stale) |
+| `sse.lua` | SSE parser, event classification, dispatch table, pcall batch dispatch |
+| `sessions.lua` | Session response parsing, context-sensitive action filtering, folding daemon lifecycle events (`sessionReady`, `sessionFaulted`, session health) into the session snapshot |
+| `compat.lua` | Wire compatibility: the `apiVersion` range the plugin understands (with reasons), `check`, `startup_warning`, and the information-only `version_relation` |
+| `fileio.lua` | The one place the plugin writes files: makes the parent directory first, returns a message on failure |
+| `spawn.lua` | The one place the plugin starts processes: `jobstart` that never raises, with the "sagefs is not on PATH" and "curl is not on PATH" messages |
+| `diagnostics.lua` | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
+| `testing.lua` | Live testing state: SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
+| `coverage.lua` | Line-level coverage state, file/total summaries, gutter signs, statusline |
+| `type_explorer.lua` | Assembly/namespace/type/member formatting for pickers and floats |
+| `type_explorer_cache.lua` | In-memory cache for type explorer data, invalidated on hard reset |
+| `history.lua` | FSI event history formatting for picker and preview |
+| `export.lua` | Session export to .fsx format |
+| `events.lua` | User autocmd event definitions (37 event types) |
+| `completions.lua` | Omnifunc completion parsing and formatting |
+| `util.lua` | Shared utilities (json_decode) |
+| `hotreload_model.lua` | Pure hot reload URL builder, state, picker formatting |
+| `daemon.lua` | Daemon lifecycle state machine (idle→starting→running→stopped) |
+| `test_trace.lua` | Test trace parsing and formatting |
+| `app_run.lua` | Run/stop the session's application: request building, `AppStateView` parsing, notify/statusline formatting |
+| `annotations.lua` | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
+| `density.lua` | Display density presets (minimal/normal/full), layer visibility control |
+| `diff.lua` | Semantic diff between cell evaluation results |
+| `depgraph.lua` | Cross-cell dependency graph with reactive staleness tracking |
+| `depgraph_viz.lua` | ASCII arrow rendering for dependency visualization |
+| `timeline.lua` | Eval timeline recording and flame-chart formatting |
+| `time_travel.lua` | Cell history recording with snapshot management |
+| `scope_map.lua` | Binding scope map: tracks what each cell defines |
+| `notebook.lua` | Literate notebook export (markdown + fsx formats) |
+| `type_flow.lua` | Cross-cell type propagation analysis and visualization |
+| `config.lua` | Per-project `.SageFs/config.fsx` helpers |
+| `daemon_discovery.lua` | Daemon discovery via `/health` + `/version` probes |
+| `telescope_picker.lua` | Telescope picker with source-jump / run / failure-narrative actions |
+| `version.lua` | Plugin version string (the SageFs release it was tested against; written by `sync-version.sh`) |
+| **Pure modules using vim APIs (integration-tested)** | |
+| `cell_highlight.lua` | Dynamic eval region visuals: `╭│╰` bracket, 4 styles, eval-state color hints (uses `vim.api`/`vim.uv`) |
+| `treesitter_cells.lua` | Tree-sitter based cell detection for F# (inferred mode; requires `vim.treesitter`) |
+| `health.lua` | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
+| `annotations.lua` | (listed above; uses `vim.NIL` guard) |
+| **Integration layer** | |
+| `init.lua` | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
+| `transport.lua` | HTTP via curl, SSE connections with exponential backoff reconnect |
+| `render.lua` | Extmarks, test/coverage gutter signs, floating windows |
+| `commands.lua` | All 53 commands, keymaps, autocmds |
+| `hotreload.lua` | Hot reload file toggle API |
+| **Dashboard** | |
+| `dashboard/init.lua` | Floating dashboard (SageFsDashboard) |
+| `dashboard/compositor.lua` | Dashboard layout compositor |
+| `dashboard/state.lua` | Dashboard state |
+| `dashboard/event_index.lua` | SSE event index |
+| `dashboard/section.lua` | Dashboard section base |
+| `dashboard/highlights.lua` | Dashboard highlight groups |
+| `dashboard/statusline.lua` | Dashboard statusline |
+| `dashboard/sections/*.lua` | 12 dashboard sections (alarms, bindings, coverage, diagnostics, failures, filmstrip, health, help, hot_reload, output, session, tests) |
+| **Telescope extension** | |
+| `lua/telescope/_extensions/sagefs.lua` | Telescope extension source-jump/run integration |
 
 Pure modules (the ones without a `vim` note) have zero vim API dependencies — they are testable under busted without a running Neovim instance. Modules noted above as using vim APIs (`cell_highlight.lua`, `treesitter_cells.lua`, `health.lua`, and the `vim.NIL` guard in `annotations.lua`) are integration-tested through the headless-Neovim harness instead.
 
@@ -502,6 +502,7 @@ Pure modules (the ones without a `vim` note) have zero vim API dependencies — 
 ```cmd
 test.cmd                        # Run full suite (busted + integration)
 test_e2e.cmd                    # Run E2E tests against a real SageFs daemon
+busted                          # Linux/macOS: .busted in the repo root finds spec/ and spec/helper.lua
 busted spec/cells_spec.lua      # Run a single busted spec
 busted --filter "find_cell"     # Filter by test name
 nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
@@ -509,12 +510,13 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 ### Test architecture
 
-| Suite | Runner | Count | What it covers |
-|-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1557 (latest run on Linux: 1557 passed, 3 failed, 5 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 87 (latest run: 87 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping. |
-| **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1644 unit+integration passing** | 1557 busted + 87 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
+| Suite | Runner | What it covers |
+|-------|--------|----------------|
+| **Busted (pure)** | `busted` via LuaRocks | Pure module logic: cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health, compat. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | Real vim APIs: plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE to model to extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, session lifecycle over SSE, command-reference integrity, SSE session-scoping. |
+| **E2E** | Headless Neovim + real SageFs | Full daemon lifecycle: eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). Needs a running SageFs daemon; the specs are in `spec/e2e/`. |
+
+Busted prints `N successes / N failures / N errors / N pending` and the harness prints `Results: N passed, N failed`. Both exit non-zero on a failure. The suite passes on Linux under Lua 5.1 (what the GitHub workflow installs), 5.4, 5.5 and LuaJIT, and `TESTING.md` has the Linux commands and the details I tripped over.
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 
