@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer. **63 Lua modules under `lua/sagefs/` (64 under `lua/`), 1707 passing tests (1602 busted + 105 headless-Neovim integration) as of the latest run, 55 user commands.**
+This plugin provides the Neovim integration layer. **63 Lua modules under `lua/sagefs/` (64 under `lua/`), 1712 passing tests (1602 busted + 110 headless-Neovim integration) as of the latest run, 55 user commands.**
 
 ### New in Latest
 
@@ -359,7 +359,7 @@ After you evaluate with `<Alt-Enter>`, the result is on screen. I used to draw e
 - A longer result goes under the cell's last line when that line is on screen and has room. When the cell is taller than the window, it goes under the line you evaluated from.
 - What does not fit is cut, and the last row says how much is left and how to get it: `… 14 more lines, <leader>rE to expand`. `<leader>rE` (or `:SageFsResult`) opens the whole result in a float.
 - Long lines wrap at the window edge, and the one-line summary is cut to the room that line has left.
-- Scrolling re-places the result so it stays in the window.
+- If you evaluate from the last row of the window, the view scrolls by the few rows it takes to show the result, never past the line you evaluated from. Scrolling or resizing later only moves the result, never your view.
 
 A result belongs to the buffer you evaluated in. The Playground used to show the results of whichever `.fs` file you evaluated last. Cell state is still one slot per cell number, so if two buffers both evaluate their cell 1, the later one owns the slot.
 
@@ -542,10 +542,10 @@ nvim --headless -u NONE -l spec/treesitter_cells_spec.lua  # needs the fsharp pa
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1605 (latest run on Linux: 1602 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 105 (latest run: 72 in `nvim_harness.lua` + 33 in `nvim_display_harness.lua`, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping, result placement in a real window, session routing against a stubbed daemon, `:SageFsHelp` and the first-run hint, slow-eval status. |
+| **Busted (pure)** | `busted` via LuaRocks | 1602 (latest run on Linux: 1602 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 110 (latest run: 72 in `nvim_harness.lua` + 38 in `nvim_display_harness.lua`, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping, result placement in a real window, session routing against a stubbed daemon, `:SageFsHelp` and the first-run hint, slow-eval status. |
 | **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
-| **Total** | | **1707 unit+integration passing** | 1602 busted + 105 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
+| **Total** | | **1712 unit+integration passing** | 1602 busted + 110 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
 
 The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
 

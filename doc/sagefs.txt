@@ -41,7 +41,7 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 Architecture: pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
-1707 tests passing (1602 busted + 105 headless-Neovim integration, latest
+1712 tests passing (1602 busted + 110 headless-Neovim integration, latest
 run; 3 busted failures are pre-existing and platform-specific); 55 user
 commands registered.
 
@@ -109,7 +109,9 @@ cell was taller than the window.
   `<leader>rE`) opens the whole result in a float.
 - Long lines wrap at the window edge. The one-line summary is cut to the
   room its line has left.
-- Scrolling or resizing re-places results so they stay in the window.
+- Evaluating from the last row of the window scrolls the view by the few
+  rows it takes to show the result, never past the line you evaluated from.
+  Scrolling or resizing later re-places results; it never moves your view.
 
 A result belongs to the buffer you evaluated in. Cell state is one slot per
 cell number, so two buffers that both evaluate their cell 1 share a slot;
