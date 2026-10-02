@@ -325,6 +325,7 @@ local function new_run(deps)
   local release_sent = false
   local debug_ended = false
   local abort_when_held = nil
+  local exit_pending = false -- Neovim started to quit while the hold request was in flight
   local cancels = {}
   local unhooks = {}
 
@@ -412,7 +413,13 @@ local function new_run(deps)
   end
 
   local function on_exit()
-    if state == "finished" or not held or release_sent then return end
+    if state == "finished" or release_sent then return end
+    if not held then
+      -- The hold request is still in flight: there is no ticket to release yet.
+      -- A late "held" answer is released the moment it arrives (see on_held).
+      exit_pending = true
+      return
+    end
     release_sent = true
     local body = vim.json.encode(M.build_continue_body(held.ticket, deps.session_id and deps.session_id() or nil))
     if deps.release_sync then pcall(deps.release_sync, deps.base_url() .. M.CONTINUE_PATH, body) end
@@ -455,19 +462,20 @@ local function new_run(deps)
   local function on_held(answer)
     held = answer
     state = "held"
-    for _, warning in ipairs(M.hold_warnings(held)) do
-      notify(warning, LEVELS.WARN)
-    end
-    if deps.on_exit then table.insert(unhooks, deps.on_exit(on_exit)) end
-    if deps.bufnr and deps.on_buffer_gone then
-      table.insert(unhooks, deps.on_buffer_gone(deps.bufnr, function() run.abort("buffer closed") end))
-    end
-    -- If the debugger never shows up, free the hold before the host drops it.
+    -- First of all: if the debugger never shows up, free the hold before the
+    -- host drops it. Nothing below may keep this from being armed.
     table.insert(cancels, deps.defer(held.holdMs or 120000, function() release() end))
 
+    if exit_pending then
+      on_exit() -- Neovim is on its way out: release through the synchronous route
+      return
+    end
     if abort_when_held then
       release()
       return
+    end
+    for _, warning in ipairs(M.hold_warnings(held)) do
+      notify(warning, LEVELS.WARN)
     end
     if deps.dap then
       arm_dap(deps.dap)
@@ -495,6 +503,19 @@ local function new_run(deps)
     release()
   end
 
+  --- Watch for the ways a hold can be orphaned. Armed before the hold request
+  --- goes out, so a quit or a wipe while it is in flight is still seen. A hook
+  --- that cannot be registered is reported and never stops the run: the hold
+  --- window watchdog is the backstop.
+  local function watch(what, hook, ...)
+    local ok, unhook = pcall(hook, ...)
+    if not ok then
+      notify("SageFs debug: could not watch for " .. what .. " (" .. tostring(unhook) .. ").", LEVELS.WARN)
+    elseif unhook then
+      table.insert(unhooks, unhook)
+    end
+  end
+
   function run.begin(target)
     local dap = deps.dap
     if dap then
@@ -508,6 +529,15 @@ local function new_run(deps)
         end
         dap.adapters.coreclr = { type = "executable", command = path, args = { "--interpreter=vscode" } }
       end
+    end
+    if deps.on_exit then watch("Neovim exiting", deps.on_exit, on_exit) end
+    if deps.bufnr and deps.on_buffer_gone then
+      watch("the buffer closing", deps.on_buffer_gone, deps.bufnr, function() run.abort("buffer closed") end)
+    end
+    if abort_when_held then
+      notify("SageFs debug: the buffer was closed before the test was held. Nothing was held.", LEVELS.INFO)
+      finish()
+      return
     end
     deps.http({
       method = "POST",
@@ -592,6 +622,10 @@ function M.default_deps(plugin, helpers, bufnr)
       return function() pcall(vim.api.nvim_del_autocmd, id) end
     end,
     on_buffer_gone = function(buf, fn)
+      if not vim.api.nvim_buf_is_valid(buf) then
+        fn() -- already gone: there is nothing to wait for
+        return function() end
+      end
       local id = vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
         buffer = buf, once = true, callback = function() fn() end,
       })
