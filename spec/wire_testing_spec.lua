@@ -64,11 +64,13 @@ end)
 describe("wire_testing.render, the badge", function()
   it("hands the active session to the coverage badge", function()
     local ch = require("sagefs.coverage_hover")
-    local prev = ch.render_badges
+    local ui = require("sagefs.debug_test_ui")
+    local prev, prev_hints = ch.render_badges, ui.render_hints
     local seen
     ch.render_badges = function(_, _, opts) seen = opts end
+    ui.render_hints = function() end
     require("sagefs.wire_testing").render(1, { coverage_state = {}, active_session = { id = "B" }, density_state = {} })
-    ch.render_badges = prev
+    ch.render_badges, ui.render_hints = prev, prev_hints
     assert.is_truthy(seen)
     assert.are.equal("B", seen.session_id)
   end)
