@@ -209,3 +209,66 @@ describe("wire_runtime.on_reconnect", function()
     assert.are.same({}, h.rt.statusline_segments())
   end)
 end)
+
+describe("wire_runtime surfaces that outlive one frame", function()
+  it("tells the virtual-text surface which file a save is about, from the compiling frame", function()
+    local noted = {}
+    local rt = wire_runtime.new({
+      notify = function() end, now_ms = function() return 0 end,
+      active_session = function() return { id = "adfd6b6b" } end,
+      ui = {
+        show = function() end, clear = function() end,
+        note_file = function(sid, file) table.insert(noted, { sid = sid, file = file }) end,
+      },
+    })
+    rt.on_reload_reported({ sessionId = "adfd6b6b", reloadReported = { state = "compiling", file = "Program.fs" } })
+    assert.are.same({ { sid = "adfd6b6b", file = "Program.fs" } }, noted)
+  end)
+
+  it("asks for a statusline redraw after a harmless verdict's fade, so the segment goes away on its own", function()
+    local later = {}
+    local rt = wire_runtime.new({
+      notify = function() end, now_ms = function() return 0 end,
+      active_session = function() return { id = "adfd6b6b" } end,
+      redraw_later = function(ms) table.insert(later, ms) end,
+    })
+    rt.on_reload_reported({ sessionId = "adfd6b6b", reloadReported = { state = "finished", outcome = "Patched", patched = 1, considered = 1, message = "m" } })
+    assert.are.same({ 15050 }, later)
+    rt.on_reload_reported({ sessionId = "adfd6b6b", reloadReported = { state = "finished", outcome = "RestartRequired", patched = 0, considered = 1, message = "m" } })
+    assert.are.same({ 15050 }, later)
+  end)
+end)
+
+describe("wire_runtime.on_session_ready: the worker was replaced", function()
+  it("forgets what events said about that session and reads the list again, because the daemon cleared both", function()
+    local h = harness()
+    h.rt.on_reload_reported(frame("Patched", { mechanism = "metadata-delta", patched = 1 }))
+    local before = h.refreshes
+    h.rt.on_session_ready({ sessionReady = "adfd6b6b" })
+    assert.are.equal(before + 1, h.refreshes)
+    assert.is_nil(require("sagefs.reload_state").current(h.rt.model(), "adfd6b6b"))
+  end)
+
+  it("drops a banner-derived behind state for that session", function()
+    local body = vim.json.decode(fx.read("exec-behind-app.json"))
+    local h = harness({ active = { id = "adfd6b6b" } })
+    h.rt.on_eval({ ok = true, output = body.result })
+    assert.are_not.same({}, h.rt.statusline_segments())
+    h.rt.on_session_ready({ sessionReady = "adfd6b6b" })
+    assert.are.same({}, h.rt.statusline_segments())
+  end)
+
+  it("leaves other sessions alone", function()
+    local h = harness()
+    h.rt.on_reload_reported(frame("RestartRequired"))
+    h.rt.on_session_ready({ sessionReady = "someone-else" })
+    assert.are.equal("RestartRequired", require("sagefs.reload_state").current(h.rt.model(), "adfd6b6b").outcome)
+  end)
+
+  it("ignores a frame with no session id", function()
+    local h = harness()
+    h.rt.on_session_ready({})
+    h.rt.on_session_ready(nil)
+    assert.are.equal(0, h.refreshes)
+  end)
+end)
