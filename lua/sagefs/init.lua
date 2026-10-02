@@ -187,7 +187,7 @@ local SSE_HANDLER_DEFS = {
   -- Failure narrative context for tests that transitioned Passed→Failed
   { action = "failure_narratives", fn = "handle_failure_narratives", target = "testing", event = "failure_narratives" },
   -- Coverage view: per-function aggregate badge (one per CoverageView)
-  { action = "coverage_view", event = "coverage_view" },
+  { action = "coverage_view", fn = "apply_coverage_view", target = "coverage", session_scoped = true, event = "coverage_view" },
 }
 
 -- State target → { state_key, module }

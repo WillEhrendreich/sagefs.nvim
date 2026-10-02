@@ -78,6 +78,13 @@ describe("coverage_hover.format_float", function()
     assert.is_nil(next(f.rows))
   end)
 
+  it("a covered line with no per-test reading says so instead of claiming no test covers it (the real payload)", function()
+    local real = coverage.covering_info(fixture("file_annotations_demoenv_tests.json"), 11, tests_state())
+    local f = ch.format_float(real)
+    assert.is_truthy(f.lines[1]:find("covered, but the daemon has no per-test reading", 1, true))
+    assert.is_nil(next(f.rows))
+  end)
+
   it("a title names the span when the annotation covers several lines", function()
     local f = ch.format_float(info_at(37))
     assert.is_truthy(f.title:find("36", 1, true))
