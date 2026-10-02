@@ -113,3 +113,111 @@ describe("sagefs.sessions.lifecycle_update", function()
     assert.is_nil(sessions.lifecycle_update({ sessionReady = 5 }))
   end)
 end)
+
+-- A Faulted session carries a fault_reason. Once the session is anything
+-- else the reason is stale: the statusline used to show "Ready" next to the
+-- old fault text.
+describe("sagefs.sessions.apply_update and fault_reason", function()
+  local function faulted()
+    local s = { id = "s1", name = "A", status = "Faulted", fault_reason = "boom", projects = {} }
+    return { s }, s
+  end
+
+  it("clears fault_reason, in the list and the active session, when the session turns Ready", function()
+    local list, active = faulted()
+    local new_list, new_active = sessions.apply_update(list, active, "s1", { status = "Ready" })
+    assert.equals("Ready", new_list[1].status)
+    assert.is_nil(new_list[1].fault_reason)
+    assert.is_nil(new_active.fault_reason)
+  end)
+
+  it("clears fault_reason for any non-Faulted status", function()
+    local list, active = faulted()
+    local new_list = sessions.apply_update(list, active, "s1", { status = "Starting" })
+    assert.is_nil(new_list[1].fault_reason)
+  end)
+
+  it("keeps fault_reason when only health changes", function()
+    local list, active = faulted()
+    local new_list = sessions.apply_update(list, active, "s1", { health = { status = "Failed" } })
+    assert.equals("boom", new_list[1].fault_reason)
+  end)
+
+  it("sets the new fault_reason when the session faults", function()
+    local s = { id = "s1", status = "Ready", projects = {} }
+    local new_list = sessions.apply_update({ s }, s, "s1", { status = "Faulted", fault_reason = "later" })
+    assert.equals("later", new_list[1].fault_reason)
+  end)
+
+  it("does not mutate the inputs when it clears the reason", function()
+    local list, active = faulted()
+    sessions.apply_update(list, active, "s1", { status = "Ready" })
+    assert.equals("boom", list[1].fault_reason)
+    assert.equals("boom", active.fault_reason)
+  end)
+end)
+
+-- A /api/sessions answer can be older than an event that has been folded in
+-- since the request went out (Ready triggers a refresh; a Faulted event may
+-- arrive before the answer does). The older answer must not undo the newer
+-- event.
+describe("sagefs.sessions.keep_newer", function()
+  local function snapshot()
+    return {
+      { id = "s1", name = "A", status = "Ready", projects = {}, eval_count = 7 },
+      { id = "s2", name = "B", status = "Ready", projects = {}, eval_count = 1 },
+    }
+  end
+
+  local function current()
+    return {
+      { id = "s1", name = "A", status = "Faulted", fault_reason = "boom", projects = {}, eval_count = 0 },
+      { id = "s2", name = "B", status = "Starting", projects = {}, eval_count = 0 },
+    }
+  end
+
+  it("keeps the live status and fault_reason of a session in the newer set", function()
+    local merged = sessions.keep_newer(snapshot(), current(), { s1 = true })
+    assert.equals("Faulted", merged[1].status)
+    assert.equals("boom", merged[1].fault_reason)
+  end)
+
+  it("takes everything else about that session from the snapshot", function()
+    local merged = sessions.keep_newer(snapshot(), current(), { s1 = true })
+    assert.equals(7, merged[1].eval_count)
+  end)
+
+  it("takes sessions outside the newer set straight from the snapshot", function()
+    local merged = sessions.keep_newer(snapshot(), current(), { s1 = true })
+    assert.equals("Ready", merged[2].status)
+  end)
+
+  it("keeps the live health too, including its absence", function()
+    local cur = current()
+    cur[1].health = { status = "Degraded", reason = "gc" }
+    local merged = sessions.keep_newer(snapshot(), cur, { s1 = true })
+    assert.equals("Degraded", merged[1].health.status)
+    local snap = snapshot()
+    snap[1].health = { status = "Healthy" }
+    assert.is_nil(sessions.keep_newer(snap, current(), { s1 = true })[1].health)
+  end)
+
+  it("takes the snapshot when the session is not in the current list", function()
+    local merged = sessions.keep_newer(snapshot(), {}, { s1 = true })
+    assert.equals("Ready", merged[1].status)
+  end)
+
+  it("is the snapshot unchanged when nothing is newer, and does not mutate its inputs", function()
+    local snap, cur = snapshot(), current()
+    local merged = sessions.keep_newer(snap, cur, {})
+    assert.same(snapshot(), merged)
+    sessions.keep_newer(snap, cur, { s1 = true })
+    assert.equals("Ready", snap[1].status)
+    assert.equals("Faulted", cur[1].status)
+  end)
+
+  it("treats a nil current list or newer set as nothing to keep", function()
+    assert.same(snapshot(), sessions.keep_newer(snapshot(), nil, { s1 = true }))
+    assert.same(snapshot(), sessions.keep_newer(snapshot(), current(), nil))
+  end)
+end)

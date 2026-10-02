@@ -736,15 +736,23 @@ describe("session lifecycle over SSE", function()
       active = sagefs.active_session, list = sagefs.session_list, phase = sagefs.warmup_phase,
       step = sagefs.warmup_step, total = sagefs.warmup_total, state = sagefs.state,
     }
-    local captured, notes = nil, {}
+    local original_http_json = transport.http_json
+    local original_window = sagefs.config.session_refresh_debounce_ms
+    local captured, notes, http_calls = nil, {}, {}
     transport.connect_sse = function(_url, opts)
       captured = opts
       return { start = function() end, stop = function() end }
     end
+    -- Requests are recorded, never sent and never answered unless a test
+    -- calls the recorded callback itself.
+    transport.http_json = function(opts) table.insert(http_calls, opts) end
+    sagefs.config.session_refresh_debounce_ms = 20
     vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
     sagefs.start_sse()
-    local ok, err = pcall(fn, sagefs, captured, notes)
+    local ok, err = pcall(fn, sagefs, captured, notes, http_calls)
     transport.connect_sse = original_connect_sse
+    transport.http_json = original_http_json
+    sagefs.config.session_refresh_debounce_ms = original_window
     vim.notify = original_notify
     sagefs.active_session, sagefs.session_list, sagefs.warmup_phase = saved.active, saved.list, saved.phase
     sagefs.warmup_step, sagefs.warmup_total, sagefs.state = saved.step, saved.total, saved.state
@@ -791,6 +799,102 @@ describe("session lifecycle over SSE", function()
       send(cap, "state", { sessionReady = "s1" })
       assert_falsy(sagefs.warmup_phase, "warmup phase cleared")
       assert_falsy(sagefs.statusline():find("⏳ SageFs", 1, true), "no warmup label once Ready")
+    end)
+  end)
+
+  local function session_gets(http_calls)
+    local n = 0
+    for _, c in ipairs(http_calls) do
+      if c.method == "GET" and c.url:find("/api/sessions", 1, true) and not c.url:find("/api/sessions/", 1, true) then
+        n = n + 1
+      end
+    end
+    return n
+  end
+
+  local function wait_for_gets(http_calls, n)
+    vim.wait(500, function() return session_gets(http_calls) >= n end, 5)
+  end
+
+  it("the refresh window is a named setting in the config", function()
+    local sagefs = require("sagefs")
+    assert_type("number", sagefs.config.session_refresh_debounce_ms, "session_refresh_debounce_ms")
+    assert_truthy(sagefs.config.session_refresh_debounce_ms > 0, "a positive window")
+  end)
+
+  it("sessionReady asks the daemon for the authoritative session list", function()
+    with_sse(function(sagefs, cap, _notes, http)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "state", { sessionReady = "s1" })
+      wait_for_gets(http, 1)
+      assert_eq(1, session_gets(http), "one GET /api/sessions after sessionReady")
+    end)
+  end)
+
+  it("50 sessionReady events for unknown sessions cause one GET /api/sessions, not 50", function()
+    with_sse(function(sagefs, cap, _notes, http)
+      sagefs.session_list, sagefs.active_session = {}, nil
+      for i = 1, 50 do send(cap, "state", { sessionReady = "ghost-" .. i }) end
+      wait_for_gets(http, 1)
+      vim.wait(100, function() return false end, 10)
+      assert_eq(1, session_gets(http), "burst coalesced into one list refresh")
+    end)
+  end)
+
+  it("a later burst, after the window closed, refreshes again", function()
+    with_sse(function(sagefs, cap, _notes, http)
+      sagefs.session_list, sagefs.active_session = {}, nil
+      send(cap, "state", { sessionReady = "ghost-1" })
+      wait_for_gets(http, 1)
+      send(cap, "state", { sessionReady = "ghost-2" })
+      wait_for_gets(http, 2)
+      assert_eq(2, session_gets(http), "one refresh per window")
+    end)
+  end)
+
+  it("sessionReady clears the old fault_reason", function()
+    with_sse(function(sagefs, cap)
+      local s = starting_session("s1")
+      s.status, s.fault_reason = "Faulted", "boom"
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "state", { sessionReady = "s1" })
+      assert_eq("Ready", sagefs.active_session.status)
+      assert_falsy(sagefs.active_session.fault_reason, "active session fault_reason")
+      assert_falsy(sagefs.session_list[1].fault_reason, "list entry fault_reason")
+    end)
+  end)
+
+  it("a session list answer older than a later sessionFaulted does not turn the session Ready again", function()
+    with_sse(function(sagefs, cap, _notes, http)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "state", { sessionReady = "s1" })
+      wait_for_gets(http, 1)
+      local request = http[#http]
+      -- the daemon faults before the answer to that request reaches us
+      send(cap, "state", { sessionFaulted = "s1", error = "boom" })
+      request.callback(true, vim.json.encode({ sessions = {
+        { id = "s1", status = "Ready", projects = { "DemoEnv.Tests.fsproj" }, workingDirectory = "/w" },
+      } }))
+      assert_eq("Faulted", sagefs.active_session.status, "the later event wins over the older snapshot")
+      assert_eq("boom", sagefs.active_session.fault_reason)
+      assert_contains(sagefs.statusline(), "(Faulted)", "statusline")
+    end)
+  end)
+
+  it("a session list answer requested after the fault is authoritative", function()
+    with_sse(function(sagefs, cap, _notes, http)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      send(cap, "state", { sessionFaulted = "s1", error = "boom" })
+      send(cap, "state", { sessionReady = "s1" })
+      wait_for_gets(http, 1)
+      http[#http].callback(true, vim.json.encode({ sessions = {
+        { id = "s1", status = "Ready", projects = { "DemoEnv.Tests.fsproj" }, workingDirectory = "/w" },
+      } }))
+      assert_eq("Ready", sagefs.active_session.status)
+      assert_falsy(sagefs.active_session.fault_reason, "no stale fault text next to Ready")
     end)
   end)
 
