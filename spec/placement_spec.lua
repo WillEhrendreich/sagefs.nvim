@@ -115,6 +115,18 @@ describe("sagefs.placement.place", function()
       assert.is_true(p.footer)
     end)
 
+    it("keeps the result at the cell's end, truncated, when there is room for a few lines (does not split the code)", function()
+      -- cell 1..30 ends 7 rows above the window's bottom; the result needs 40 rows
+      local p = placement.place({
+        cell_start = 1, cell_end = 30, anchor = 25,
+        top = 1, bot = 37, rows = 37, height = 40, max_lines = 12,
+      })
+      assert.are.equal(30, p.line)
+      assert.is_true(p.footer)
+      assert.is_true(p.shown >= 4)
+      assert.is_true(30 + p.shown + 1 <= 37)
+    end)
+
     it("moves up inside the cell when the cell end is at the very bottom of the window", function()
       -- the cell end is the last visible row: nothing would fit beneath it
       local p = placement.place({
