@@ -17,6 +17,12 @@ M.EVAL_STATUS_POLL_MS = 3000
 --- Shown in the "N more lines, <key> to expand" footer.
 M.EXPAND_RESULT_KEY = "<leader>rE"
 
+--- While the plugin's session reads Starting/Building/Restarting/WarmingUp,
+--- the session list is re-read this often until it does not. The daemon
+--- answers a create request only once the session is up, so the events that
+--- announce readiness can come before the reply and be missed.
+M.SESSION_WARMUP_POLL_MS = 2000
+
 --- Result rows drawn under a cell before the footer takes over.
 M.RESULT_MAX_LINES = 12
 

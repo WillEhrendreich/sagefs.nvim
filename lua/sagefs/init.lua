@@ -1033,6 +1033,20 @@ end
 
 -- ─── Session API ──────────────────────────────────────────────────────────────
 
+local warmup_poll_timer = nil
+
+--- While our session is still warming, look at the session list again until it
+--- is not (see config.SESSION_WARMUP_POLL_MS).
+local function poll_while_warming()
+  if warmup_poll_timer then return end
+  local s = M.active_session
+  if not (s and sessions.WARMING_STATUSES[s.status]) then return end
+  warmup_poll_timer = vim.fn.timer_start(require("sagefs.config").SESSION_WARMUP_POLL_MS, function()
+    warmup_poll_timer = nil
+    vim.schedule(function() M.list_sessions() end)
+  end)
+end
+
 function M.list_sessions(callback)
   session_http("GET", "/api/sessions", nil, function(ok, raw)
     local result = sessions.parse_sessions_response(ok and raw or nil)
@@ -1040,6 +1054,7 @@ function M.list_sessions(callback)
       M.session_list = result.sessions
       local active_id = M.active_session and M.active_session.id or nil
       M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())
+      poll_while_warming()
     end
     if callback then callback(result) end
   end)
@@ -1070,6 +1085,9 @@ end
 
 local function create_targets(paths, working_dir, callback)
   working_dir = working_dir or vim.fn.getcwd()
+  -- The daemon answers only once the session is up, so its warmup events
+  -- arrive BEFORE the reply: expect them from the moment the request is out.
+  M.warmup_expected_until = (vim.uv.hrtime() / 1e6) + 180000
   session_http("POST", "/api/sessions/create", {
     projects = paths,
     workingDirectory = working_dir,
