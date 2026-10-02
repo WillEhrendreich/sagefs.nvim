@@ -677,6 +677,57 @@ describe("the statusline after our session finishes warming", function()
     ok_(not line:find("Ready!", 1, true), "no leftover warmup text: " .. line)
     ok_(line:find("(Ready)", 1, true), "the session reads Ready: " .. line)
   end)
+
+  it("also when the daemon says it with a state event ({ sessionReady = id })", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        opts.callback(true, vim.json.encode({ sessions = { {
+          id = "mine0001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+        } } }))
+      end
+    end
+    local original_connect = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    local original_notify = vim.notify
+    vim.notify = function() end
+    sagefs.active_session = { id = "mine0001", name = "App", status = "Starting", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.start_sse()
+    captured({ { type = "warmup_progress", data = vim.json.encode({ Phase = "finalizing", Step = 4, Total = 4 }) } })
+    captured({ { type = "state", data = vim.json.encode({ sessionReady = "mine0001" }) } })
+    vim.wait(150, function() return false end, 10)
+    transport.http_json = original_http
+    transport.connect_sse = original_connect
+    vim.notify = original_notify
+    eq(nil, sagefs.warmup_phase, "warmup phase cleared")
+    ok_(sagefs.statusline():find("(Ready)", 1, true), "the session reads Ready: " .. sagefs.statusline())
+  end)
+
+  it("ignores another session becoming ready", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_connect = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.active_session = { id = "mine0001", name = "App", status = "WarmingUp", projects = { "App.fsproj" } }
+    sagefs.warmup_phase = "loading_assemblies"
+    sagefs.start_sse()
+    captured({ { type = "state", data = vim.json.encode({ sessionReady = "other001" }) } })
+    transport.connect_sse = original_connect
+    eq("loading_assemblies", sagefs.warmup_phase, "still waiting for our own")
+    sagefs.warmup_phase = nil
+  end)
 end)
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
