@@ -124,7 +124,10 @@ Connection ~
 
 :SageFsStart                                            *:SageFsStart*
     Auto-discover .sln/.fsproj in the working directory and start
-    the SageFs daemon if not already running.
+    the SageFs daemon if not already running. It checks that the
+    `sagefs` binary can be found first. If it cannot, the message says
+    to run `dotnet tool install --global sagefs` or to set `sagefs_path`
+    (see |sagefs-config|).
 
 :SageFsDisconnect                                       *:SageFsDisconnect*
     Disconnect from the SageFs daemon.
@@ -380,6 +383,8 @@ Pass configuration to setup(): >lua
   require("sagefs").setup({
     port = 37749,                -- SageFs daemon port
     dashboard_port = 37750,      -- Dashboard/hot-reload port
+    sagefs_path = "sagefs",      -- Binary |:SageFsStart| runs (full path if
+                                 -- PATH does not see it)
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
     density = "normal",          -- "minimal" | "normal" | "full"
@@ -466,10 +471,33 @@ Run `:checkhealth sagefs` to verify your setup. Checks: >
 
   ✓ SageFs CLI found
   ✓ sagefs.nvim loaded
-  ✓ Connected to SageFs daemon
+  ✓ Daemon reachable
+  ✓ plugin understands api 3, daemon speaks api 3: compatible
   ✓ Tree-sitter F# parser installed
   ✓ curl available
 <
+                                                          *sagefs-versions*
+Versions ~
+
+The plugin's version always matches the SageFs release it was tested
+against: SageFs 0.6.875 goes with sagefs.nvim 0.6.875. `sync-version.sh`
+(or `sync-version.ps1`) copies the number from SageFs's
+`Directory.Build.props` into `lua/sagefs/version.lua`.
+
+Whether the plugin and a daemon can talk is a separate question that the
+release number does not answer. The daemon reports an integer `apiVersion`
+on /health and /version, and the plugin declares the range it understands
+in `lua/sagefs/compat.lua` (api 3 today), with a reason for each bound.
+
+  Same api version      `:checkhealth` says "compatible".
+  Api outside the range `:checkhealth` reports an error naming both numbers
+                        and which side to update (the plugin, or the daemon
+                        with `dotnet tool update --global sagefs`), and you
+                        get one warning at startup. Only this case warns.
+  Different release     A quiet info line in `:checkhealth`, for example
+  numbers, same api     "plugin 0.6.875, daemon 0.6.880: update the plugin
+                        when you can". No startup warning.
+
 ==============================================================================
 14. CELL HIGHLIGHT                                       *sagefs-cell-highlight*
 
@@ -653,7 +681,10 @@ Event reference ~
 16. FAQ                                                      *sagefs-faq*
 
 Q: How do I install SageFs?
-A: `dotnet tool install -g sagefs`. See the SageFs README for details.
+A: `dotnet tool install --global sagefs`. See the SageFs README for details.
+   If |:SageFsStart| says `sagefs` is not on PATH, restart Neovim after
+   installing so it sees the new PATH, or set `sagefs_path` to the full
+   path of the binary.
 
 Q: How do I start the daemon?
 A: Run `sagefs --proj YourApp.fsproj` in a terminal, or use |:SageFsStart|

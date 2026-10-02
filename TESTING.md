@@ -13,6 +13,22 @@ lua run_busted.lua --helper=spec/helper.lua
 Tests live in `spec/*.lua` and use busted's `describe`/`it`/`assert` API.
 These tests mock `vim.*` APIs via `spec/helper.lua`.
 
+`run_busted.lua` carries Windows LuaRocks paths. On Linux, put LuaRocks on
+the path and call busted directly:
+
+```bash
+eval "$(luarocks path)"
+~/.luarocks/bin/busted --helper=spec/helper.lua
+nvim --headless --clean -u NONE -l spec/nvim_harness.lua   # headless integration
+```
+
+The plugin's version tracks the SageFs release (see "Versions" in the README).
+To make busted check that, point `SAGEFS_REPO` at a SageFs checkout:
+`SAGEFS_REPO=~/Work/SageFs busted --helper=spec/helper.lua spec/version_spec.lua`
+fails while `lua/sagefs/version.lua` is behind that checkout's
+`Directory.Build.props`, and the fix is `./sync-version.sh ~/Work/SageFs`.
+Without `SAGEFS_REPO` that one spec is pending.
+
 **Coverage:** SSE parsing, cell boundary detection (`;;`), model state, transport, rendering, completions, format, diagnostics, etc.
 
 ## 2. nvim --headless (tree-sitter integration tests)
