@@ -53,3 +53,16 @@ Fixture files in `fixtures/` are test data. **Do not edit without updating
 - **tree-sitter-fsharp `with` members:** The grammar incorrectly parses
   `type Foo = { ... } with member ...` as separate nodes. We work around
   this in `treesitter_cells.lua` (see `extract_from_app_expr`).
+
+## Wire fixtures
+
+`spec/fixtures/wire/` holds payloads captured from a dev SageFs daemon (live
+bindings snapshots, click and mode answers, debug hold answers, a
+coverage_view replay, file_annotations). The specs that read them say which
+parts are real and which are derived by hand from the documented shape (for
+example `file_annotations_covering_synthetic.json` fills in `CoveringTests`,
+which were empty in every payload the daemon sent while I captured).
+
+Running one spec file: busted's CLI here takes no file argument, so point a
+config at it, e.g. `{ default = { pattern = "debug_test_spec", ROOT = {"spec/"}, helper = "spec/helper.lua" } }`
+with `lua run_busted.lua -f that-config.lua`.
