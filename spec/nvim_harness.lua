@@ -898,6 +898,71 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
+  it("a session event with null data is ignored without a handler error", function()
+    with_sse(function(sagefs, cap, notes)
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      cap.on_events({ { type = "session", data = "null" } })
+      cap.on_events({ { type = "session", data = "7" } })
+      cap.on_events({ { type = "session", data = '"text"' } })
+      vim.wait(50, function() return false end, 10)
+      for _, n in ipairs(notes) do
+        assert_falsy(n.msg:find("SSE handler error", 1, true), "no handler error for a non-object payload: " .. n.msg)
+      end
+      assert_eq("Starting", sagefs.active_session.status, "nothing else changed")
+    end)
+  end)
+
+  it("another session's fault leaves the active session's coverage alone", function()
+    with_sse(function(sagefs, cap, notes)
+      local coverage = require("sagefs.coverage")
+      local saved_cov = sagefs.coverage_state
+      local s, other = starting_session("s1"), starting_session("s2")
+      sagefs.session_list, sagefs.active_session = { s, other }, s
+      sagefs.coverage_state = coverage.new()
+      sagefs.coverage_state.files = { ["/src/A.fs"] = { lines = { { line = 1, covered = true } } } }
+      send(cap, "state", { sessionFaulted = "s2", error = "boom" })
+      local kept = sagefs.coverage_state.files["/src/A.fs"] ~= nil
+      sagefs.coverage_state = saved_cov
+      assert_truthy(kept, "the active session's coverage must survive someone else's fault")
+      assert_eq("Faulted", sagefs.session_list[2].status, "the faulted session is marked")
+      assert_eq("Starting", sagefs.active_session.status, "the active session is not")
+      local told = false
+      for _, n in ipairs(notes) do if n.msg:find("s2", 1, true) and n.msg:find("boom", 1, true) then told = true end end
+      assert_truthy(told, "the user is still told which session faulted")
+    end)
+  end)
+
+  it("the active session's own fault still clears its coverage", function()
+    with_sse(function(sagefs, cap)
+      local coverage = require("sagefs.coverage")
+      local saved_cov = sagefs.coverage_state
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      sagefs.coverage_state = coverage.new()
+      sagefs.coverage_state.files = { ["/src/A.fs"] = { lines = { { line = 1, covered = true } } } }
+      send(cap, "state", { sessionFaulted = "s1", error = "boom" })
+      local cleared = next(sagefs.coverage_state.files) == nil
+      sagefs.coverage_state = saved_cov
+      assert_truthy(cleared, "coverage of the faulted active session is cleared")
+    end)
+  end)
+
+  it("a fault with no session id still clears (nothing says it is someone else's)", function()
+    with_sse(function(sagefs, cap)
+      local coverage = require("sagefs.coverage")
+      local saved_cov = sagefs.coverage_state
+      local s = starting_session("s1")
+      sagefs.session_list, sagefs.active_session = { s }, s
+      sagefs.coverage_state = coverage.new()
+      sagefs.coverage_state.files = { ["/src/A.fs"] = { lines = { { line = 1, covered = true } } } }
+      cap.on_events({ { type = "SessionFaulted", data = vim.json.encode({ reason = "legacy" }) } })
+      local cleared = next(sagefs.coverage_state.files) == nil
+      sagefs.coverage_state = saved_cov
+      assert_truthy(cleared, "an unscoped fault keeps the old behavior")
+    end)
+  end)
+
   it("another session's warmup progress does not take over this statusline or notify", function()
     with_sse(function(sagefs, cap, notes)
       local s = starting_session("s1")
