@@ -264,7 +264,7 @@ local SSE_HANDLER_DEFS = {
   -- Failure narrative context for tests that transitioned Passed→Failed
   { action = "failure_narratives", fn = "handle_failure_narratives", target = "testing", event = "failure_narratives" },
   -- Coverage view: per-function aggregate badge (one per CoverageView)
-  { action = "coverage_view", event = "coverage_view" },
+  { action = "coverage_view", fn = "apply_coverage_view", target = "coverage", session_scoped = true, event = "coverage_view" },
 }
 
 -- State target → { state_key, module }
@@ -525,6 +525,11 @@ local function build_handlers()
     fire_user_event("system_alarm", data)
   end
 
+  -- Wire-testing features (live bindings): handlers live in sagefs.wire_testing
+  for action, fn in pairs(require("sagefs.wire_testing").sse_handlers(M, { decode = decode_event_data, fire = fire_user_event })) do
+    handlers[action] = fn
+  end
+
   return sse_parser.build_dispatch_table(handlers)
 end
 
@@ -585,6 +590,7 @@ local function schedule_render()
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state, M.density_state)
+      require("sagefs.wire_testing").render(buf, M)
       if file ~= "" then
         if not test_diag_ns then
           test_diag_ns = vim.api.nvim_create_namespace("sagefs_test_diagnostics")
@@ -1905,6 +1911,7 @@ function M.setup(opts)
 
   render.get_namespace()
   render.setup_highlights(M.config.highlight)
+  require("sagefs.wire_testing").define_highlights()
 
   -- Apply cell_highlight config
   cell_highlight.setup_highlights()
@@ -1951,6 +1958,7 @@ function M.setup(opts)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
       render.render_annotations(buf, M.annotations_state, M.density_state)
+      require("sagefs.wire_testing").render(buf, M)
     end,
     check_on_save = function() return M.config.check_on_save end,
     check_code = check_code,

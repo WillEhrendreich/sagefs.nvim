@@ -6,6 +6,24 @@ local M = {}
 --- Decode a JSON string, trying available decoders
 ---@param s string|nil
 ---@return boolean ok, any data
+--- Two paths name the same file: equal after separator normalization, or one is
+--- relative (a path relative to the project) and the other, absolute, ends with
+--- it on a whole path component. Two absolute paths never match by suffix:
+--- /b/a/Util.fs is not /a/Util.fs.
+---@param a string|nil
+---@param b string|nil
+---@return boolean
+function M.paths_match(a, b)
+  if type(a) ~= "string" or type(b) ~= "string" or a == "" or b == "" then return false end
+  a, b = a:gsub("\\", "/"), b:gsub("\\", "/")
+  if a == b then return true end
+  local short, long = a, b
+  if #short > #long then short, long = long, short end
+  if #short == #long then return false end
+  local relative = short:sub(1, 1) ~= "/" and not short:match("^%a:/")
+  return relative and long:sub(-(#short + 1)) == "/" .. short
+end
+
 function M.json_decode(s)
   if not s or s == "" then
     return false, "empty input"

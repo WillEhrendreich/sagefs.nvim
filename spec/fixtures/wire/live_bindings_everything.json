@@ -1,0 +1,253 @@
+{
+  "SessionId": "57bbdfd8",
+  "Generation": 2,
+  "Bindings": [
+    {
+      "Name": "_SageFsCompExpr",
+      "TypeSignature": "Boolean",
+      "Root": {
+        "Label": "_SageFsCompExpr",
+        "TypeName": "Boolean",
+        "Preview": "true",
+        "Kind": {
+          "Case": "Leaf"
+        },
+        "Children": [],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "_SageFsHotReload",
+      "TypeSignature": "Boolean",
+      "Root": {
+        "Label": "_SageFsHotReload",
+        "TypeName": "Boolean",
+        "Preview": "true",
+        "Kind": {
+          "Case": "Leaf"
+        },
+        "Children": [],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "box",
+      "TypeSignature": "Box",
+      "Root": {
+        "Label": "box",
+        "TypeName": "Box",
+        "Preview": "{ Size = 7; RunsCode = \"1,2,3\"; Boom = <error>; Inner = FSI_0005+Inner; Lazy = Microsoft.FSharp.Core.Operators+OperatorIntrinsics+RangeInt32@6183-3 }",
+        "Kind": {
+          "Case": "Class"
+        },
+        "Children": [
+          {
+            "Label": "Size",
+            "TypeName": "Int32",
+            "Preview": "7",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "RunsCode",
+            "TypeName": "String",
+            "Preview": "\"1,2,3\"",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Boom",
+            "TypeName": "error",
+            "Preview": "<error>",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Inner",
+            "TypeName": "Inner",
+            "Preview": "{ Loops = 1; Plain = 3 }",
+            "Kind": {
+              "Case": "Class"
+            },
+            "Children": [
+              {
+                "Label": "Loops",
+                "TypeName": "Int32",
+                "Preview": "1",
+                "Kind": {
+                  "Case": "Leaf"
+                },
+                "Children": [],
+                "BestEffort": false,
+                "Depth": 2
+              },
+              {
+                "Label": "Plain",
+                "TypeName": "Int32",
+                "Preview": "3",
+                "Kind": {
+                  "Case": "Leaf"
+                },
+                "Children": [],
+                "BestEffort": false,
+                "Depth": 2
+              }
+            ],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Lazy",
+            "TypeName": "RangeInt32@6183-3",
+            "Preview": "[1; 2; 3]",
+            "Kind": {
+              "Case": "List"
+            },
+            "Children": [
+              {
+                "Label": "[0]",
+                "TypeName": "Int32",
+                "Preview": "1",
+                "Kind": {
+                  "Case": "Leaf"
+                },
+                "Children": [],
+                "BestEffort": false,
+                "Depth": 2
+              },
+              {
+                "Label": "[1]",
+                "TypeName": "Int32",
+                "Preview": "2",
+                "Kind": {
+                  "Case": "Leaf"
+                },
+                "Children": [],
+                "BestEffort": false,
+                "Depth": 2
+              },
+              {
+                "Label": "[2]",
+                "TypeName": "Int32",
+                "Preview": "3",
+                "Kind": {
+                  "Case": "Leaf"
+                },
+                "Children": [],
+                "BestEffort": false,
+                "Depth": 2
+              }
+            ],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "nums",
+      "TypeSignature": "FSharpList`1",
+      "Root": {
+        "Label": "nums",
+        "TypeName": "FSharpList`1",
+        "Preview": "[1; 2; 3]",
+        "Kind": {
+          "Case": "List"
+        },
+        "Children": [
+          {
+            "Label": "[0]",
+            "TypeName": "Int32",
+            "Preview": "1",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "[1]",
+            "TypeName": "Int32",
+            "Preview": "2",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "[2]",
+            "TypeName": "Int32",
+            "Preview": "3",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "pt",
+      "TypeSignature": "Pt",
+      "Root": {
+        "Label": "pt",
+        "TypeName": "Pt",
+        "Preview": "{ X = 1; Y = 2 }",
+        "Kind": {
+          "Case": "Record"
+        },
+        "Children": [
+          {
+            "Label": "X",
+            "TypeName": "Int32",
+            "Preview": "1",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Y",
+            "TypeName": "Int32",
+            "Preview": "2",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    }
+  ],
+  "Truncated": false,
+  "CapturedAt": "2026-10-01T23:46:14.1281331+00:00"
+}

@@ -1,0 +1,455 @@
+{
+  "SessionId": "4e531100",
+  "FilePath": "/tmp/lem/tour-live-testing-passing-04/w/DemoEnv.Tests/DemoEnvTests.fs",
+  "TestAnnotations": [
+    {
+      "Line": 8,
+      "TestId": "D39C4D7B318839A9",
+      "DisplayName": "a negative integer yields None",
+      "Status": {
+        "Case": "Failed",
+        "Fields": [
+          {
+            "Case": "ExceptionThrown",
+            "Fields": [
+              "The match cases were incomplete",
+              "   at SageFs.Samples.DemoEnv.parseSeed(FSharpOption`1 raw)\n   at DemoEnvTests.parseSeedTests@26-4.Invoke(Unit _arg5)\n   at System.RuntimeMethodHandle.InvokeMethod(ObjectHandleOnStack target, Void** arguments, ObjectHandleOnStack sig, BOOL isConstructor, ObjectHandleOnStack result)\n   at System.RuntimeMethodHandle.InvokeMethod(ObjectHandleOnStack target, Void** arguments, ObjectHandleOnStack sig, BOOL isConstructor, ObjectHandleOnStack result)\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)"
+            ]
+          },
+          "00:00:00.0018609"
+        ]
+      },
+      "Freshness": {
+        "Case": "Current"
+      }
+    },
+    {
+      "Line": 32,
+      "TestId": "ABAAEE6BDF27575A",
+      "DisplayName": "well-formed x,y,w,h parses",
+      "Status": {
+        "Case": "Passed",
+        "Fields": [
+          "00:00:00.0007364"
+        ]
+      },
+      "Freshness": {
+        "Case": "Current"
+      }
+    }
+  ],
+  "CoverageAnnotations": [
+    {
+      "Line": 7,
+      "EndLine": 29,
+      "EndColumn": 4,
+      "Detail": {
+        "Case": "NotCovered"
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 11,
+      "EndLine": 11,
+      "EndColumn": 21,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 12,
+      "EndLine": 12,
+      "EndColumn": 67,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 15,
+      "EndLine": 15,
+      "EndColumn": 33,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 16,
+      "EndLine": 16,
+      "EndColumn": 58,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 19,
+      "EndLine": 19,
+      "EndColumn": 27,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 20,
+      "EndLine": 20,
+      "EndColumn": 57,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 23,
+      "EndLine": 23,
+      "EndColumn": 27,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 24,
+      "EndLine": 24,
+      "EndColumn": 54,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 27,
+      "EndLine": 27,
+      "EndColumn": 28,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 28,
+      "EndLine": 28,
+      "EndColumn": 52,
+      "Detail": {
+        "Case": "NotCovered"
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 31,
+      "EndLine": 51,
+      "EndColumn": 4,
+      "Detail": {
+        "Case": "NotCovered"
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 35,
+      "EndLine": 35,
+      "EndColumn": 41,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 36,
+      "EndLine": 38,
+      "EndColumn": 61,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 41,
+      "EndLine": 41,
+      "EndColumn": 23,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 42,
+      "EndLine": 42,
+      "EndColumn": 67,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 45,
+      "EndLine": 45,
+      "EndColumn": 33,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 46,
+      "EndLine": 46,
+      "EndColumn": 66,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 49,
+      "EndLine": 49,
+      "EndColumn": 37,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    },
+    {
+      "Line": 50,
+      "EndLine": 50,
+      "EndColumn": 51,
+      "Detail": {
+        "Case": "Covered",
+        "Fields": [
+          1,
+          {
+            "Case": "AllPassing"
+          }
+        ]
+      },
+      "CoveringTestIds": [],
+      "CoveringTests": [],
+      "BranchCoverage": null
+    }
+  ],
+  "InlineFailures": [
+    {
+      "Line": 8,
+      "TestId": "D39C4D7B318839A9",
+      "TestName": "a negative integer yields None",
+      "Failure": {
+        "Case": "ExceptionMessage",
+        "Fields": [
+          "The match cases were incomplete",
+          "at SageFs.Samples.DemoEnv.parseSeed(FSharpOption`1 raw)"
+        ]
+      },
+      "Duration": "00:00:00.0018609"
+    }
+  ],
+  "CodeLenses": [
+    {
+      "Line": 8,
+      "Label": "✓ unset (None) yields None (6ms)",
+      "TestId": "7638D0E81B145CA1",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 8,
+      "Label": "✓ garbage yields None (0ms)",
+      "TestId": "47DE23FB95057848",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 8,
+      "Label": "✓ a positive integer yields Some (2ms)",
+      "TestId": "8E98C75452398D2D",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 8,
+      "Label": "✓ zero yields Some 0 (0ms)",
+      "TestId": "5C9CB814FF6324FD",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 8,
+      "Label": "✗ a negative integer yields None: The match cases were incomplete (2ms)",
+      "TestId": "D39C4D7B318839A9",
+      "Command": {
+        "Case": "DebugTest"
+      }
+    },
+    {
+      "Line": 32,
+      "Label": "✓ well-formed x,y,w,h parses (1ms)",
+      "TestId": "ABAAEE6BDF27575A",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 32,
+      "Label": "✓ unset (None) yields None (0ms)",
+      "TestId": "3FE74B01AF2567C2",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 32,
+      "Label": "✓ wrong arity (3 parts) yields None (0ms)",
+      "TestId": "8548AAFD75484531",
+      "Command": {
+        "Case": "RunTest"
+      }
+    },
+    {
+      "Line": 32,
+      "Label": "✓ non-positive width yields None (0ms)",
+      "TestId": "CDC820CD617B9D78",
+      "Command": {
+        "Case": "RunTest"
+      }
+    }
+  ],
+  "PerformanceAnnotations": []
+}

@@ -1,0 +1,16 @@
+{
+  "status": "held",
+  "message": "Attach a .NET debugger to process 301375, then continue to release the test.",
+  "pid": 301375,
+  "ticket": "debug-301375-1",
+  "testId": "D39C4D7B318839A9",
+  "testName": "a negative integer yields None",
+  "symbols": "compiled",
+  "symbolsNote": "",
+  "access": "open",
+  "accessNote": "",
+  "holdMs": 120000,
+  "outcome": "",
+  "detail": "",
+  "durationMs": 0
+}

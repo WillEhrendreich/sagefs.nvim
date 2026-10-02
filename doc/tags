@@ -1,4 +1,5 @@
 :SageFsArrows	sagefs.txt	/*:SageFsArrows*
+:SageFsBindingList	sagefs.txt	/*:SageFsBindingList*
 :SageFsBindings	sagefs.txt	/*:SageFsBindings*
 :SageFsCallees	sagefs.txt	/*:SageFsCallees*
 :SageFsCallers	sagefs.txt	/*:SageFsCallers*
@@ -10,7 +11,10 @@
 :SageFsConnect	sagefs.txt	/*:SageFsConnect*
 :SageFsContext	sagefs.txt	/*:SageFsContext*
 :SageFsCoverage	sagefs.txt	/*:SageFsCoverage*
+:SageFsCoveringTests	sagefs.txt	/*:SageFsCoveringTests*
 :SageFsCreateSession	sagefs.txt	/*:SageFsCreateSession*
+:SageFsDebugRelease	sagefs.txt	/*:SageFsDebugRelease*
+:SageFsDebugTest	sagefs.txt	/*:SageFsDebugTest*
 :SageFsDiff	sagefs.txt	/*:SageFsDiff*
 :SageFsDisableTesting	sagefs.txt	/*:SageFsDisableTesting*
 :SageFsDisconnect	sagefs.txt	/*:SageFsDisconnect*
@@ -60,6 +64,7 @@ SageFsCohortChanged	sagefs.txt	/*SageFsCohortChanged*
 SageFsCohortMatrix	sagefs.txt	/*SageFsCohortMatrix*
 SageFsConnected	sagefs.txt	/*SageFsConnected*
 SageFsCoverageUpdated	sagefs.txt	/*SageFsCoverageUpdated*
+SageFsCoverageView	sagefs.txt	/*SageFsCoverageView*
 SageFsDisconnected	sagefs.txt	/*SageFsDisconnected*
 SageFsEvalCompleted	sagefs.txt	/*SageFsEvalCompleted*
 SageFsEvalDiff	sagefs.txt	/*SageFsEvalDiff*
@@ -69,6 +74,7 @@ SageFsFileAnnotations	sagefs.txt	/*SageFsFileAnnotations*
 SageFsHotReloadSnapshot	sagefs.txt	/*SageFsHotReloadSnapshot*
 SageFsHotReloadTriggered	sagefs.txt	/*SageFsHotReloadTriggered*
 SageFsLandingChanged	sagefs.txt	/*SageFsLandingChanged*
+SageFsLiveBindings	sagefs.txt	/*SageFsLiveBindings*
 SageFsProvidersDetected	sagefs.txt	/*SageFsProvidersDetected*
 SageFsReconnecting	sagefs.txt	/*SageFsReconnecting*
 SageFsReloadReported	sagefs.txt	/*SageFsReloadReported*
@@ -87,6 +93,7 @@ SageFsTestSummary	sagefs.txt	/*SageFsTestSummary*
 SageFsTestTrace	sagefs.txt	/*SageFsTestTrace*
 SageFsTestsDiscovered	sagefs.txt	/*SageFsTestsDiscovered*
 SageFsWarmupContext	sagefs.txt	/*SageFsWarmupContext*
+sagefs-bindings	sagefs.txt	/*sagefs-bindings*
 sagefs-cell-highlight	sagefs.txt	/*sagefs-cell-highlight*
 sagefs-cell-modes	sagefs.txt	/*sagefs-cell-modes*
 sagefs-cell-style	sagefs.txt	/*sagefs-cell-style*
@@ -96,6 +103,8 @@ sagefs-commands	sagefs.txt	/*sagefs-commands*
 sagefs-config	sagefs.txt	/*sagefs-config*
 sagefs-contents	sagefs.txt	/*sagefs-contents*
 sagefs-coverage	sagefs.txt	/*sagefs-coverage*
+sagefs-covering-tests	sagefs.txt	/*sagefs-covering-tests*
+sagefs-debug-test	sagefs.txt	/*sagefs-debug-test*
 sagefs-diagnostics	sagefs.txt	/*sagefs-diagnostics*
 sagefs-events	sagefs.txt	/*sagefs-events*
 sagefs-faq	sagefs.txt	/*sagefs-faq*

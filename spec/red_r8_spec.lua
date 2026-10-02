@@ -61,8 +61,8 @@ describe("events.build_autocmd_data — completeness", function()
 end)
 
 describe("events.EVENT_NAMES — completeness", function()
-it("contains entries for all 44 supported autocmd events", function()
-assert.are.equal(44, #events.EVENT_NAMES)
+it("contains entries for all 45 supported autocmd events", function()
+assert.are.equal(45, #events.EVENT_NAMES)
   end)
 end)
 

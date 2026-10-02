@@ -1,0 +1,216 @@
+{
+  "SessionId": "57bbdfd8",
+  "Generation": 1,
+  "Bindings": [
+    {
+      "Name": "_SageFsCompExpr",
+      "TypeSignature": "Boolean",
+      "Root": {
+        "Label": "_SageFsCompExpr",
+        "TypeName": "Boolean",
+        "Preview": "true",
+        "Kind": {
+          "Case": "Leaf"
+        },
+        "Children": [],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "_SageFsHotReload",
+      "TypeSignature": "Boolean",
+      "Root": {
+        "Label": "_SageFsHotReload",
+        "TypeName": "Boolean",
+        "Preview": "true",
+        "Kind": {
+          "Case": "Leaf"
+        },
+        "Children": [],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "box",
+      "TypeSignature": "Box",
+      "Root": {
+        "Label": "box",
+        "TypeName": "Box",
+        "Preview": "{ size = 7; RunsCode = …; Boom = …; Inner = …; Lazy = … }",
+        "Kind": {
+          "Case": "Class"
+        },
+        "Children": [
+          {
+            "Label": "size",
+            "TypeName": "Int32",
+            "Preview": "7",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "RunsCode",
+            "TypeName": "String",
+            "Preview": "not evaluated: the getter calls other code",
+            "Kind": {
+              "Case": "NotEvaluated",
+              "Fields": [
+                {
+                  "Case": "GetterRunsCode"
+                }
+              ]
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Boom",
+            "TypeName": "Int32",
+            "Preview": "not evaluated: the getter calls other code",
+            "Kind": {
+              "Case": "NotEvaluated",
+              "Fields": [
+                {
+                  "Case": "GetterRunsCode"
+                }
+              ]
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Inner",
+            "TypeName": "Inner",
+            "Preview": "not evaluated: the getter calls other code",
+            "Kind": {
+              "Case": "NotEvaluated",
+              "Fields": [
+                {
+                  "Case": "GetterRunsCode"
+                }
+              ]
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Lazy",
+            "TypeName": "IEnumerable`1",
+            "Preview": "not evaluated: the getter calls other code",
+            "Kind": {
+              "Case": "NotEvaluated",
+              "Fields": [
+                {
+                  "Case": "GetterRunsCode"
+                }
+              ]
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "nums",
+      "TypeSignature": "FSharpList`1",
+      "Root": {
+        "Label": "nums",
+        "TypeName": "FSharpList`1",
+        "Preview": "[1; 2; 3]",
+        "Kind": {
+          "Case": "List"
+        },
+        "Children": [
+          {
+            "Label": "[0]",
+            "TypeName": "Int32",
+            "Preview": "1",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "[1]",
+            "TypeName": "Int32",
+            "Preview": "2",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "[2]",
+            "TypeName": "Int32",
+            "Preview": "3",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    },
+    {
+      "Name": "pt",
+      "TypeSignature": "Pt",
+      "Root": {
+        "Label": "pt",
+        "TypeName": "Pt",
+        "Preview": "{ X = 1; Y = 2 }",
+        "Kind": {
+          "Case": "Record"
+        },
+        "Children": [
+          {
+            "Label": "X",
+            "TypeName": "Int32",
+            "Preview": "1",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          },
+          {
+            "Label": "Y",
+            "TypeName": "Int32",
+            "Preview": "2",
+            "Kind": {
+              "Case": "Leaf"
+            },
+            "Children": [],
+            "BestEffort": false,
+            "Depth": 1
+          }
+        ],
+        "BestEffort": false,
+        "Depth": 0
+      }
+    }
+  ],
+  "Truncated": false,
+  "CapturedAt": "2026-10-01T23:45:58.9967185+00:00"
+}

@@ -123,6 +123,8 @@ function M.classify_event(event)
     CoverageCleared = "coverage_cleared",
     -- Coverage view: per-function aggregate badge
     coverage_view = "coverage_view",
+    -- Live bindings: the reflection-walked watch window, pushed on eval, click and mode switch
+    live_bindings = "live_bindings",
     -- File annotations (inline feedback: CodeLens, failures, coverage detail)
     file_annotations = "file_annotations",
     FileAnnotationsUpdated = "file_annotations",

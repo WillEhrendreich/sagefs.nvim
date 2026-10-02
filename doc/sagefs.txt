@@ -230,6 +230,17 @@ Testing ~
 :SageFsDisableTesting                                   *:SageFsDisableTesting*
     Disable live testing.
 
+:SageFsDebugTest [name or id]                           *:SageFsDebugTest*
+    Debug a failing test with nvim-dap. With no argument it debugs the
+    failing test on the cursor line, or the only failing test in the file,
+    and asks which one when several fail on the line. With an argument it
+    takes a test id or a name pattern. See |sagefs-debug-test|.
+
+:SageFsDebugRelease                                     *:SageFsDebugRelease*
+    Release the test SageFs is holding for the debugger and stop the debug
+    run. Without nvim-dap this is how you let the test run once you have
+    attached a debugger by hand.
+
 Sessions ~
 
 :SageFsSessions                                         *:SageFsSessions*
@@ -315,7 +326,12 @@ Analysis ~
     Evaluate only the current line (not the enclosing cell).
 
 :SageFsBindings                                         *:SageFsBindings*
-    Show FSI binding state for the current session.
+    Open the live bindings pane: a scratch split with the daemon's value
+    tree for the current session. See |sagefs-bindings|.
+
+:SageFsBindingList                                      *:SageFsBindingList*
+    List the bindings the plugin tracked from eval output, with how often
+    each was shadowed.
 
 :SageFsExportFile                                       *:SageFsExportFile*
     Export session history as an .fsx file to disk.
@@ -348,6 +364,10 @@ Analysis ~
 
 :SageFsCoverage                                         *:SageFsCoverage*
     Show coverage summary with per-file breakdown.
+
+:SageFsCoveringTests                                     *:SageFsCoveringTests*
+    Float at the cursor with the tests that cover this line (name and last
+    result). <CR> jumps to a test. See |sagefs-covering-tests|.
 
 :SageFsTestPolicy                                       *:SageFsTestPolicy*
     Configure test run policies per category.
@@ -414,13 +434,15 @@ Testing ~
   <leader>rtp  Test trace (three-speed pipeline state)
   <leader>rte  Enable live testing
   <leader>rtd  Disable live testing
+  <leader>rtg  Debug the failing test on this line (nvim-dap)
+  <leader>rtc  Tests that cover this line (float, <CR> jumps)
   <leader>tf   Filter tests by name pattern (prompts for input)
   <leader>tF   Run all tests (clears any active filter)
   <leader>tp   Fuzzy-pick and run a test (telescope, SageFsPickTest)
 <
 Browse & explore ~
 >
-  <leader>rb   Show FSI bindings
+  <leader>rb   Live bindings pane
   <leader>rd   Eval diff (last two evals of current cell)
   <leader>rg   Scope map (what each cell defines)
   <leader>rm   Timeline (flame chart of eval history)
@@ -502,6 +524,95 @@ The plugin shows test results as gutter signs: >
 <
 Commands: |:SageFsTestPanel|, |:SageFsRunTests|, |:SageFsEnableTesting|
 
+------------------------------------------------------------------------------
+7.1 Debugging a failing test                              *sagefs-debug-test*
+
+A test runs in the process that loaded your code, so debugging it means
+attaching a .NET debugger to that process. Put the cursor on a line that
+shows the "debug" hint (end of line, drawn for every failing test) and
+press <leader>rtg, or run |:SageFsDebugTest|. With the cursor on a line that
+has no failing test, the one failing test of the file is named and you are
+asked before it is held. The hint is drawn only when the display density
+allows it (minimal draws none). <leader>rtD is not used: it sits one shifted
+letter from <leader>rtd, which disables live testing.
+
+The plugin asks the daemon to hold the test (POST /api/live-testing/debug),
+attaches the coreclr adapter through nvim-dap to the pid it answers, then
+releases the test (POST /api/live-testing/debug/continue) once the attach
+has finished and keeps asking while the daemon answers still_running. When
+the test finishes it detaches without killing the host and shows the result.
+
+The adapter is checked before anything is held. A `dap.adapters.coreclr` you
+configured is used as it is. Otherwise netcoredbg is looked for on PATH and
+under the mason directory. Nothing is ever installed. If it is missing, the
+message says what to install and no test is held.
+
+A test is not left held behind a debugger that is gone. The hold is released
+when the debug session ends, when dap.run fails, when the adapter dies or
+never starts (a session of ours is looked for 5 seconds after dap.run), when
+the buffer you started from is deleted (also while the daemon is still
+answering the hold request) and when Neovim exits. If you quit before the
+daemon answered the hold, the answer is waited for up to 2 seconds and
+released before Neovim goes. The backstop is the two minute hold window.
+
+Four cases wait for that backstop: an adapter that starts and never answers
+initialize, a Neovim that is killed instead of quit, a daemon that takes
+longer than 2 seconds to answer a hold you quit on, and a daemon that cannot
+be reached while releasing (the release is tried twice, one second apart, and
+the message says the test may stay held for up to two minutes).
+
+nvim-dap is optional. Without it the test is still held, the pid and the
+instruction "attach to process N" are printed, and |:SageFsDebugRelease|
+lets the test run once you are attached.
+
+Breakpoints bind in your project's compiled assemblies. A test file SageFs
+re-evaluated after a save has no PDB, so hard reset the session with a
+rebuild to debug the compiled copy. On Linux, kernel.yama.ptrace_scope at 1
+works (the host opens the door for the length of the hold); at 2 or 3 the
+attach is refused.
+
+==============================================================================
+7.2 Live bindings                                         *sagefs-bindings*
+
+|:SageFsBindings| (<leader>rb) opens a split with the value tree the daemon
+walks for the session. It is updated from the daemon's live_bindings
+snapshots, which arrive after every eval, every click and every mode switch.
+
+Some members are held back, and every held row says why, in the daemon's
+words:
+- A getter that calls other code or loops shows "not evaluated: ..." and
+  [<CR> run]. <CR> on it runs that one getter on the daemon, on its own
+  thread with a 5 second deadline and, on Linux x86-64, under a syscall
+  filter (no network, no file writes, no new processes). The line under the
+  header says what protected the run, as the daemon wrote it. It does not
+  stop a spin, a stack overflow or an in-memory effect.
+- A getter you ran that timed out, threw or could not be contained shows
+  "unknown" and the reason.
+- A lazy sequence is never enumerated for you.
+
+Pane keys: >
+  <CR>   run the getter on this row
+  <Tab>  fold or unfold
+  m      walk mode: Safe, Everything, Off
+  r      ask the daemon for the current snapshot
+  q      close
+<
+Walk modes:
+  Safe        Reads fields and runs only getters that provably do nothing.
+              Every other getter is listed and runs only when you click it.
+  Everything  Runs your getters: every public property of every class value,
+              after every eval. That is your code running, and it can take
+              time or change things. The plugin asks before switching to it.
+  Off         Does not open class instances. Records, unions, tuples, lists
+              and maps still show.
+
+The daemon has no call that returns the current snapshot, it only pushes one.
+"r", and opening the pane with nothing folded yet, re-post the current mode,
+which makes the daemon walk again and push. That also drops the containment
+line of the last click.
+
+Commands: |:SageFsBindings|, |:SageFsBindingList|
+
 ==============================================================================
 8. COVERAGE                                              *sagefs-coverage*
 
@@ -512,6 +623,28 @@ Coverage gutters appear automatically when live testing is enabled: >
   ┃  Line not covered (red)
   ┃  Line partially covered (yellow)
 <
+------------------------------------------------------------------------------
+8.1 Which tests cover a line                             *sagefs-covering-tests*
+
+The daemon records coverage per test. On every covered line, the
+file_annotations event lists exactly the tests whose own recorded coverage
+reaches it. |:SageFsCoveringTests| (<leader>rtc) opens a float at the cursor
+with those tests, each with its last result. <CR> on a test jumps to it, q
+closes. When the daemon marked the line covered but sent no per-test reading,
+the float says so.
+
+Per symbol, the coverage_view event sends one badge (for example "✓ 97 ✗ 3",
+with "+N more" when some did not fit). It is drawn at the end of the symbol's
+definition line, colored by health, and follows |sagefs-config| density
+(minimal turns it off).
+
+coverage_view events are merged per file and run generation. A newer
+generation replaces the file's whole set, the same generation adds one badge
+per symbol, an older generation is dropped as a straggler, and an event with
+no generation counts as 0 and never replaces anything.
+
+The older per-batch coverage_updated events are folded as before.
+
 ==============================================================================
 9. SESSIONS                                              *sagefs-sessions*
 
@@ -846,9 +979,18 @@ Event reference ~
     Fired with per-file annotation data (coverage signs, CodeLens,
     inline failure messages).
 
+*SageFsCoverageView*
+    Fired with one per-symbol coverage badge (symbol, definition line, total
+    covering tests, one-line badge text, health, run generation).
+
 *SageFsBindingsSnapshot*
     Fired with a snapshot of all active FSI bindings (name → type_sig).
     Used to populate `:SageFsBindings`.
+
+*SageFsLiveBindings*
+    Fired with the live bindings snapshot of one session: the whole value
+    tree, with the reason for every row that was not evaluated. Used by
+    |:SageFsBindings|.
 
 *SageFsTestTrace*
     Fired with three-speed test pipeline trace data. Used to populate

@@ -51,6 +51,7 @@ local EVENT_CATALOG = {
   { "landing_changed", "SageFsLandingChanged" },
   { "save_observed", "SageFsSaveObserved" },
   { "cohort_changed", "SageFsCohortChanged" },
+  { "live_bindings", "SageFsLiveBindings" },
 }
 
 -- ─── Event Names ──────────────────────────────────────────────────────────────
