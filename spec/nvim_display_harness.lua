@@ -195,6 +195,38 @@ describe("result placement in a real window", function()
     eq(44, second.row0, "anchored on the evaluated line (45), not shoved to the top of the cell")
   end)
 
+  it("scrolls a few rows when the evaluated line is the window's last row, so there is room to show the result", function()
+    local buf = make_buffer(tall_cell_lines(120))
+    vim.cmd("resize 12")
+    vim.cmd("normal! 9Gzt")
+    vim.api.nvim_win_set_cursor(0, { 20, 0 })
+    eq(9, vim.fn.line("w0"))
+    eq(20, vim.fn.line("w$"), "the cursor is on the last visible row")
+    local state = evaluated(buf, 1, result_of(10), { end_line = 120, anchor_line = 20 })
+    -- a plain re-render must not move the user's view
+    render.render_all(buf, state)
+    eq(9, vim.fn.line("w0"), "re-rendering leaves the view alone")
+    -- the render that follows an eval asks for the result to be revealed
+    render.render_all(buf, state, { reveal = 1 })
+    local top, bot = vim.fn.line("w0"), vim.fn.line("w$")
+    ok_(top > 9, "the view scrolled: top " .. top)
+    ok_(top <= 20 and bot >= 20, "the evaluated line is still on screen: " .. top .. ".." .. bot)
+    local m
+    for _, mk in ipairs(result_marks(buf)) do if mk.virt_lines > 0 then m = mk end end
+    ok_(m and m.virt_lines >= 5, "room for four result lines and the footer, got " .. tostring(m and m.virt_lines))
+    eq(19, m.row0, "still anchored on the evaluated line")
+  end)
+
+  it("never scrolls the evaluated line off the window", function()
+    local buf = make_buffer(tall_cell_lines(120))
+    vim.cmd("resize 6")
+    vim.cmd("normal! 30Gzt")
+    vim.cmd("normal! 35G") -- scrolls the view as a real cursor move does
+    local state = evaluated(buf, 1, result_of(40), { end_line = 120, anchor_line = 35 })
+    render.render_all(buf, state, { reveal = 1 })
+    ok_(vim.fn.line("w0") <= 35 and vim.fn.line("w$") >= 35, "line 35 on screen: " .. vim.fn.line("w0") .. ".." .. vim.fn.line("w$"))
+  end)
+
   it("re-anchors inside the window when the view scrolls away from the first anchor", function()
     local buf = make_buffer(tall_cell_lines(200))
     vim.api.nvim_win_set_cursor(0, { 5, 0 })
