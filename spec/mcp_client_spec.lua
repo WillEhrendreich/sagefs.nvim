@@ -202,3 +202,129 @@ describe("mcp_client client: initialize once, reuse the session, recover when it
     assert.are.equal(text, got.text)
   end)
 end)
+
+describe("mcp_client member token: the header on every request, and only when there is one", function()
+  local TOKEN = "sfm_Zk3vQ9mT1xWc7Yh2LpB8aDfG5jRuN0sEoIqXtVyHwKc"
+  local HEADER = "X-SageFs-Member-Token"
+
+  local function scripted(responses)
+    local calls = {}
+    local i = 0
+    local function request(opts)
+      i = i + 1
+      table.insert(calls, opts)
+      local r = responses[i]
+      assert(r, "unexpected request #" .. i .. " " .. tostring(opts.method))
+      opts.callback(r.ok, r.body or "", r.meta or { status = r.ok and 200 or 500, headers = {} })
+    end
+    return request, calls
+  end
+
+  local INIT = { ok = true, body = 'event: message\ndata: {"result":{"protocolVersion":"2025-06-18"},"id":1,"jsonrpc":"2.0"}\n\n',
+    meta = { status = 200, headers = { ["mcp-session-id"] = "sess-1" } } }
+  local ACK = { ok = true, body = "", meta = { status = 202, headers = {} } }
+  local RESULT = { ok = true, body = SSE_RESULT, meta = { status = 200, headers = {} } }
+  local DELETED = { ok = true, body = "", meta = { status = 200, headers = {} } }
+
+  it("sends the header on initialize, the initialized notification, the call and the close", function()
+    local request, calls = scripted({ INIT, ACK, RESULT, DELETED })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN })
+    client.call_tool("get_cohort_status", {}, function() end)
+    client.close()
+    assert.are.equal(4, #calls)
+    for i, c in ipairs(calls) do
+      assert.are.equal(TOKEN, c.headers[HEADER], "request #" .. i)
+    end
+  end)
+
+  it("sends no header at all when no token is configured", function()
+    local request, calls = scripted({ INIT, ACK, RESULT, DELETED })
+    local client = mcp.new({ port = 37749, request = request })
+    client.call_tool("get_cohort_status", {}, function() end)
+    client.close()
+    for _, c in ipairs(calls) do
+      for name in pairs(c.headers) do
+        assert.is_nil(name:lower():find("member%-token"), "unexpected header " .. name)
+      end
+    end
+  end)
+
+  it("treats an empty or blank token as none", function()
+    local request, calls = scripted({ INIT, ACK, RESULT })
+    local client = mcp.new({ port = 37749, request = request, token = "  " })
+    client.call_tool("get_cohort_status", {}, function() end)
+    for _, c in ipairs(calls) do assert.is_nil(c.headers[HEADER]) end
+  end)
+
+  it("reads a token function on every request, so a setup after the client was made still counts", function()
+    local current
+    local request, calls = scripted({ INIT, ACK, RESULT, RESULT })
+    local client = mcp.new({ port = 37749, request = request, token = function() return current end })
+    client.call_tool("get_cohort_status", {}, function() end)
+    assert.is_nil(calls[1].headers[HEADER])
+    current = TOKEN
+    client.call_tool("get_cohort_status", {}, function() end)
+    assert.are.equal(TOKEN, calls[4].headers[HEADER])
+  end)
+
+  it("hands a failure back without the token even when the transport text carries it", function()
+    local request = scripted({ { ok = false, body = "connect: refused while sending " .. TOKEN, meta = nil } })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN })
+    local got
+    client.call_tool("get_cohort_status", {}, function(ok, err) got = { ok = ok, err = err } end)
+    assert.is_false(got.ok)
+    assert.truthy(got.err:find("refused", 1, true))
+    assert.is_nil(got.err:find(TOKEN, 1, true))
+  end)
+
+  it("hands a refused tool call back without the token", function()
+    local body = vim.json.encode({ result = { isError = true, content = { { type = "text", text = "Error: " .. TOKEN .. " is not known" } } }, id = 2, jsonrpc = "2.0" })
+    local request = scripted({ INIT, ACK, { ok = true, body = body, meta = { status = 200, headers = {} } } })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN })
+    local got
+    client.call_tool("get_cohort_status", {}, function(ok, text) got = { ok = ok, text = text } end)
+    assert.is_false(got.ok)
+    assert.truthy(got.text:find("is not known", 1, true))
+    assert.is_nil(got.text:find(TOKEN, 1, true))
+  end)
+
+  it("keeps the text of a successful call whole: a mint reply carries the token on purpose", function()
+    local minted = "Minted member cap:0123456789abcdef.\nTOKEN (shown once):\n  " .. TOKEN .. "\n"
+    local body = vim.json.encode({ result = { content = { { type = "text", text = minted } } }, id = 2, jsonrpc = "2.0" })
+    local request = scripted({ INIT, ACK, { ok = true, body = body, meta = { status = 200, headers = {} } } })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN })
+    local got
+    client.call_tool("mint_member", { role = "Analysis" }, function(ok, text) got = { ok = ok, text = text } end)
+    assert.is_true(got.ok)
+    assert.are.equal(minted, got.text)
+  end)
+
+  it("logs each request without the token, and logs nothing when no log function is given", function()
+    local lines = {}
+    local request = scripted({ INIT, ACK, RESULT })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN, log = function(line) table.insert(lines, line) end })
+    client.call_tool("get_cohort_status", {}, function() end)
+    assert.is_true(#lines >= 3)
+    for _, line in ipairs(lines) do assert.is_nil(line:find(TOKEN, 1, true), line) end
+    assert.truthy(table.concat(lines, "\n"):find("get_cohort_status", 1, true))
+
+    local quiet = scripted({ INIT, ACK, RESULT })
+    mcp.new({ port = 37749, request = quiet, token = TOKEN }).call_tool("x", {}, function() end)
+  end)
+
+  it("a log line says a token went out, so a missing header is visible, without saying which", function()
+    local lines = {}
+    local request = scripted({ INIT, ACK, RESULT })
+    local client = mcp.new({ port = 37749, request = request, token = TOKEN, log = function(line) table.insert(lines, line) end })
+    client.call_tool("get_cohort_status", {}, function() end)
+    assert.truthy(table.concat(lines, "\n"):lower():find("member%-token"))
+  end)
+
+  it("makes no log noise when no token is configured", function()
+    local lines = {}
+    local request = scripted({ INIT, ACK, RESULT })
+    local client = mcp.new({ port = 37749, request = request, log = function(line) table.insert(lines, line) end })
+    client.call_tool("get_cohort_status", {}, function() end)
+    assert.is_nil(table.concat(lines, "\n"):lower():find("member%-token"))
+  end)
+end)

@@ -2287,6 +2287,54 @@ describe("skipped tests over SSE", function()
   end)
 end)
 
+-- ─── Member token: configured, found, and kept out of every message ──────────
+
+describe("member token in a real Neovim", function()
+  local TOKEN = "sfm_Zk3vQ9mT1xWc7Yh2LpB8aDfG5jRuN0sEoIqXtVyHwKc"
+
+  it("setup takes member_token, and the plugin finds it", function()
+    local sagefs = require("sagefs")
+    local member_token = require("sagefs.member_token")
+    sagefs.setup({ auto_connect = false, member_token = TOKEN })
+    assert_eq(TOKEN, member_token.current(), "the configured token")
+    sagefs.config.member_token = nil
+  end)
+
+  it("with no option the environment variable is the token, and without either there is none", function()
+    local sagefs = require("sagefs")
+    local member_token = require("sagefs.member_token")
+    sagefs.setup({ auto_connect = false })
+    sagefs.config.member_token = nil
+    local saved = vim.env.SAGEFS_MEMBER_TOKEN
+    vim.env.SAGEFS_MEMBER_TOKEN = TOKEN
+    assert_eq(TOKEN, member_token.current(), "the environment token")
+    vim.env.SAGEFS_MEMBER_TOKEN = nil
+    assert_eq(nil, member_token.current(), "no token")
+    vim.env.SAGEFS_MEMBER_TOKEN = saved
+  end)
+
+  it(":SageFsConfig with a token configured says nothing of it, in notifications or in :messages", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false, member_token = TOKEN })
+    local original_notify = vim.notify
+    local notes = {}
+    vim.notify = function(msg) table.insert(notes, tostring(msg)) end
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    local previous = vim.fn.getcwd()
+    vim.cmd.cd(vim.fn.fnameescape(dir))
+    vim.cmd("messages clear")
+    local ok, err = pcall(vim.cmd, "SageFsConfig")
+    vim.notify = original_notify
+    vim.cmd.cd(vim.fn.fnameescape(previous))
+    sagefs.config.member_token = nil
+    assert_truthy(ok, tostring(err))
+    local seen = table.concat(notes, "\n") .. "\n" .. vim.api.nvim_exec2("messages", { output = true }).output
+    assert_eq(nil, seen:find(TOKEN, 1, true), "the token in what was printed")
+    vim.fn.delete(dir, "rf")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
