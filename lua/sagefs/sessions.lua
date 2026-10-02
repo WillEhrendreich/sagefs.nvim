@@ -261,6 +261,29 @@ function M.route(list, target)
   return { kind = "none", others = list, dir = dir }
 end
 
+--- Is a warmup_progress event about the session this editor is waiting on?
+--- On a shared daemon every session's warmup reaches every client. With a
+--- session id the answer is exact; without one (the legacy event shape) it is
+--- ours only while we expect a warmup: a session we just created, or an active
+--- session that is itself still warming.
+---@param data table decoded event data
+---@param active_session table|nil
+---@param expecting boolean  we created a session recently and are waiting for it
+---@return boolean
+function M.warmup_event_is_ours(data, active_session, expecting)
+  local sid = data.sessionId or data.SessionId or data.session_id
+  if sid then
+    if active_session then return active_session.id == sid end
+    return expecting == true
+  end
+  if expecting then return true end
+  if active_session then return M.WARMING_STATUSES[active_session.status] == true end
+  return false
+end
+
+--- Session statuses that precede Ready.
+M.WARMING_STATUSES = { Starting = true, Building = true, Restarting = true, WarmingUp = true }
+
 --- One line per session: short id, project, directory, status.
 ---@param list table[]
 ---@param cap number|nil  show at most this many (default 6)

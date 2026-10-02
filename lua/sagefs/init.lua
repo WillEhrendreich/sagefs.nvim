@@ -300,14 +300,21 @@ local function build_handlers()
   handlers.warmup_progress = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
+    -- Every session's warmup reaches every client of a shared daemon: only
+    -- react to the one this editor is waiting on.
+    local expecting = M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
+    if not sessions.warmup_event_is_ours(data, M.active_session, expecting) then return end
     local prev_phase = M.warmup_phase
-    M.warmup_phase = data.Phase or data.phase
+    -- The 0.6 state-shaped progress event has a step but no phase: keep the
+    -- phase we know instead of blanking it (which made the next legacy event
+    -- look like a "transition" and announce an empty "Warming up:").
+    M.warmup_phase = data.Phase or data.phase or M.warmup_phase
     M.warmup_step = data.Step or data.step or 0
     M.warmup_total = data.Total or data.total or 0
     M.warmup_message = data.Message or data.message or ""
     M.warmup_progress = data.Progress or data.progress or 0
     -- Notify on phase transitions (not every namespace open)
-    if M.warmup_phase ~= prev_phase and M.warmup_phase ~= "opening_namespaces" then
+    if M.warmup_phase and M.warmup_phase ~= "" and M.warmup_phase ~= prev_phase and M.warmup_phase ~= "opening_namespaces" then
       local labels = {
         creating_fsi = "Creating FSI session...",
         scanning_sources = "Scanning source files...",
@@ -701,8 +708,12 @@ local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
       if cell then cell.pending_text = c.short end
       if c.kind ~= last_kind then
         last_kind = c.kind
-        local levels = { info = vim.log.levels.INFO, warn = vim.log.levels.WARN, error = vim.log.levels.ERROR }
-        notify(c.long, levels[c.level])
+        -- "Still running" is shown inline on the cell; only a problem earns a
+        -- message-line line (and a message that wraps raises a hit-enter prompt).
+        if c.level ~= "info" then
+          local levels = { warn = vim.log.levels.WARN, error = vim.log.levels.ERROR }
+          notify(c.long, levels[c.level])
+        end
       end
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(buf) then render.render_all(buf, M.state) end
@@ -1026,6 +1037,8 @@ local function create_targets(paths, working_dir, callback)
   }, function(ok, raw)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
+      -- the new session's warmup events are the ones to show, for a while
+      M.warmup_expected_until = (vim.uv.hrtime() / 1e6) + 180000
       notify(result.message or "Session created")
       M.list_sessions()
     else
