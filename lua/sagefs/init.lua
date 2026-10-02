@@ -909,7 +909,7 @@ local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
   vim.defer_fn(tick, limits.EVAL_SLOW_AFTER_MS)
 end
 
---- The directory to put in an /exec body: the active (routed) session's own, and
+--- The directory to put in an /exec or /api/completions body: the active (routed) session's own, and
 --- Neovim's cwd only when the session list carried none.
 local function eval_working_directory()
   local dir = M.active_session and M.active_session.working_directory
@@ -1160,7 +1160,7 @@ function M.omnifunc(findstart, base)
   end
   offset = offset + cursor[2]
 
-  local working_directory = (M.active_session and M.active_session.workingDirectory) or vim.fn.getcwd()
+  local working_directory = eval_working_directory()
   local body = completions.build_request_body(text, offset, working_directory)
   local col = (M._completion_col or 0) + 1
 
