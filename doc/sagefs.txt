@@ -251,6 +251,18 @@ Sessions ~
 :SageFsCreateSession                                    *:SageFsCreateSession*
     Create a new SageFs session for a project.
 
+:SageFsRunApp                                           *:SageFsRunApp*
+    Run the active session's application, or the project named as the
+    optional argument. The app runs the session's code, so a reload patches
+    it live. See |sagefs-repl-behind|.
+
+:SageFsStopApp                                          *:SageFsStopApp*
+    Stop the application |:SageFsRunApp| started.
+
+:SageFsWorkflow                                         *:SageFsWorkflow*
+    Show the current workflow label. The workflow is changed with the
+    SageFs MCP tool `switch_workflow` or the TUI, not from the editor.
+
 :SageFsConfig                                           *:SageFsConfig*
     Create or open .SageFs/config.fsx for the current directory.
     Use this to set `AutoOpenNamespaces = false` and disable warmup
@@ -261,6 +273,10 @@ Utilities ~
 :SageFsStats                                            *:SageFsStats*
     Show runtime statistics: eval count, latency, SSE events,
     reconnects, cells tracked.
+
+:SageFsDashboard                                        *:SageFsDashboard*
+    Toggle the floating SageFs dashboard: session, health, tests, coverage,
+    hot reload, alarms and the other sections.
 
 :SageFsPlayground                                       *:SageFsPlayground*
     Open a fresh F# scratch buffer with auto-session. Zero-config
@@ -652,8 +668,8 @@ The older per-batch coverage_updated events are folded as before.
 SageFs supports multiple simultaneous sessions across different projects.
 Each session runs in an isolated FSI worker process.
 
-Use |:SageFsSessions| to list sessions, |:SageFsSwitchSession| to change
-the active session, and |:SageFsCreateSession| to start a new one.
+Use |:SageFsSessions| to list sessions and switch the active one from its
+picker, and |:SageFsCreateSession| to start a new one.
 
 Which session an eval goes to:                      *sagefs-session-routing*
 
@@ -904,6 +920,15 @@ Event reference ~
 *SageFsTestsDiscovered*
     Fired when the daemon detects new tests in the project.
 
+*SageFsTestSourceLocations*
+    Fired when the daemon sends where each test is defined. Payload:
+    `Locations`, each with `TestName` and `FilePath`. Used to jump from the
+    test panel to the source.
+
+*SageFsFailureNarratives*
+    Fired with the daemon's explanation of failing tests. Payload: a list of
+    narratives, each with a `TestId`.
+
 *SageFsConnected*
     Fired when the SSE stream successfully connects to the daemon.
 
@@ -919,6 +944,30 @@ Event reference ~
 
 *SageFsHotReloadTriggered*
     Fired when a hot reload event is received from the daemon.
+
+*SageFsWarmupProgress*
+    Fired as a session warms up (creating FSI, scanning sources, loading
+    assemblies, finalizing). Payload: `Phase`, `Step`, `Total`, `Message`,
+    and a session id. Every session's warmup arrives, so check the id before
+    acting on it.
+
+*SageFsWarmupCompleted*
+    Fired when a session finishes warming up. Payload: `session_id` and
+    `project_count`.
+
+*SageFsSessionFaulted*
+    Fired when a session faults, for every session on the daemon. Payload:
+    `sessionFaulted` (the session id) and `error`. The plugin only shows a
+    message for the session this editor uses.
+
+*SageFsFileReloaded*
+    Fired when the daemon reloaded a watched file. Payload: `fileReloaded`
+    (the path) and `sessionId`.
+
+*SageFsSystemAlarm*
+    Fired when the daemon raises a system alarm. Payload: `phase` and
+    `message`. The plugin also shows the message as an error and a warning
+    mark in the statusline.
 
 *SageFsWarmupContext*
     Fired when session warmup context data arrives (assemblies, namespaces,
@@ -1029,7 +1078,7 @@ A: Run `sagefs --proj YourApp.fsproj` in a terminal, or use |:SageFsStart|
 
 Q: Can I use this with multiple projects?
 A: Yes. SageFs supports multiple sessions. Use |:SageFsCreateSession|
-   for each project and |:SageFsSwitchSession| to change between them.
+   for each project and the |:SageFsSessions| picker to change between them.
 
 Q: What's the `;;` for?
 A: `;;` at the end of a line marks a cell boundary. This is standard F#

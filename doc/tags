@@ -13,6 +13,7 @@
 :SageFsCoverage	sagefs.txt	/*:SageFsCoverage*
 :SageFsCoveringTests	sagefs.txt	/*:SageFsCoveringTests*
 :SageFsCreateSession	sagefs.txt	/*:SageFsCreateSession*
+:SageFsDashboard	sagefs.txt	/*:SageFsDashboard*
 :SageFsDebugRelease	sagefs.txt	/*:SageFsDebugRelease*
 :SageFsDebugTest	sagefs.txt	/*:SageFsDebugTest*
 :SageFsDiff	sagefs.txt	/*:SageFsDiff*
@@ -37,6 +38,7 @@
 :SageFsReloadStatus	sagefs.txt	/*:SageFsReloadStatus*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
 :SageFsResult	sagefs.txt	/*:SageFsResult*
+:SageFsRunApp	sagefs.txt	/*:SageFsRunApp*
 :SageFsRunTests	sagefs.txt	/*:SageFsRunTests*
 :SageFsScopeMap	sagefs.txt	/*:SageFsScopeMap*
 :SageFsSessions	sagefs.txt	/*:SageFsSessions*
@@ -44,6 +46,7 @@
 :SageFsStats	sagefs.txt	/*:SageFsStats*
 :SageFsStatus	sagefs.txt	/*:SageFsStatus*
 :SageFsStop	sagefs.txt	/*:SageFsStop*
+:SageFsStopApp	sagefs.txt	/*:SageFsStopApp*
 :SageFsSwitchProject	sagefs.txt	/*:SageFsSwitchProject*
 :SageFsTestPanel	sagefs.txt	/*:SageFsTestPanel*
 :SageFsTestPolicy	sagefs.txt	/*:SageFsTestPolicy*
@@ -55,6 +58,7 @@
 :SageFsTypeFlow	sagefs.txt	/*:SageFsTypeFlow*
 :SageFsUnwatchAll	sagefs.txt	/*:SageFsUnwatchAll*
 :SageFsWatchAll	sagefs.txt	/*:SageFsWatchAll*
+:SageFsWorkflow	sagefs.txt	/*:SageFsWorkflow*
 SageFsAffectedTestsComputed	sagefs.txt	/*SageFsAffectedTestsComputed*
 SageFsBindingScopeMap	sagefs.txt	/*SageFsBindingScopeMap*
 SageFsBindingsSnapshot	sagefs.txt	/*SageFsBindingsSnapshot*
@@ -70,7 +74,9 @@ SageFsEvalCompleted	sagefs.txt	/*SageFsEvalCompleted*
 SageFsEvalDiff	sagefs.txt	/*SageFsEvalDiff*
 SageFsEvalResult	sagefs.txt	/*SageFsEvalResult*
 SageFsEvalTimeline	sagefs.txt	/*SageFsEvalTimeline*
+SageFsFailureNarratives	sagefs.txt	/*SageFsFailureNarratives*
 SageFsFileAnnotations	sagefs.txt	/*SageFsFileAnnotations*
+SageFsFileReloaded	sagefs.txt	/*SageFsFileReloaded*
 SageFsHotReloadSnapshot	sagefs.txt	/*SageFsHotReloadSnapshot*
 SageFsHotReloadTriggered	sagefs.txt	/*SageFsHotReloadTriggered*
 SageFsLandingChanged	sagefs.txt	/*SageFsLandingChanged*
@@ -81,6 +87,8 @@ SageFsReloadReported	sagefs.txt	/*SageFsReloadReported*
 SageFsReplFreshnessChanged	sagefs.txt	/*SageFsReplFreshnessChanged*
 SageFsRunTestsRequested	sagefs.txt	/*SageFsRunTestsRequested*
 SageFsSaveObserved	sagefs.txt	/*SageFsSaveObserved*
+SageFsSessionFaulted	sagefs.txt	/*SageFsSessionFaulted*
+SageFsSystemAlarm	sagefs.txt	/*SageFsSystemAlarm*
 SageFsTestCycleTimingRecorded	sagefs.txt	/*SageFsTestCycleTimingRecorded*
 SageFsTestFailed	sagefs.txt	/*SageFsTestFailed*
 SageFsTestPassed	sagefs.txt	/*SageFsTestPassed*
@@ -88,11 +96,14 @@ SageFsTestRecoveryNeeded	sagefs.txt	/*SageFsTestRecoveryNeeded*
 SageFsTestResultsBatch	sagefs.txt	/*SageFsTestResultsBatch*
 SageFsTestRunCompleted	sagefs.txt	/*SageFsTestRunCompleted*
 SageFsTestRunStarted	sagefs.txt	/*SageFsTestRunStarted*
+SageFsTestSourceLocations	sagefs.txt	/*SageFsTestSourceLocations*
 SageFsTestState	sagefs.txt	/*SageFsTestState*
 SageFsTestSummary	sagefs.txt	/*SageFsTestSummary*
 SageFsTestTrace	sagefs.txt	/*SageFsTestTrace*
 SageFsTestsDiscovered	sagefs.txt	/*SageFsTestsDiscovered*
+SageFsWarmupCompleted	sagefs.txt	/*SageFsWarmupCompleted*
 SageFsWarmupContext	sagefs.txt	/*SageFsWarmupContext*
+SageFsWarmupProgress	sagefs.txt	/*SageFsWarmupProgress*
 sagefs-bindings	sagefs.txt	/*sagefs-bindings*
 sagefs-cell-highlight	sagefs.txt	/*sagefs-cell-highlight*
 sagefs-cell-modes	sagefs.txt	/*sagefs-cell-modes*
