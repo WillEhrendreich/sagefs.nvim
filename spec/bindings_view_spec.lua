@@ -110,6 +110,45 @@ describe("bindings_view click", function()
   end)
 end)
 
+describe("bindings_view when the active session changes", function()
+  local function mode_json(mode, containment)
+    return vim.json.encode({ success = true, mode = mode, containment = containment or "", notEvaluated = 1 })
+  end
+
+  it("forgets the previous session's mode, containment and notice", function()
+    local sid = "A"
+    local env = make({ { true, mode_json("Off", "line from A") } }, { session_id = function() return sid end })
+    env.ctl.read_mode()
+    assert.are.equal("Off", env.ctl.view.mode)
+    assert.are.equal("line from A", env.ctl.view.containment)
+    env.ctl.view.notice = "a notice about A"
+    sid = "B"
+    env.ctl.click(nil) -- any controller entry point sees the new session
+    assert.is_nil(env.ctl.view.mode)
+    assert.are.equal("", env.ctl.view.containment)
+    assert.is_nil(env.ctl.view.notice)
+    assert.are.equal("B", env.ctl.view.session_id)
+  end)
+
+  it("does not refuse a click in session B because session A was in Off mode", function()
+    local sid = "A"
+    local env = make({ { true, mode_json("Off") }, { true, fixture_text("click_runscode_response.json") } },
+      { session_id = function() return sid end })
+    env.ctl.read_mode()
+    sid = "B"
+    env.ctl.click(CLICK_ROW)
+    assert.are.equal(2, #env.calls, "the click for B went out")
+    assert.is_truthy(env.calls[2].url:find("/api/sessions/B/live-values/evaluate", 1, true))
+  end)
+
+  it("keeps the mode while the session stays the same", function()
+    local env = make({ { true, mode_json("Off") } })
+    env.ctl.read_mode()
+    env.ctl.click(nil)
+    assert.are.equal("Off", env.ctl.view.mode)
+  end)
+end)
+
 describe("bindings_view mode", function()
   it("switches to Off with one request and remembers the mode", function()
     local env = make({ { true, vim.json.encode({ success = true, mode = "Off", notEvaluated = 1 }) } })

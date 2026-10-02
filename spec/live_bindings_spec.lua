@@ -34,6 +34,116 @@ local function child(node, label)
   end
 end
 
+-- ─── Payloads of the wrong shape ─────────────────────────────────────────────
+--
+-- The daemon's version drifts away from the plugin's. A field of the wrong type
+-- must never throw on the fold or on a redraw: a throw on a redraw would leave
+-- the pane broken for good.
+
+describe("live_bindings against payloads of the wrong shape", function()
+  local function good_node(extra)
+    local n = { Label = "b", TypeName = "T", Preview = "x", Kind = "Leaf", Depth = 0, Children = {} }
+    for k, v in pairs(extra or {}) do n[k] = v end
+    return n
+  end
+
+  local function snapshot_with(mutate)
+    local payload = {
+      SessionId = "s", Generation = 1,
+      Bindings = { { Name = "b", TypeSignature = "T", Root = good_node({
+        Children = { good_node({ Label = "c", Depth = 1 }) },
+      }) } },
+    }
+    mutate(payload)
+    return payload
+  end
+
+  local CASES = {
+    { "Bindings is a string", function(p) p.Bindings = "oops" end },
+    { "Bindings is a number", function(p) p.Bindings = 42 end },
+    { "a binding is a number", function(p) p.Bindings = { 7 } end },
+    { "a binding is a string", function(p) p.Bindings = { "x" } end },
+    { "a binding Name is a table", function(p) p.Bindings[1].Name = {} end },
+    { "a binding TypeSignature is a number", function(p) p.Bindings[1].TypeSignature = 5 end },
+    { "Root is a number", function(p) p.Bindings[1].Root = 5 end },
+    { "Root is a string", function(p) p.Bindings[1].Root = "x" end },
+    { "Children is a string", function(p) p.Bindings[1].Root.Children = "kids" end },
+    { "Children is a number", function(p) p.Bindings[1].Root.Children = 3 end },
+    { "a child is a number", function(p) p.Bindings[1].Root.Children = { 3 } end },
+    { "a child is a string", function(p) p.Bindings[1].Root.Children = { "s" } end },
+    { "Preview is a table", function(p) p.Bindings[1].Root.Preview = { a = 1 } end },
+    { "Label is a table", function(p) p.Bindings[1].Root.Label = {} end },
+    { "TypeName is a number", function(p) p.Bindings[1].Root.TypeName = 5 end },
+    { "Depth is a numeric string", function(p) p.Bindings[1].Root.Children[1].Depth = "1" end },
+    { "Depth is words", function(p) p.Bindings[1].Root.Depth = "deep" end },
+    { "Depth is a table", function(p) p.Bindings[1].Root.Depth = {} end },
+    { "Kind is a number", function(p) p.Bindings[1].Root.Kind = 5 end },
+    { "NotEvaluated with Fields a number", function(p) p.Bindings[1].Root.Kind = { Case = "NotEvaluated", Fields = 5 } end },
+    { "NotEvaluated with a number reason", function(p) p.Bindings[1].Root.Kind = { Case = "NotEvaluated", Fields = { 7 } } end },
+    { "NotEvaluated with reason Fields a number", function(p)
+      p.Bindings[1].Root.Kind = { Case = "NotEvaluated", Fields = { { Case = "GetterRunsCode", Fields = 3 } } }
+    end },
+    { "Generation is words", function(p) p.Generation = "x" end },
+  }
+
+  for _, case in ipairs(CASES) do
+    it("neither folds nor draws with a throw when " .. case[1], function()
+      local payload = snapshot_with(case[2])
+      local ok, err = pcall(function()
+        local state = lb.apply_snapshot(lb.new(), payload)
+        local snap = lb.get(state, "s")
+        lb.render(snap, lb.new_view("s"))
+        lb.not_evaluated_count(snap)
+      end)
+      assert.is_true(ok, tostring(err))
+    end)
+  end
+
+  it("reads a numeric string Depth as that number", function()
+    local snap = lb.get(lb.apply_snapshot(lb.new(), snapshot_with(function(p)
+      p.Bindings[1].Root.Children[1].Depth = "1"
+    end)), "s")
+    assert.are.equal(1, snap.bindings[1].root.children[1].depth)
+  end)
+
+  it("reads a Depth that is no number as 0", function()
+    local snap = lb.get(lb.apply_snapshot(lb.new(), snapshot_with(function(p)
+      p.Bindings[1].Root.Depth = "deep"
+    end)), "s")
+    assert.are.equal(0, snap.bindings[1].root.depth)
+  end)
+
+  it("a huge Depth does not build a huge indentation", function()
+    local snap = lb.get(lb.apply_snapshot(lb.new(), snapshot_with(function(p)
+      p.Bindings[1].Root.Depth = 1e9
+    end)), "s")
+    local r = lb.render(snap, lb.new_view("s"))
+    for _, line in ipairs(r.lines) do assert.is_true(#line < 1000) end
+  end)
+
+  it("keeps the good bindings next to a broken one", function()
+    local snap = lb.get(lb.apply_snapshot(lb.new(), snapshot_with(function(p)
+      table.insert(p.Bindings, 7)
+      table.insert(p.Bindings, { Name = "ok", TypeSignature = "U", Root = good_node({ Label = "ok" }) })
+    end)), "s")
+    local names = {}
+    for _, b in ipairs(snap.bindings) do table.insert(names, b.name) end
+    assert.are.same({ "b", "ok" }, names)
+  end)
+
+  it("a click answer with an outcome of the wrong shape is still an answer", function()
+    for _, outcome in ipairs({
+      { type = "MemberRefused", value = 5 },
+      { type = "MemberRefused", value = { 5 } },
+      { type = "BindingNotFound", value = "x" },
+      { type = "MemberUnavailable", value = { { type = "HostNotRunning", value = 7 } } },
+    }) do
+      local ok, r = pcall(lb.parse_click_response, true, vim.json.encode({ success = true, containment = "", outcome = outcome }))
+      assert.is_true(ok, tostring(r))
+    end
+  end)
+end)
+
 -- ─── The fold ────────────────────────────────────────────────────────────────
 
 describe("live_bindings.apply_snapshot", function()
@@ -306,6 +416,30 @@ describe("live_bindings modes", function()
 end)
 
 -- ─── The view model ──────────────────────────────────────────────────────────
+
+describe("live_bindings.sync_view", function()
+  it("resets the mode, the containment line, the notice and the folds when the session changes", function()
+    local view = lb.new_view("A")
+    view.mode, view.containment, view.notice = "Everything", "line", "note"
+    view.expanded.k = true
+    view._effective.k = true
+    lb.sync_view(view, "B")
+    assert.are.equal("B", view.session_id)
+    assert.is_nil(view.mode)
+    assert.are.equal("", view.containment)
+    assert.is_nil(view.notice)
+    assert.are.same({}, view.expanded)
+    assert.are.same({}, view._effective)
+  end)
+
+  it("leaves the view alone while the session stays the same", function()
+    local view = lb.new_view("A")
+    view.mode, view.notice = "Off", "note"
+    lb.sync_view(view, "A")
+    assert.are.equal("Off", view.mode)
+    assert.are.equal("note", view.notice)
+  end)
+end)
 
 describe("live_bindings.render", function()
   local function render(name, view_fn)

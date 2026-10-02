@@ -1651,6 +1651,25 @@ describe("debug_test default deps (real buffers)", function()
   end)
 end)
 
+-- ─── Live bindings pane: session switch ─────────────────────────────────────
+
+describe("bindings_view pane (real buffer)", function()
+  it("a redraw after the active session changed drops the previous session's mode and notice", function()
+    local bv = require("sagefs.bindings_view")
+    local lb = require("sagefs.live_bindings")
+    local plugin = { active_session = nil, live_bindings_state = lb.new() }
+    local pane = bv.open(plugin, { base_url = function() return "http://127.0.0.1:1" end, notify = function() end })
+    plugin.active_session = { id = "A" }
+    bv.redraw()
+    pane.ctl.view.mode, pane.ctl.view.notice = "Off", "about A"
+    plugin.active_session = { id = "B" }
+    bv.redraw()
+    assert_eq(nil, pane.ctl.view.mode, "mode is forgotten")
+    assert_eq(nil, pane.ctl.view.notice, "notice is forgotten")
+    bv.close()
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
