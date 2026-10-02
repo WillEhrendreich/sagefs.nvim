@@ -93,6 +93,18 @@ describe("commands :SageFsStart without a sagefs binary", function()
     assert.equals("/opt/tools/sagefs", jobstarts[1][1])
   end)
 
+  it("expands a ~ in sagefs_path before checking and spawning it", function()
+    plugin.config.sagefs_path = "~/.dotnet/tools/sagefs"
+    vim.fn.expand = function(p) return (p:gsub("^~", "/home/u")) end
+    vim.fn.executable = function(b) return b == "/home/u/.dotnet/tools/sagefs" and 1 or 0 end
+    registered["SageFsStart"].handler({ args = "App.fsproj" })
+    assert.equals(1, #jobstarts)
+    assert.equals("/home/u/.dotnet/tools/sagefs", jobstarts[1][1])
+    for _, n in ipairs(notifications) do
+      assert.is_nil(n.msg:find("not an executable file", 1, true), n.msg)
+    end
+  end)
+
   it("names a configured path that is not executable", function()
     plugin.config.sagefs_path = "/opt/nope/sagefs"
     registered["SageFsStart"].handler({ args = "App.fsproj" })

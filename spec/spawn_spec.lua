@@ -83,6 +83,43 @@ describe("sagefs.spawn", function()
     end)
   end)
 
+  -- vim.fn.executable() and jobstart() do not expand "~", but the natural
+  -- sagefs_path is ~/.dotnet/tools/sagefs (the default dotnet tool dir).
+  describe("resolve_binary", function()
+    local function fake_expand()
+      local calls = {}
+      vim.fn.expand = function(p)
+        table.insert(calls, p)
+        return (p:gsub("^~", "/home/u"):gsub("%$HOME", "/home/u"))
+      end
+      return calls
+    end
+
+    it("expands a leading tilde", function()
+      fake_expand()
+      assert.equals("/home/u/.dotnet/tools/sagefs", spawn.resolve_binary("~/.dotnet/tools/sagefs"))
+    end)
+
+    it("expands an environment variable", function()
+      fake_expand()
+      assert.equals("/home/u/bin/sagefs", spawn.resolve_binary("$HOME/bin/sagefs"))
+    end)
+
+    it("leaves a bare name and a plain path exactly as given, without calling expand", function()
+      local calls = fake_expand()
+      assert.equals("sagefs", spawn.resolve_binary("sagefs"))
+      assert.equals("/opt/tools/sagefs", spawn.resolve_binary("/opt/tools/sagefs"))
+      assert.equals("/opt/100%/sagefs", spawn.resolve_binary("/opt/100%/sagefs"))
+      assert.equals(0, #calls)
+    end)
+
+    it("falls back to sagefs for nil and the empty string", function()
+      fake_expand()
+      assert.equals("sagefs", spawn.resolve_binary(nil))
+      assert.equals("sagefs", spawn.resolve_binary(""))
+    end)
+  end)
+
   describe("missing_curl_message", function()
     it("says what curl is for and what to do", function()
       local m = spawn.missing_curl_message()

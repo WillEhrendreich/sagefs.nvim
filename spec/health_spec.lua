@@ -446,3 +446,35 @@ describe("sagefs.health when the sagefs binary is missing", function()
     assert.is_truthy(text:find("sagefs_path", 1, true))
   end)
 end)
+
+describe("sagefs.health with a ~ in sagefs_path", function()
+  local original_system, original_v, original_health, original_loaded, original_expand, original_trim
+
+  before_each(function()
+    package.loaded["sagefs.health"] = nil
+    original_system, original_v, original_expand = vim.fn.system, vim.v, vim.fn.expand
+    original_health, original_loaded, original_trim = vim.health, package.loaded["sagefs"], vim.trim
+    vim.trim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+  end)
+
+  after_each(function()
+    vim.fn.system, vim.v, vim.fn.expand, vim.trim = original_system, original_v, original_expand, original_trim
+    vim.health, package.loaded["sagefs"] = original_health, original_loaded
+    package.loaded["sagefs.health"] = nil
+  end)
+
+  it("runs the expanded path, so a ~/.dotnet/tools/sagefs install is found", function()
+    local commands, oks = {}, {}
+    vim.v = { shell_error = 0 }
+    vim.fn.expand = function(p) return (p:gsub("^~", "/home/u")) end
+    vim.fn.system = function(cmd) table.insert(commands, cmd); return "0.6.875" end
+    package.loaded["sagefs"] = { config = { sagefs_path = "~/.dotnet/tools/sagefs" } }
+    vim.health = {
+      start = function() end, info = function() end, warn = function() end, error = function() end,
+      ok = function(m) table.insert(oks, m) end,
+    }
+    require("sagefs.health").check()
+    assert.equals("/home/u/.dotnet/tools/sagefs --version", commands[1])
+    assert.is_truthy(oks[1] and oks[1]:find("SageFs CLI found", 1, true))
+  end)
+end)
