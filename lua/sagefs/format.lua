@@ -44,6 +44,26 @@ function M.parse_exec_response(json_str)
   return result
 end
 
+--- What to tell the user when the daemon answered with a non-2xx status: the
+--- first line of the reply's message (or error, or result), else "HTTP <status>".
+--- With no reply at all (connect refused, timeout) it is the generic sentence.
+---@param raw string|nil response body
+---@param meta { status: integer }|nil nil when no HTTP reply was read
+---@return string
+function M.http_failure_text(raw, meta)
+  if not meta or not meta.status then return "HTTP request failed" end
+  local ok, data = json_decode(raw or "")
+  if ok and type(data) == "table" then
+    for _, key in ipairs({ "message", "error", "result" }) do
+      local v = data[key]
+      if type(v) == "string" and v ~= "" then
+        return (v:match("^[^\r\n]+") or v)
+      end
+    end
+  end
+  return "HTTP " .. tostring(meta.status)
+end
+
 --- Format a duration in milliseconds for human display.
 ---@param ms number|nil Duration in milliseconds
 ---@return string|nil Formatted string like "42ms" or "2.5s"

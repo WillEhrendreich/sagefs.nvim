@@ -906,6 +906,14 @@ local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
   vim.defer_fn(tick, limits.EVAL_SLOW_AFTER_MS)
 end
 
+--- The directory to put in an /exec body: the active (routed) session's own, and
+--- Neovim's cwd only when the session list carried none.
+local function eval_working_directory()
+  local dir = M.active_session and M.active_session.working_directory
+  if type(dir) == "string" and dir ~= "" then return dir end
+  return vim.fn.getcwd()
+end
+
 local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line, anchor_line)
   -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
   if model.is_cell_running(M.state, cell_id) then
@@ -922,7 +930,9 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
   end)
   local body = {
     code = code,
-    working_directory = vim.fn.getcwd(),
+    -- The routed session's own directory: evals route by the FILE's path, and the
+    -- daemon refuses (404 SessionNotRoutable) a cwd that is not that directory or inside it.
+    working_directory = eval_working_directory(),
     sessionId = M.active_session and M.active_session.id or nil,
     format = "json",
     file_path = file_path or "",
@@ -935,7 +945,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
     url = base_url() .. "/exec",
     body = body,
     timeout = 60,
-    callback = function(ok, raw)
+    callback = function(ok, raw, meta)
       local elapsed_ms = math.floor((vim.uv.hrtime() - start_time) / 1e6)
       if ok then
         local result = format.parse_exec_response(raw)
@@ -963,7 +973,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
         end
         handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id, anchor_line)
+        handle_result(buf, cell_id, { ok = false, error = format.http_failure_text(raw, meta), duration_ms = elapsed_ms }, end_line, my_eval_id, anchor_line)
       end
     end,
   })
