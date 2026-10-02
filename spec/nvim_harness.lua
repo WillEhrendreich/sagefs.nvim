@@ -2335,6 +2335,60 @@ describe("member token in a real Neovim", function()
   end)
 end)
 
+describe("member commands in a real Neovim", function()
+  local TOKEN = "sfm_Zk3vQ9mT1xWc7Yh2LpB8aDfG5jRuN0sEoIqXtVyHwKc"
+  local MINTED = "Minted member cap:0123456789abcdef.\n\nTOKEN (shown once; SageFs keeps only its hash, so it cannot be shown again):\n  " .. TOKEN .. "\n"
+
+  it("registers :SageFsMintMember and :SageFsRevokeMember, each with a description :SageFsHelp can read", function()
+    require("sagefs").setup({ auto_connect = false })
+    local help = require("sagefs.help")
+    local rows = {}
+    for _, row in ipairs(help.command_rows(vim.api.nvim_get_commands({}))) do rows[row.name] = row end
+    for _, name in ipairs({ "SageFsMintMember", "SageFsRevokeMember" }) do
+      assert_eq(2, vim.fn.exists(":" .. name), name .. " is registered")
+      assert_truthy(rows[name], name .. " is in the help rows")
+      assert_falsy(rows[name].undescribed, name .. " has a description")
+    end
+  end)
+
+  it("the mint reply goes to a scratch float that is not saved, not listed, and not in messages or history", function()
+    local member_view = require("sagefs.member_view")
+    local original_notify = vim.notify
+    local notes = {}
+    vim.notify = function(msg) table.insert(notes, tostring(msg)) end
+    vim.cmd("messages clear")
+    local before = vim.fn.histnr(":")
+    local client = { call_tool = function(_, _, cb) cb(true, MINTED) end }
+    member_view.mint({ "Analysis" }, { client = client })
+    vim.notify = original_notify
+
+    local float_buf
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_config(win).relative ~= "" then float_buf = vim.api.nvim_win_get_buf(win) end
+    end
+    assert_truthy(float_buf, "a float opened")
+    local content = table.concat(vim.api.nvim_buf_get_lines(float_buf, 0, -1, false), "\n")
+    assert_contains(content, TOKEN, "the token is in the float")
+    assert_eq("nofile", vim.bo[float_buf].buftype, "buftype")
+    assert_eq("wipe", vim.bo[float_buf].bufhidden, "bufhidden")
+    assert_falsy(vim.bo[float_buf].swapfile, "swapfile")
+    assert_falsy(vim.bo[float_buf].buflisted, "buflisted")
+    assert_falsy(vim.bo[float_buf].modifiable, "modifiable")
+    assert_eq(-1, vim.bo[float_buf].undolevels, "undolevels")
+
+    local seen = table.concat(notes, "\n") .. "\n" .. vim.api.nvim_exec2("messages", { output = true }).output
+    assert_eq(nil, seen:find(TOKEN, 1, true), "the token in notifications or messages")
+    for i = math.max(before, 1), vim.fn.histnr(":") do
+      assert_eq(nil, (vim.fn.histget(":", i) or ""):find(TOKEN, 1, true), "the token in command history")
+    end
+
+    -- Leaving the window closes it: the token is shown once.
+    vim.cmd("wincmd p")
+    vim.wait(100, function() return not vim.api.nvim_buf_is_valid(float_buf) end)
+    assert_falsy(vim.api.nvim_buf_is_valid(float_buf), "the float is gone after the window is left")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
