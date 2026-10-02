@@ -4,6 +4,9 @@
 -- Returns a compact string for statusline/winbar/lualine integration.
 -- Usage: require("sagefs.dashboard.statusline").get(state)
 
+local reload_state = require("sagefs.reload_state")
+local repl_freshness = require("sagefs.repl_freshness")
+
 local M = {}
 
 --- Render a compact statusline string from dashboard state.
@@ -45,6 +48,16 @@ function M.get(state)
   local hr = state.hot_reload or {}
   if hr.enabled then
     table.insert(parts, string.format("🔄%d", hr.total_files or 0))
+  end
+
+  -- What the last save did, and whether the REPL is behind the app
+  if state.reload then
+    local report, sid = reload_state.latest(state.reload)
+    local seg = reload_state.statusline(report)
+    if seg ~= "" then table.insert(parts, seg) end
+    local fresh = state.repl_freshness and state.repl_freshness[sid or state.repl_sid or ""]
+    local behind = repl_freshness.segment(fresh)
+    if behind ~= "" then table.insert(parts, behind) end
   end
 
   -- Last eval duration

@@ -364,6 +364,19 @@ Analysis ~
 :SageFsUnwatchAll                                       *:SageFsUnwatchAll*
     Unwatch all files for hot reload.
 
+:SageFsReloadStatus                                   *:SageFsReloadStatus*
+    Show what the last save did to the running app, how it got there
+    (detour or metadata delta), the named causes and the remedy, and whether
+    the REPL is behind the app. See |sagefs-hotreload|.
+
+:SageFsCohort                                               *:SageFsCohort*
+    Show the daemon's cohort in a scratch buffer: members, claims, the
+    landing queue, the integration session and the trunk lines. It reads
+    the MCP tool `get_cohort_status`, refreshes when a cohort event or a
+    reload report arrives, and shows only the first six characters of an
+    `mcp:` member id. `q` closes the buffer, `r` refreshes it.
+    See |sagefs-cohort|.
+
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
 
@@ -446,6 +459,7 @@ Pass configuration to setup(): >lua
                                        -- makes one session-list refresh
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
+    notify_reload = true,        -- vim.notify when a save needs attention
     density = "normal",          -- "minimal" | "normal" | "full"
     hint = true,                 -- One-time first-run hint (see |sagefs-hint|)
     cell_highlight = {
@@ -533,6 +547,68 @@ ignored; only your session's reach the message line.
 When you save an .fs file, SageFs hot-reloads the change in ~100ms using
 Harmony runtime patching. The plugin shows hot reload status and can
 trigger manual reloads.
+
+                                                        *sagefs-reload-truth*
+What the last save did ~
+
+The daemon reports what each save did to the running app. The plugin turns
+that report into words in one place (`lua/sagefs/reload_state.lua`), and the
+statusline, a virtual-text mark on the first line of the saved file,
+|:SageFsReloadStatus| and the dashboard's hot reload section all use it: >
+
+  PatchPending      applied, new body has not run yet
+  Patched           patched (ran)
+  NeverEntered      applied, but the new body never ran (N of M did)
+  Restarted         restarted: <cause>
+  RestartRequired   restart needed: <cause>
+  CompileFailed     did not compile; the app keeps running the last code
+                    that did
+  NoEffect          no effect (N of M changed definitions reached the app)
+  KeptLiveState     kept live value
+<
+A patch is applied first and patched once its new body has been seen
+running, so a pending patch is never shown as live. The mechanism is read
+from the report's `mechanism` field: `detour` shows as `[detour]` and
+`metadata-delta` as `[delta]` in the statusline. A verdict or mechanism the
+plugin does not know is shown as unrecognized.
+
+The statusline keeps pending, never-ran, restart and compile-failed states
+until the next save replaces them. Patched and kept fade after 15 seconds,
+no-effect after 8. With `notify_reload` on, a never-ran patch, a restart and
+a compile failure also call |vim.notify|.
+
+The cause of a restart is the first line of the report's `message`. The
+closed cause names (`FieldsChanged`, `MetadataDeltaUnavailable`, ...) are in
+the worker's own payload as `reasons`; the plugin reads them when a payload
+has them.
+
+                                                       *sagefs-repl-behind*
+The REPL can be behind the app ~
+
+After a metadata delta is patched into an app that |:SageFsRunApp| started,
+the app runs the new code and the REPL keeps the build from before it. The
+daemon reports this as `replFreshness`: `InSync`, or `BehindApp` with the
+number of saves and the declarations. The plugin shows `REPL BEHIND app` in
+the statusline and says it once in a line when you eval: >
+
+  The REPL is BEHIND the app (1 save: Handlers.describe): calls to what
+  changed run the OLD code. :SageFsHardReset rebuilds the REPL and stops the
+  running app (:SageFsRunApp starts it again).
+<
+|:SageFsHardReset| replaces the worker, so the running app stops with it.
+The daemon's `WARNING: The REPL is BEHIND the app` line after an eval result
+is taken off the cell output and shown as that message. The message repeats
+after a minute, or at once when the state changes.
+
+                                                            *sagefs-cohort*
+The cohort and the trunk ~
+
+|:SageFsCohort| reads `get_cohort_status` over MCP, since it has no REST
+route. The trunk section shows one `trunk <landingId>: ...` line per landing
+in the same words as above. A trunk line changes from applied to patched
+with no cohort event, so the buffer also refreshes on every reload report.
+An `mcp:` member id is that agent's MCP session id, so only its first six
+characters are shown.
 
 ==============================================================================
 11. TYPE EXPLORER                                      *sagefs-type-explorer*
@@ -717,6 +793,35 @@ Event reference ~
 *SageFsHotReloadSnapshot*
     Fired with a full hot-reload snapshot (all watched files and their
     watch status).
+
+*SageFsReloadReported*
+    Fired with what a save did to the running app: the `reloadReported`
+    object (`state`, `outcome`, `mechanism`, `patched`, `considered`,
+    `message`, `suggestedAction`) and `sessionId`. A payload with only a
+    `sessionId` means the report was cleared.
+
+*SageFsReplFreshnessChanged*
+    Fired when a session's REPL freshness is read from the session list.
+    Payload: `sessionId` and `freshness` (`state`, `saves_since`,
+    `declarations`, `message`).
+
+*SageFsCohortMatrix*
+    Fired with the cohort frame: members, claims, landings, integration
+    head. One cohort spans every session, so there is no `SessionId`.
+
+*SageFsClaimChanged*
+    Fired when a claim is acquired, released, orphaned or reassigned.
+
+*SageFsLandingChanged*
+    Fired when a landing changes state (queued, rebasing, verifying,
+    blocked, landed, withdrawn).
+
+*SageFsSaveObserved*
+    Fired when a cohort member's watcher sees a save inside another
+    member's claim. Advisory.
+
+*SageFsCohortChanged*
+    Fired when someone joins, leaves, claims, releases or lands.
 
 *SageFsProvidersDetected*
     Fired when the daemon reports which test providers are active

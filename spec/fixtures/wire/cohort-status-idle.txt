@@ -1,0 +1,8 @@
+Cohort ledger head: v13853
+Conductor: mcp:AAAAAAAAAAAAAAAAAAAAAA
+Members (1):
+  - mcp:AAAAAAAAAAAAAAAAAAAAAA [Observer] departed 2026-09-18 22:44:29Z
+Claims (0):
+Integration head: 09e824af17c04b884be4132353111a44801975d1
+Landings: (none)
+Integration session: (not configured — call set_integration_ref)

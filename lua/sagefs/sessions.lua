@@ -6,6 +6,7 @@ local M = {}
 
 local util = require("sagefs.util")
 local json_decode = util.json_decode
+local status_fields = require("sagefs.status_fields")
 
 -- ─── Path normalization ──────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ local function normalize_session(raw)
   if type(raw.health) == "table" then
     health = { status = raw.health.status, reason = raw.health.reason }
   end
-  return {
+  local session = {
     id = raw.id or "",
     name = derive_name(raw) or raw.id or "",
     status = raw.status or "",
@@ -64,6 +65,12 @@ local function normalize_session(raw)
     health = health,
     loaded_projects = raw.loadedProjects or {},
   }
+  -- The closed report fields (lastReload, replFreshness, and whatever the daemon
+  -- adds next) are read in one registry, not here.
+  for key, value in pairs(status_fields.parse(raw)) do
+    session[key] = value
+  end
+  return session
 end
 
 function M.parse_sessions_response(json_str)

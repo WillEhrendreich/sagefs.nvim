@@ -5,6 +5,7 @@
 :SageFsCancel	sagefs.txt	/*:SageFsCancel*
 :SageFsCellStyle	sagefs.txt	/*:SageFsCellStyle*
 :SageFsClear	sagefs.txt	/*:SageFsClear*
+:SageFsCohort	sagefs.txt	/*:SageFsCohort*
 :SageFsConfig	sagefs.txt	/*:SageFsConfig*
 :SageFsConnect	sagefs.txt	/*:SageFsConnect*
 :SageFsContext	sagefs.txt	/*:SageFsContext*
@@ -29,6 +30,7 @@
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
 :SageFsPickTest	sagefs.txt	/*:SageFsPickTest*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
+:SageFsReloadStatus	sagefs.txt	/*:SageFsReloadStatus*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
 :SageFsResult	sagefs.txt	/*:SageFsResult*
 :SageFsRunTests	sagefs.txt	/*:SageFsRunTests*
@@ -53,6 +55,9 @@ SageFsAffectedTestsComputed	sagefs.txt	/*SageFsAffectedTestsComputed*
 SageFsBindingScopeMap	sagefs.txt	/*SageFsBindingScopeMap*
 SageFsBindingsSnapshot	sagefs.txt	/*SageFsBindingsSnapshot*
 SageFsCellDependencies	sagefs.txt	/*SageFsCellDependencies*
+SageFsClaimChanged	sagefs.txt	/*SageFsClaimChanged*
+SageFsCohortChanged	sagefs.txt	/*SageFsCohortChanged*
+SageFsCohortMatrix	sagefs.txt	/*SageFsCohortMatrix*
 SageFsConnected	sagefs.txt	/*SageFsConnected*
 SageFsCoverageUpdated	sagefs.txt	/*SageFsCoverageUpdated*
 SageFsDisconnected	sagefs.txt	/*SageFsDisconnected*
@@ -63,9 +68,13 @@ SageFsEvalTimeline	sagefs.txt	/*SageFsEvalTimeline*
 SageFsFileAnnotations	sagefs.txt	/*SageFsFileAnnotations*
 SageFsHotReloadSnapshot	sagefs.txt	/*SageFsHotReloadSnapshot*
 SageFsHotReloadTriggered	sagefs.txt	/*SageFsHotReloadTriggered*
+SageFsLandingChanged	sagefs.txt	/*SageFsLandingChanged*
 SageFsProvidersDetected	sagefs.txt	/*SageFsProvidersDetected*
 SageFsReconnecting	sagefs.txt	/*SageFsReconnecting*
+SageFsReloadReported	sagefs.txt	/*SageFsReloadReported*
+SageFsReplFreshnessChanged	sagefs.txt	/*SageFsReplFreshnessChanged*
 SageFsRunTestsRequested	sagefs.txt	/*SageFsRunTestsRequested*
+SageFsSaveObserved	sagefs.txt	/*SageFsSaveObserved*
 SageFsTestCycleTimingRecorded	sagefs.txt	/*SageFsTestCycleTimingRecorded*
 SageFsTestFailed	sagefs.txt	/*SageFsTestFailed*
 SageFsTestPassed	sagefs.txt	/*SageFsTestPassed*
@@ -82,6 +91,7 @@ sagefs-cell-highlight	sagefs.txt	/*sagefs-cell-highlight*
 sagefs-cell-modes	sagefs.txt	/*sagefs-cell-modes*
 sagefs-cell-style	sagefs.txt	/*sagefs-cell-style*
 sagefs-cells	sagefs.txt	/*sagefs-cells*
+sagefs-cohort	sagefs.txt	/*sagefs-cohort*
 sagefs-commands	sagefs.txt	/*sagefs-commands*
 sagefs-config	sagefs.txt	/*sagefs-config*
 sagefs-contents	sagefs.txt	/*sagefs-contents*
@@ -96,6 +106,8 @@ sagefs-introduction	sagefs.txt	/*sagefs-introduction*
 sagefs-keymaps	sagefs.txt	/*sagefs-keymaps*
 sagefs-pending	sagefs.txt	/*sagefs-pending*
 sagefs-quickstart	sagefs.txt	/*sagefs-quickstart*
+sagefs-reload-truth	sagefs.txt	/*sagefs-reload-truth*
+sagefs-repl-behind	sagefs.txt	/*sagefs-repl-behind*
 sagefs-results	sagefs.txt	/*sagefs-results*
 sagefs-session-routing	sagefs.txt	/*sagefs-session-routing*
 sagefs-sessions	sagefs.txt	/*sagefs-sessions*

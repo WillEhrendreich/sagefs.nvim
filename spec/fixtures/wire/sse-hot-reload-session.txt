@@ -1,0 +1,105 @@
+event: state
+data: {"fileReloaded":"/work/falco-hello/Program.fs","sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"file":"Program.fs","state":"compiling"},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":5,"mechanism":"","message":"Restarted the app: type FalcoHello.Program\u002Broutes@_ was added (a new closure class or type needs a restart)","outcome":"Restarted","patched":0,"state":"finished","suggestedAction":""},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"fileReloaded":"/work/falco-hello/Program.fs","sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"file":"Program.fs","state":"compiling"},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Applied 1 of 1 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n\u2192 Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up.","outcome":"PatchPending","patched":0,"state":"finished","suggestedAction":"Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Patched 1 of 1 changed method(s) in place by metadata delta","outcome":"Patched","patched":1,"state":"finished","suggestedAction":""},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":0,"mechanism":"","message":"No effect: 0 of 0 changed definition(s) reached the running app \u2014 none of them can be re-pointed into the running process\n\u2192 Restart the app to pick this change up.","outcome":"NoEffect","patched":0,"state":"finished","suggestedAction":"Restart the app to pick this change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"fileReloaded":"/work/falco-hello/Program.fs","sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"file":"Program.fs","state":"compiling"},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Applied 1 of 1 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n\u2192 Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up.","outcome":"PatchPending","patched":0,"state":"finished","suggestedAction":"Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Patched 1 of 1 changed method(s) in place by metadata delta","outcome":"Patched","patched":1,"state":"finished","suggestedAction":""},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"fileReloaded":"/work/falco-hello/Program.fs","sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"file":"Program.fs","state":"compiling"},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"","message":"Restarted the app: the signature of FalcoHello.Program.greet changed","outcome":"Restarted","patched":0,"state":"finished","suggestedAction":""},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"fileReloaded":"/work/falco-hello/Program.fs","sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"file":"Program.fs","state":"compiling"},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Applied 1 of 1 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n\u2192 Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up.","outcome":"PatchPending","patched":0,"state":"finished","suggestedAction":"Exercise the changed code, for example by loading the page or calling the endpoint. This updates when the new code runs. If it never does, the running app is not calling the patched method, and restarting the app picks the change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":1,"mechanism":"metadata-delta","message":"Not confirmed: the new code for FalcoHello.Program.greet has not run since the save, applied by metadata delta (0 of 1 changed method(s) seen running)\n\u2192 Exercise that code path. If the new code still does not run, the running app is not calling the patched method, so restart the app to pick the change up.","outcome":"NeverEntered","patched":0,"state":"finished","suggestedAction":"Exercise that code path. If the new code still does not run, the running app is not calling the patched method, so restart the app to pick the change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+
+event: state
+data: {"reloadReported":{"considered":0,"mechanism":"","message":"No effect: 0 of 0 changed definition(s) reached the running app \u2014 none of them can be re-pointed into the running process\n\u2192 Restart the app to pick this change up.","outcome":"NoEffect","patched":0,"state":"finished","suggestedAction":"Restart the app to pick this change up."},"sessionId":"adfd6b6b"}
+
+event: state
+data: {"hotReloadChanged":true,"sessionId":"adfd6b6b"}
+

@@ -49,6 +49,10 @@ M.groups = {
   SageFsFailureSummary    = "Comment",
 }
 
+-- Reload truth and REPL-behind groups are named where their words are made.
+for group, target in pairs(require("sagefs.reload_state").HL) do M.groups[group] = target end
+for group, target in pairs(require("sagefs.repl_freshness").HL) do M.groups[group] = target end
+
 --- Define all highlight groups. Safe to call multiple times.
 function M.setup()
   for group, target in pairs(M.groups) do

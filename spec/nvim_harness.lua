@@ -2033,6 +2033,74 @@ describe("which-key group registration (roast item 13)", function()
   end)
 end)
 
+-- ─── Hot reload truth through the real SSE pipeline ──────────────────────────
+-- The state frames below are what the dev daemon sent for one save sequence
+-- (spec/wire_fixtures.lua has the provenance). They go through start_sse →
+-- on_sse_events → state_update → reload_reported, so this proves the init.lua
+-- wiring that the busted specs cannot reach.
+
+describe("hot reload truth (daemon wire)", function()
+  it("shows each report the daemon sent, never calls a pending patch live, and registers its commands", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local sse = require("sagefs.sse")
+    local original_connect_sse = transport.connect_sse
+    local original_list_sessions = sagefs.list_sessions
+    local original_notify = vim.notify
+    local captured_on_events
+    local notes = {}
+
+    transport.connect_sse = function(_url, opts)
+      captured_on_events = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.list_sessions = function(cb) if cb then cb({ ok = false }) end end
+    vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
+
+    sagefs.setup({ auto_connect = false })
+    assert_eq(2, vim.fn.exists(":SageFsReloadStatus"), ":SageFsReloadStatus is registered")
+    assert_eq(2, vim.fn.exists(":SageFsCohort"), ":SageFsCohort is registered")
+
+    sagefs.active_session = { id = "adfd6b6b", status = "Ready", projects = { "FalcoHello.fsproj" } }
+    sagefs.start_sse()
+    assert_truthy(captured_on_events, "start_sse should have called transport.connect_sse")
+
+    local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])")
+    local fixture = io.open(script_dir .. "fixtures/wire/sse-hot-reload-session.txt", "rb"):read("*a")
+    local seen = {}
+    for _, event in ipairs((sse.parse_chunk(fixture))) do
+      captured_on_events({ event })
+      local data = vim.json.decode(event.data)
+      if data.reloadReported then
+        local sl = sagefs.statusline()
+        local segment = ""
+        for _, part in ipairs(vim.split(sl, " │ ", { plain = true })) do
+          if part:sub(1, 3) == "HR " then segment = part end
+        end
+        table.insert(seen, segment)
+      end
+    end
+
+    -- compiling, Restarted, compiling, PatchPending, Patched, NoEffect, ... NeverEntered, NoEffect
+    assert_eq("HR … compiling", seen[1], "a compiling frame")
+    assert_eq("HR ↻ restarted", seen[2], "a restart")
+    assert_eq("HR ◐ applied, not run yet [delta]", seen[4], "a pending patch is applied, not live")
+    assert_eq("HR ● patched (ran) [delta]", seen[5], "patched only after it ran")
+    assert_eq("HR ◌ applied, never ran [delta]", seen[14], "never entered")
+
+    local joined = {}
+    for _, n in ipairs(notes) do table.insert(joined, n.msg) end
+    local text = table.concat(joined, "\n")
+    assert_contains(text, "reload: applied, but the new body never ran (0 of 1 did)", "never ran says so")
+    assert_contains(text, "reload: restarted: the signature of FalcoHello.Program.greet changed", "a restart says why")
+
+    transport.connect_sse = original_connect_sse
+    sagefs.list_sessions = original_list_sessions
+    vim.notify = original_notify
+    sagefs.active_session = nil
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))

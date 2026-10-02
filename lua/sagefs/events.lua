@@ -42,6 +42,15 @@ local EVENT_CATALOG = {
   { "file_reloaded", "SageFsFileReloaded" },
   { "system_alarm", "SageFsSystemAlarm" },
   { "coverage_view", "SageFsCoverageView" },
+  -- Hot reload truth (the `state` envelope's ReloadReported) and REPL freshness
+  { "reload_reported", "SageFsReloadReported" },
+  { "repl_freshness_changed", "SageFsReplFreshnessChanged" },
+  -- Cohort wire rows
+  { "cohort_matrix", "SageFsCohortMatrix" },
+  { "claim_changed", "SageFsClaimChanged" },
+  { "landing_changed", "SageFsLandingChanged" },
+  { "save_observed", "SageFsSaveObserved" },
+  { "cohort_changed", "SageFsCohortChanged" },
 }
 
 -- ─── Event Names ──────────────────────────────────────────────────────────────

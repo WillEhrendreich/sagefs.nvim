@@ -4,6 +4,8 @@
 -- All dashboard-relevant state lives here. Updated by SSE event handlers.
 -- Pure update function: (state, event_type, payload) -> state
 
+local reload_state = require("sagefs.reload_state")
+
 local M = {}
 
 -- ─── Default State ───────────────────────────────────────────────────────────
@@ -32,6 +34,11 @@ function M.new()
       watched_files = {},
       total_files = 0,
     },
+    -- What the last save did (reload_state model) and whether the REPL runs the
+    -- app's build, per session. Both are folds of daemon wire the plugin shares.
+    reload = reload_state.model_new(),
+    repl_freshness = {},
+    repl_sid = nil,
     diagnostics = {},
     eval = {
       output = nil,
@@ -210,6 +217,20 @@ handlers.hotreload_snapshot = function(state, payload)
   local enabled = payload.enabled
   if enabled == nil then enabled = payload.Enabled end
   if enabled ~= nil then state.hot_reload.enabled = enabled end
+  return state
+end
+
+handlers.reload_reported = function(state, payload)
+  state.reload = select(1, reload_state.apply_sse(state.reload, payload, nil))
+  return state
+end
+
+handlers.repl_freshness_changed = function(state, payload)
+  if type(payload) ~= "table" then return state end
+  local sid = payload.sessionId or payload.SessionId
+  if type(sid) ~= "string" then return state end
+  state.repl_freshness[sid] = payload.freshness
+  state.repl_sid = sid
   return state
 end
 

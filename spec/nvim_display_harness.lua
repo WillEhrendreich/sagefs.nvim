@@ -796,6 +796,9 @@ describe("a session that is still warming when we list it", function()
   it("stops polling once Ready (no daemon traffic forever)", function()
     local sagefs = require("sagefs")
     sagefs.setup({ auto_connect = false })
+    -- A sessionReady in an earlier test leaves its coalesced list re-read
+    -- pending (session_refresh_debounce_ms); let it fire before counting.
+    vim.wait(sagefs.config.session_refresh_debounce_ms + 100, function() return false end, 20)
     local config = require("sagefs.config")
     config.SESSION_WARMUP_POLL_MS = 30
     local transport = require("sagefs.transport")
