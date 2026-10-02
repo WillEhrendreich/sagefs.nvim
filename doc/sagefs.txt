@@ -267,7 +267,12 @@ Analysis ~
     Evaluate only the current line (not the enclosing cell).
 
 :SageFsBindings                                         *:SageFsBindings*
-    Show FSI binding state for the current session.
+    Open the live bindings pane: a scratch split with the daemon's value
+    tree for the current session. See |sagefs-bindings|.
+
+:SageFsBindingList                                      *:SageFsBindingList*
+    List the bindings the plugin tracked from eval output, with how often
+    each was shadowed.
 
 :SageFsExportFile                                       *:SageFsExportFile*
     Export session history as an .fsx file to disk.
@@ -358,7 +363,7 @@ Testing ~
 <
 Browse & explore ~
 >
-  <leader>rb   Show FSI bindings
+  <leader>rb   Live bindings pane
   <leader>rd   Eval diff (last two evals of current cell)
   <leader>rg   Scope map (what each cell defines)
   <leader>rm   Timeline (flame chart of eval history)
@@ -457,6 +462,48 @@ re-evaluated after a save has no PDB, so hard reset the session with a
 rebuild to debug the compiled copy. On Linux, kernel.yama.ptrace_scope at 1
 works (the host opens the door for the length of the hold); at 2 or 3 the
 attach is refused.
+
+==============================================================================
+7.2 Live bindings                                         *sagefs-bindings*
+
+|:SageFsBindings| (<leader>rb) opens a split with the value tree the daemon
+walks for the session. It is updated from the daemon's live_bindings
+snapshots, which arrive after every eval, every click and every mode switch.
+
+Some members are held back, and every held row says why, in the daemon's
+words:
+- A getter that calls other code or loops shows "not evaluated: ..." and
+  [<CR> run]. <CR> on it runs that one getter on the daemon, on its own
+  thread with a 5 second deadline and, on Linux x86-64, under a syscall
+  filter (no network, no file writes, no new processes). The line under the
+  header says what protected the run, as the daemon wrote it. It does not
+  stop a spin, a stack overflow or an in-memory effect.
+- A getter you ran that timed out, threw or could not be contained shows
+  "unknown" and the reason.
+- A lazy sequence is never enumerated for you.
+
+Pane keys: >
+  <CR>   run the getter on this row
+  <Tab>  fold or unfold
+  m      walk mode: Safe, Everything, Off
+  r      ask the daemon for the current snapshot
+  q      close
+<
+Walk modes:
+  Safe        Reads fields and runs only getters that provably do nothing.
+              Every other getter is listed and runs only when you click it.
+  Everything  Runs your getters: every public property of every class value,
+              after every eval. That is your code running, and it can take
+              time or change things. The plugin asks before switching to it.
+  Off         Does not open class instances. Records, unions, tuples, lists
+              and maps still show.
+
+The daemon has no call that returns the current snapshot, it only pushes one.
+"r", and opening the pane with nothing folded yet, re-post the current mode,
+which makes the daemon walk again and push. That also drops the containment
+line of the last click.
+
+Commands: |:SageFsBindings|, |:SageFsBindingList|
 
 ==============================================================================
 8. COVERAGE                                              *sagefs-coverage*
@@ -671,6 +718,11 @@ Event reference ~
 *SageFsBindingsSnapshot*
     Fired with a snapshot of all active FSI bindings (name → type_sig).
     Used to populate `:SageFsBindings`.
+
+*SageFsLiveBindings*
+    Fired with the live bindings snapshot of one session: the whole value
+    tree, with the reason for every row that was not evaluated. Used by
+    |:SageFsBindings|.
 
 *SageFsTestTrace*
     Fired with three-speed test pipeline trace data. Used to populate

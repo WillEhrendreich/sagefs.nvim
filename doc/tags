@@ -1,4 +1,5 @@
 :SageFsArrows	sagefs.txt	/*:SageFsArrows*
+:SageFsBindingList	sagefs.txt	/*:SageFsBindingList*
 :SageFsBindings	sagefs.txt	/*:SageFsBindings*
 :SageFsCallees	sagefs.txt	/*:SageFsCallees*
 :SageFsCallers	sagefs.txt	/*:SageFsCallers*
@@ -63,6 +64,7 @@ SageFsEvalTimeline	sagefs.txt	/*SageFsEvalTimeline*
 SageFsFileAnnotations	sagefs.txt	/*SageFsFileAnnotations*
 SageFsHotReloadSnapshot	sagefs.txt	/*SageFsHotReloadSnapshot*
 SageFsHotReloadTriggered	sagefs.txt	/*SageFsHotReloadTriggered*
+SageFsLiveBindings	sagefs.txt	/*SageFsLiveBindings*
 SageFsProvidersDetected	sagefs.txt	/*SageFsProvidersDetected*
 SageFsReconnecting	sagefs.txt	/*SageFsReconnecting*
 SageFsRunTestsRequested	sagefs.txt	/*SageFsRunTestsRequested*
@@ -78,6 +80,7 @@ SageFsTestSummary	sagefs.txt	/*SageFsTestSummary*
 SageFsTestTrace	sagefs.txt	/*SageFsTestTrace*
 SageFsTestsDiscovered	sagefs.txt	/*SageFsTestsDiscovered*
 SageFsWarmupContext	sagefs.txt	/*SageFsWarmupContext*
+sagefs-bindings	sagefs.txt	/*sagefs-bindings*
 sagefs-cell-highlight	sagefs.txt	/*sagefs-cell-highlight*
 sagefs-cell-modes	sagefs.txt	/*sagefs-cell-modes*
 sagefs-cell-style	sagefs.txt	/*sagefs-cell-style*

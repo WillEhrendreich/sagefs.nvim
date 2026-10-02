@@ -124,6 +124,7 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
 | **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtD` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
+| **Live bindings** | `:SageFsBindings` opens a split with the daemon's value tree, a key to run one held getter, and a Safe/Everything/Off mode switch. See [Live bindings](#live-bindings). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
@@ -311,7 +312,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsPlayground` | Open F# scratch buffer for experiments |
 | `:SageFsExportFile` | Export session history as .fsx file to disk |
 | `:SageFsCellStyle [style]` | Set or cycle cell highlight style (off/minimal/normal/full) |
-| `:SageFsBindings` | Show FSI binding state |
+| `:SageFsBindings` | Live bindings pane: the daemon's value tree, run one getter with `<CR>`, switch the walk mode with `m` |
+| `:SageFsBindingList` | List the bindings the plugin tracked from eval output, with shadow counts |
 | `:SageFsEvalLine` | Evaluate current line only |
 
 ## ✂️ Snippets
@@ -401,6 +403,22 @@ The hold never outlives the debugger. I release it when the debug session ends, 
 nvim-dap is optional. Without it I still hold the test and print the pid and the instruction (attach to process N with any coreclr debugger), and `:SageFsDebugRelease` lets the test run once you are attached. Install [nvim-dap](https://github.com/mfussenegger/nvim-dap) and netcoredbg (`:MasonInstall netcoredbg`) and the whole thing is automatic.
 
 Breakpoints bind in your project's compiled assemblies. A test file SageFs re-evaluated after a save has no PDB, so hard reset the session with a rebuild to debug the compiled copy. On Linux, `kernel.yama.ptrace_scope` at 1 is fine (the host opens the door for the length of the hold), at 2 or 3 the attach is refused.
+
+## Live bindings
+
+`:SageFsBindings` (or `<leader>rb`) opens a split with the value tree the daemon walks for your session. Every binding you have defined shows up with its members, the way a watch window would, and it updates after every eval, every click and every mode switch. I fold the daemon's `live_bindings` snapshots as they arrive, so the pane is always the latest one the daemon pushed.
+
+Some members are held back, and every held row says why, on the row, in the daemon's words:
+
+- A getter that calls other code, or loops, is listed with `not evaluated: ...` and a `[<CR> run]` hint. Put the cursor on it and press `<CR>` to run that one getter. The daemon runs it on a dedicated thread with a 5 second deadline and, on Linux x86-64, under a syscall filter that stops the network, file writes and new processes. The line under the header says what protected that run, and I show it as the daemon wrote it, including which methods were guarded against loops and which were not. It does not stop a spin, a stack overflow or an in-memory effect, and a getter that never returns keeps its thread until the session's host restarts.
+- A getter you clicked that timed out, threw or could not be contained shows `unknown` and the reason.
+- A lazy sequence is never enumerated for you, because that runs the code behind it.
+
+`m` switches the walk mode for this session: `Safe` (the default) reads fields and runs only getters that provably do nothing, `Everything` runs every public property of every class value after every eval (your code, which can take time or change things, so I ask first), and `Off` does not open class instances. `<Tab>` folds a row, `r` asks the daemon for the current snapshot, `q` closes the pane.
+
+The daemon has no call that returns the current snapshot, it only pushes one. `r` (and opening the pane with nothing folded yet) re-posts the current mode, which makes the daemon walk again and push. That also drops the containment line of the last click.
+
+The old list the plugin builds from eval output, with shadow counts, is now `:SageFsBindingList`.
 
 ## 🏥 Health Check
 
@@ -571,6 +589,7 @@ vim.api.nvim_create_autocmd("User", {
 | `SageFsWarmupContext` | Session warmup context data arrives | assemblies, namespaces |
 | `SageFsProvidersDetected` | Test providers reported | xUnit, xUnit v3, NUnit, MSTest, TUnit, Expecto, etc. |
 | `SageFsBindingsSnapshot` | All active FSI bindings snapshot | name → type_sig map |
+| `SageFsLiveBindings` | Live bindings snapshot of one session (after an eval, a click or a mode switch) | the whole tree, with NotEvaluated reasons |
 | `SageFsBindingScopeMap` | Binding scope map data | cell → bindings |
 | `SageFsCellDependencies` | Dependency graph data for buffer cells | edges |
 | `SageFsTestSourceLocations` | Test→file/line source-location mapping arrives | test id → file/line |
