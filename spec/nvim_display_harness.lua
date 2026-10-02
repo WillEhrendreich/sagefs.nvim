@@ -642,6 +642,42 @@ describe("fault and ready messages from other sessions", function()
   end)
 end)
 
+describe("the statusline after our session finishes warming", function()
+  it("drops the warmup text and shows the session as Ready (it stuck on 'Ready!' and '(Starting)')", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        opts.callback(true, vim.json.encode({ sessions = { {
+          id = "mine0001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+        } } }))
+      end
+    end
+    local original_connect = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    local original_notify = vim.notify
+    vim.notify = function() end
+    sagefs.active_session = { id = "mine0001", name = "App", status = "Starting", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.start_sse()
+    captured({ { type = "warmup_progress", data = vim.json.encode({ Phase = "finalizing", Step = 4, Total = 4 }) } })
+    ok_(sagefs.statusline():find("Ready!", 1, true), "mid-warmup the statusline says so: " .. sagefs.statusline())
+    captured({ { type = "warmup_completed", data = vim.json.encode({ session_id = "mine0001", project_count = 1 }) } })
+    transport.http_json = original_http
+    transport.connect_sse = original_connect
+    vim.notify = original_notify
+    eq(nil, sagefs.warmup_phase, "warmup phase cleared")
+    local line = sagefs.statusline()
+    ok_(not line:find("Ready!", 1, true), "no leftover warmup text: " .. line)
+    ok_(line:find("(Ready)", 1, true), "the session reads Ready: " .. line)
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
