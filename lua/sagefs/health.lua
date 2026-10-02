@@ -5,11 +5,12 @@
 local M = {}
 local discovery = require("sagefs.daemon_discovery")
 local compat = require("sagefs.compat")
+local spawn = require("sagefs.spawn")
 
 --- Run SageFs CLI and extract version string, or nil on failure
 ---@param bin string|nil the configured sagefs_path (default "sagefs")
 local function get_cli_version(bin)
-  bin = (bin and bin ~= "") and bin or "sagefs"
+  bin = spawn.resolve_binary(bin)
   local quoted = bin:find("%s") and ('"' .. bin .. '"') or bin
   local ok, result = pcall(vim.fn.system, quoted .. " --version")
   if not ok or vim.v.shell_error ~= 0 then return nil end

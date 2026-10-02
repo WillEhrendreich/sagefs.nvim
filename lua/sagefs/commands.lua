@@ -871,10 +871,11 @@ function M.register_commands(plugin, helpers)
     -- Check if SageFs is already running externally (health check)
     local function try_start(project)
       local spawn = require("sagefs.spawn")
-      local bin = plugin.config.sagefs_path or "sagefs"
+      local configured = plugin.config.sagefs_path or "sagefs"
+      local bin = spawn.resolve_binary(configured)
       if not spawn.binary_available(bin) then
-        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, bin .. " not found")
-        helpers.notify(spawn.missing_sagefs_message(bin), vim.log.levels.ERROR)
+        plugin.daemon_state = daemon.mark_failed(plugin.daemon_state, configured .. " not found")
+        helpers.notify(spawn.missing_sagefs_message(configured), vim.log.levels.ERROR)
         return
       end
       plugin.daemon_state = daemon.mark_starting(plugin.daemon_state, project, plugin.config.port)

@@ -30,6 +30,18 @@ function M.jobstart(cmd, opts)
   return result, nil
 end
 
+--- The binary to run for a configured sagefs_path. `~` and `$VAR` are expanded
+--- (vim.fn.executable and jobstart do not do it), anything else is left alone
+--- so characters like `%` and `#` in a real path are not read as filename
+--- modifiers. nil and the empty string mean the default, "sagefs".
+---@param bin string|nil
+---@return string
+function M.resolve_binary(bin)
+  if type(bin) ~= "string" or bin == "" then return "sagefs" end
+  if bin:sub(1, 1) == "~" or bin:find("$", 1, true) then return vim.fn.expand(bin) end
+  return bin
+end
+
 --- True when `bin` resolves to something executable. Assumes yes when the
 --- check is unavailable (a spawn failure is still handled by jobstart).
 ---@param bin string
