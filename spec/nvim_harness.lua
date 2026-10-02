@@ -2235,6 +2235,57 @@ describe("omnifunc working directory", function()
   end)
 end)
 
+-- ─── A skipped test says why ─────────────────────────────────────────────────
+-- Expecto ptest and ftest are reported Skipped with a reason ("pending (ptest)",
+-- "not focused"). The reason is on the status of a test_results_batch entry.
+
+describe("skipped tests over SSE", function()
+  it("the test panel says why a test was skipped", function()
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_connect_sse = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.active_session = { id = "skip-session" }
+    sagefs.testing_state = testing.new()
+    sagefs.start_sse()
+    local function e(id, name, case, fields)
+      return {
+        TestId = id, DisplayName = name, FullName = "M/" .. name,
+        Origin = { Case = "SourceMapped", Fields = { "/w/T.fs", 8 } },
+        Framework = { Case = "Expecto" }, Category = { Case = "Unit" },
+        CurrentPolicy = { Case = "OnEveryChange" },
+        Status = { Case = case, Fields = fields }, PreviousStatus = { Case = "Detected" },
+      }
+    end
+    captured({ { type = "test_results_batch", data = vim.json.encode({
+      SessionId = "skip-session", Generation = 1, Completion = { Case = "Complete", Fields = { 2, 2 } },
+      Entries = {
+        e("t1", "a pending test", "Skipped", { "pending (ptest)" }),
+        e("t2", "a plain test", "Passed", { "00:00:00.001" }),
+      },
+    }) } })
+    assert_eq("pending (ptest)", sagefs.testing_state.tests.t1.skip_reason, "the reason is kept")
+
+    vim.cmd("enew")
+    vim.cmd("SageFsTestPanel")
+    local text
+    vim.wait(500, function()
+      text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+      return text:find("a pending test", 1, true) ~= nil
+    end, 10)
+    pcall(vim.cmd, "SageFsTestPanel")
+    transport.connect_sse = original_connect_sse
+    sagefs.active_session = nil
+    sagefs.testing_state = testing.new()
+    assert_contains(text, "⊘ a pending test (skipped: pending (ptest))", "the panel line")
+    assert_contains(text, "✓ a plain test", "a test that ran has no suffix")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
