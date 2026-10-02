@@ -235,6 +235,11 @@ describe("format.format_inline [snapshot]", function()
     assert.are.equal("→ val it: int = 42 …", result.text)
   end)
 
+  it("a one-line result followed only by newlines gets no ellipsis (the daemon ends output with blank lines)", function()
+    local result = format.format_inline({ ok = true, output = "val x: int = 5\n\n" })
+    assert.are.equal("→ val x: int = 5", result.text)
+  end)
+
   it("error with simple message: ✖ prefix", function()
     local result = format.format_inline({ ok = false, error = "type mismatch" })
     assert.are.equal("✖ type mismatch", result.text)
