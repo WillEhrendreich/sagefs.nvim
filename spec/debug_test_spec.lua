@@ -87,7 +87,8 @@ end
 --- Build deps with a scripted HTTP layer. `script` maps a route ("debug" or
 --- "continue") to a queue of replies { ok, body_table_or_raw }. A reply that is
 --- the string "hang" is never delivered (the request stays in flight).
-local function make_env(script, dap_opts)
+local function make_env(script, dap_opts, extra)
+  extra = extra or {}
   local env = {
     calls = {},
     notes = {},
@@ -126,11 +127,14 @@ local function make_env(script, dap_opts)
     end,
     release_sync = function(url, body) table.insert(env.sync_releases, { url = url, body = body }) end,
     on_exit = function(fn)
+      if extra.exit_hook_throws then error("exit hook refused") end
       table.insert(env.exit_hooks, fn)
       return function() env.exit_hooks = {} end
     end,
     on_buffer_gone = function(bufnr, fn)
+      if extra.buffer_hook_throws then error("Invalid buffer id: " .. bufnr) end
       table.insert(env.buffer_hooks, { bufnr = bufnr, fn = fn })
+      if extra.buffer_gone_at_once then fn() end
       return function() env.buffer_hooks = {} end
     end,
     bufnr = 7,
@@ -672,6 +676,64 @@ describe("debug_test.start, the hold is always released", function()
     run.abort("test")
     assert.are.equal(0, #env.exit_hooks)
     assert.are.equal(0, #env.buffer_hooks)
+  end)
+end)
+
+describe("debug_test.start, a hold that is still in flight", function()
+  local RELEASED = { true, { status = "released_without_debugger", message = "not attached" } }
+
+  it("registers the exit and buffer watchers before the daemon has answered", function()
+    local env = make_env({ debug = { "hang" } })
+    dt.start(env.deps, { test_id = "X" })
+    assert.are.equal(1, #env.exit_hooks)
+    assert.are.equal(1, #env.buffer_hooks)
+  end)
+
+  it("releases the moment a late held answer arrives after the buffer was wiped", function()
+    local env = make_env({ debug = { "hang" }, continue = { RELEASED } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.buffer_hooks[1].fn()
+    assert.are.equal(0, env.continues(), "there is no ticket to release yet")
+    env.pending[1].callback(true, answer_json(HELD))
+    assert.are.equal(1, env.continues())
+    assert.are.equal(0, #env.dap.runs, "no debugger is started for a run nobody is looking at")
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("a buffer that is already gone when the key is pressed holds nothing", function()
+    local env = make_env({ debug = { { true, HELD } } }, nil, { buffer_gone_at_once = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    assert.are.equal(0, #env.calls)
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("releases through the synchronous route when Neovim quit while the hold was in flight", function()
+    local env = make_env({ debug = { "hang" } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.exit_hooks[1]()
+    assert.are.equal(0, #env.sync_releases, "no ticket yet")
+    env.pending[1].callback(true, answer_json(HELD))
+    assert.are.equal(1, #env.sync_releases)
+    assert.is_truthy(env.sync_releases[1].body:find("debug-31337-1", 1, true))
+    assert.are.equal(0, #env.dap.runs)
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("still arms the watchdog and starts the debugger when the buffer hook throws", function()
+    local env = make_env({ debug = { { true, HELD } } }, nil, { buffer_hook_throws = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    assert.are.equal("held", run.state())
+    assert.are.equal(1, #env.dap.runs)
+    local watchdog
+    for _, t in ipairs(env.timers) do if t.ms >= 100000 then watchdog = t end end
+    assert.is_truthy(watchdog, "the hold window watchdog is armed")
+  end)
+
+  it("still arms the watchdog and starts the debugger when the exit hook throws", function()
+    local env = make_env({ debug = { { true, HELD } } }, nil, { exit_hook_throws = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    assert.are.equal("held", run.state())
+    assert.are.equal(1, #env.dap.runs)
   end)
 end)
 

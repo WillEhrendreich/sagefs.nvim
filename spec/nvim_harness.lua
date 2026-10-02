@@ -1619,6 +1619,38 @@ describe("which-key group registration (roast item 13)", function()
   end)
 end)
 
+-- ─── Debug hold: real buffers ────────────────────────────────────────────────
+
+describe("debug_test default deps (real buffers)", function()
+  local dt = require("sagefs.debug_test")
+  local function deps_for(buf)
+    return dt.default_deps({}, { base_url = function() return "http://127.0.0.1:1" end }, buf)
+  end
+
+  it("on_buffer_gone fires at once for a buffer that is already gone, without throwing", function()
+    local buf = make_buffer({ "let x = 1" })
+    vim.api.nvim_buf_delete(buf, { force = true })
+    local fired = 0
+    local ok, err = pcall(function() deps_for(buf).on_buffer_gone(buf, function() fired = fired + 1 end) end)
+    assert_truthy(ok, "registering a hook on a gone buffer must not throw: " .. tostring(err))
+    assert_eq(1, fired, "the hook fires at once")
+  end)
+
+  it("on_buffer_gone fires when a live buffer is wiped, and the unhook removes it", function()
+    local buf = make_buffer({ "let x = 1" })
+    local fired = 0
+    deps_for(buf).on_buffer_gone(buf, function() fired = fired + 1 end)
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert_eq(1, fired)
+
+    local buf2 = make_buffer({ "let y = 2" })
+    local unhook = deps_for(buf2).on_buffer_gone(buf2, function() fired = fired + 1 end)
+    unhook()
+    vim.api.nvim_buf_delete(buf2, { force = true })
+    assert_eq(1, fired, "an unhooked watcher does not fire")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
