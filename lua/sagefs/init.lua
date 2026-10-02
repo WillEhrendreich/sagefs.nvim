@@ -363,6 +363,11 @@ local function build_handlers()
     fire_user_event("system_alarm", data)
   end
 
+  -- Wire-testing features (live bindings): handlers live in sagefs.wire_testing
+  for action, fn in pairs(require("sagefs.wire_testing").sse_handlers(M, { decode = decode_event_data, fire = fire_user_event })) do
+    handlers[action] = fn
+  end
+
   return sse_parser.build_dispatch_table(handlers)
 end
 

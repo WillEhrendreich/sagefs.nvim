@@ -180,7 +180,9 @@ function M.register_commands(plugin, helpers)
     end)
   end, { desc = "SageFs status dashboard" })
 
-  vim.api.nvim_create_user_command("SageFsBindings", function()
+  -- The live view is :SageFsBindings (sagefs.bindings_view, registered by
+  -- sagefs.wire_testing); this is the plugin-side list with shadowing counts.
+  vim.api.nvim_create_user_command("SageFsBindingList", function()
     local tracker = plugin.binding_tracker
     local lines = { "═══ FSI Bindings ═══", "" }
     local sorted = {}
