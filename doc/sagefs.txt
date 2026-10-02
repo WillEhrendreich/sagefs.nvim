@@ -41,8 +41,9 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 Architecture: pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
-1428 tests passing (1372 busted + 56 headless-Neovim integration, latest
-green run); 51 user commands registered.
+1712 tests passing (1602 busted + 110 headless-Neovim integration, latest
+run; 3 busted failures are pre-existing and platform-specific); 55 user
+commands registered.
 
 ==============================================================================
 2. QUICKSTART                                            *sagefs-quickstart*
@@ -93,6 +94,49 @@ When you evaluate a cell (|:SageFsEval| or `<A-CR>`), the plugin:
 4. Tracks cell state: idle → running → success/error
 5. Marks results as stale when you edit the cell
 
+Where results appear:                                      *sagefs-results*
+
+A result is always drawn on a line of its cell that is on screen. The old
+rule, "on the cell's last line", put the result off screen whenever the
+cell was taller than the window.
+
+- A one-line result is ghost text at the end of the line.
+- A longer result goes under the cell's last line when that line is on
+  screen and has room for four result lines and the footer. Otherwise it goes under the
+  line you evaluated from (or the highest visible line of the cell).
+- What does not fit is cut. The last row reads
+  `… N more lines, <leader>rE to expand`; |:SageFsResult| (or
+  `<leader>rE`) opens the whole result in a float.
+- Long lines wrap at the window edge. The one-line summary is cut to the
+  room its line has left.
+- Evaluating from the last row of the window scrolls the view by the few
+  rows it takes to show the result, never past the line you evaluated from.
+  Scrolling or resizing later re-places results; it never moves your view.
+
+A result belongs to the buffer you evaluated in. Cell state is one slot per
+cell number, so two buffers that both evaluate their cell 1 share a slot;
+the later one owns it.
+
+In a file without `;;` (inferred mode), a `///` doc comment belongs to the
+declaration below it. A result is never drawn on the next declaration's doc
+comment.
+
+When an eval has no result yet:                            *sagefs-pending*
+
+After 4 seconds without a result (`EVAL_SLOW_AFTER_MS` in
+`lua/sagefs/config.lua`) the running cell says why, from what the daemon
+reports about the session the eval went to, and refreshes every 3 seconds
+(`EVAL_STATUS_POLL_MS`):
+
+  still running            session Ready, code still evaluating
+  session still warming    Starting, Building, Restarting or WarmingUp
+  daemon not reachable     the plugin cannot reach the configured port
+  session X faulted: ...   the daemon faulted it, with its reason
+  no session attached      nothing is attached to this buffer
+
+Everything but "still running" is also sent to the message line once.
+|:SageFsCancel| stops a running eval.
+
 Cell highlight styles (`:SageFsCellStyle` to set or cycle):        *sagefs-cell-style*
 
 - `off`:     No cell highlighting
@@ -112,7 +156,8 @@ Two-mode cell detection:                                *sagefs-cell-modes*
 
 2. **Inferred mode**: Files without `;;` use tree-sitter to detect the
    top-level declaration under the cursor (let bindings, type definitions).
-   Each declaration is a separate cell.
+   Each declaration is a separate cell. A `///` doc comment above a
+   declaration is part of that declaration's cell.
 
 ==============================================================================
 4. COMMANDS                                              *sagefs-commands*
@@ -140,6 +185,17 @@ Evaluation ~
 
 :SageFsEvalAdvance                                   *:SageFsEvalAdvance*
     Evaluate the current cell and move the cursor to the next cell.
+
+:SageFsResult                                           *:SageFsResult*
+    Open the full result of the cell under the cursor in a floating window
+    (wrapped, `q` closes it). This is what the "N more lines, <leader>rE to
+    expand" row under a cut result points at. See |sagefs-results|.
+
+:SageFsHelp                                             *:SageFsHelp*
+    List every :SageFs* command with its description, and the SageFs
+    keymaps in the current buffer. The list is read from the registered
+    command table each time you run it, so it cannot drift from what
+    exists. `:Sage<Tab>` completes the same names. See |sagefs-hint|.
 
 :SageFsClear                                            *:SageFsClear*
     Clear all inline results and cell state for the current buffer.
@@ -325,6 +381,7 @@ Core eval ~
   <leader>re   Evaluate cell under cursor
   <leader>rl   Evaluate current line
   <leader>rf   Evaluate entire file
+  <leader>rE   Open the full result of the cell under the cursor (float)
   <leader>rc   Clear all results
   <leader>rx   Cancel running evaluation
 <
@@ -390,12 +447,22 @@ Pass configuration to setup(): >lua
     auto_connect = true,         -- Connect on F# file open
     check_on_save = false,       -- Run type check on save
     density = "normal",          -- "minimal" | "normal" | "full"
+    hint = true,                 -- One-time first-run hint (see |sagefs-hint|)
     cell_highlight = {
       style = "normal",          -- "off" | "minimal" | "normal" | "full"
       flash_duration_ms = 300,   -- Flash fade duration
     },
   })
 <
+First-run hint:                                              *sagefs-hint*
+
+The first time the plugin attaches to an F# buffer it shows a small float
+with the three commands I would learn first (evaluate, sessions, help) and
+says that `:Sage<Tab>` completes the rest. Any cursor move dismisses it. A
+marker file, `sagefs_hint_seen` under `stdpath("data")`, keeps it from
+coming back. `hint = false` turns it off; `hint_marker_path` moves the
+marker file.
+
 Density presets control information density: ~
 
   minimal:  Results only, no type hints, no timing
@@ -439,6 +506,26 @@ Each session runs in an isolated FSI worker process.
 
 Use |:SageFsSessions| to list sessions, |:SageFsSwitchSession| to change
 the active session, and |:SageFsCreateSession| to start a new one.
+
+Which session an eval goes to:                      *sagefs-session-routing*
+
+An eval goes to the session whose working directory holds the file you are
+editing. A git worktree is its own directory: the main checkout's session is
+not used for a worktree nested under it, even though the paths nest.
+
+If no session matches, nothing is sent. The plugin says so, lists the
+sessions that exist (project, short id, status, the tail of the directory),
+and offers to create a session for this directory (you pick the project; the
+plugin never guesses one) or to evaluate in a named session. That pick is
+remembered for the directory. The same check runs at startup, so a daemon
+that already has other sessions still gets the offer.
+
+|:SageFsStatus| has an "Eval here:" line naming the session an eval from the
+current buffer would reach. The |:SageFsSessions| picker shows each
+session's directory and short id.
+
+Warmup, fault and ready events of other sessions on a shared daemon are
+ignored; only your session's reach the message line.
 
 ==============================================================================
 10. HOT RELOAD                                           *sagefs-hotreload*
@@ -700,6 +787,18 @@ Q: What's the `;;` for?
 A: `;;` at the end of a line marks a cell boundary. This is standard F#
    Interactive syntax. Cells are the unit of evaluation — press `<A-CR>`
    to evaluate the cell your cursor is in.
+
+Q: I pressed <A-CR> and nothing happened.
+A: After 4 seconds the cell says why: still running, session still warming,
+   daemon not reachable, session faulted, or no session attached. See
+   |sagefs-pending|. If it says no session, see |sagefs-session-routing|.
+
+Q: The result is cut off.
+A: The last row says how many lines are left. `<leader>rE` or |:SageFsResult|
+   opens all of it. See |sagefs-results|.
+
+Q: What commands are there?
+A: |:SageFsHelp|, or type `:Sage<Tab>`.
 
 Q: Results are stale after I edit — how do I refresh?
 A: Press `<A-CR>` again to re-evaluate. Results automatically go stale

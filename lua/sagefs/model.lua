@@ -96,6 +96,10 @@ function M.set_cell_state(m, cell_id, status, output, metadata)
     prev_output = prev_output,
     duration_ms = metadata and metadata.duration_ms or nil,
     end_line = metadata and metadata.end_line or nil,
+    -- Where the result belongs: the buffer it was evaluated in (cell ids are
+    -- per buffer, not global) and the line the user evaluated from.
+    buf = metadata and metadata.buf or nil,
+    anchor_line = metadata and metadata.anchor_line or nil,
   }
   return m
 end

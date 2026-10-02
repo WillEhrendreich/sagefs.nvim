@@ -5,6 +5,7 @@ local cells = require("sagefs.cells")
 local format = require("sagefs.format")
 local model = require("sagefs.model")
 local ann_module = require("sagefs.annotations")
+local placement = require("sagefs.placement")
 
 local M = {}
 
@@ -66,64 +67,211 @@ function M.clear_extmarks(buf)
   vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
 end
 
-function M.render_cell(buf, boundary_line, cell_id, state)
-  local ns_id = M.get_namespace()
-  local cell = model.get_cell_state(state, cell_id)
-  local render = format.build_render_options(cell, cell_id)
-  if not render then return nil end
+--- The window showing `buf` and how much of it we can draw into. A buffer
+--- that is not on screen gets an unclipped stand-in, so placement is the old
+--- "at the cell's end" until a window shows it (WinScrolled/BufEnter re-render).
+---@param buf number
+---@return table { win, top, bot, rows, width, rows_through }
+local function geometry(buf)
+  local win = vim.fn.bufwinid(buf)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  if win == -1 then
+    return { win = nil, top = 1, bot = line_count, rows = line_count + 1000, width = math.max(vim.o.columns, 20) }
+  end
+  local info = vim.fn.getwininfo(win)[1]
+  local g = {
+    win = win,
+    top = vim.fn.line("w0", win),
+    bot = vim.fn.line("w$", win),
+    rows = info.height,
+    width = math.max(info.width - info.textoff, 1),
+  }
+  if vim.api.nvim_win_text_height then
+    -- Screen rows used by top..line, counting wraps and the virtual lines
+    -- already drawn between them (earlier results, codelens).
+    -- nvim_win_text_height counts the "filler" ABOVE its first row, and
+    -- virtual lines hung below line N are that filler for line N+1: for the
+    -- window's top line those belong to a line that is scrolled off, so they
+    -- are not on screen. Take the top line's own rows by themselves and the
+    -- rest of the range from the next line down.
+    local function height(from_row, to_row)
+      local ok, r = pcall(vim.api.nvim_win_text_height, win, { start_row = from_row, end_row = to_row })
+      if ok and type(r) == "table" and r.all then return r end
+      return nil
+    end
+    local top_rows
+    do
+      local r = height(g.top - 1, g.top - 1)
+      top_rows = r and math.max(r.all - (r.fill or 0), 1) or 1
+    end
+    g.rows_through = function(line)
+      if line <= g.top then return top_rows end
+      local r = height(g.top, line - 1)
+      if r then return top_rows + r.all end
+      return line - g.top + 1
+    end
+  end
+  return g
+end
 
-  local virt_text = {}
-  if render.inline then
-    table.insert(virt_text, { render.inline.text, render.inline.hl })
+--- The cell state this buffer should draw: another buffer's cell with the same
+--- id is not ours (cell ids are per buffer, the model is shared).
+local function cell_view(buf, cell_id, state)
+  local cs = model.get_cell_state(state, cell_id)
+  if cs.buf and cs.buf ~= buf then return { status = "idle" } end
+  return cs
+end
+
+--- Draw one cell's gutter sign, inline summary and virtual lines.
+---@param buf number
+---@param cell { id: number, start_line: number, end_line: number }
+---@param cs table the cell state from the model
+---@param opts table build_render_options result (non-nil)
+---@param geom table geometry(buf)
+---@param keep boolean|nil stay on the preferred line (the caller will scroll to make room)
+function M.draw_result(buf, cell, cs, opts, geom, keep)
+  local ns_id = M.get_namespace()
+  local limits = require("sagefs.config")
+  local line_count = vim.api.nvim_buf_line_count(buf)
+
+  local anchor = cs.anchor_line
+  if anchor and (anchor < cell.start_line or anchor > cell.end_line) then anchor = nil end
+
+  local function place(height)
+    return placement.place({
+      cell_start = cell.start_line,
+      cell_end = math.min(cell.end_line, line_count),
+      anchor = anchor,
+      top = geom.top,
+      bot = geom.bot,
+      rows = geom.rows,
+      height = height,
+      max_lines = limits.RESULT_MAX_LINES,
+      rows_through = geom.rows_through,
+      keep_preferred = keep,
+    })
   end
 
-  local opts = {
-    id = cell_id * 1000,
-    virt_text = #virt_text > 0 and virt_text or nil,
+  --- Room for inline text after the code on `line`.
+  local function inline_budget(line)
+    local text = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1] or ""
+    local used = vim.fn.strdisplaywidth(text) % math.max(geom.width, 1)
+    return geom.width - used - 2
+  end
+
+  local inline, lines, p
+  if cs.status == "running" then
+    -- No result yet: a one-row status on the cell, from real model state.
+    p = place(0)
+    if cs.pending_text and cs.pending_text ~= "" then
+      inline = format.fit_inline("⏳ " .. cs.pending_text, inline_budget(p.line))
+    end
+  else
+    local result = opts.result
+    local raw = result.ok and (result.output or "") or (result.error or "error")
+    local summary = opts.inline.text
+    if raw == "" and result.ok then summary = "→ (no output)" end
+    lines = format.wrap_lines(format.result_lines(result), geom.width)
+    p = place(#lines)
+    inline = format.fit_inline(summary, inline_budget(p.line))
+    -- A one-line result that fits inline is just inline: no duplicate row.
+    if format.is_single_line(raw) and raw ~= "" and inline == summary then
+      p = place(0)
+      lines = nil
+      inline = format.fit_inline(summary, inline_budget(p.line)) or inline
+    end
+  end
+
+  local mark = {
+    id = cell.id * 1000,
+    virt_text = inline and { { inline, cs.status == "running" and "SageFsRunning" or opts.inline.hl } } or nil,
     virt_text_pos = "eol",
-    sign_text = render.sign.text,
-    sign_hl_group = render.sign.hl,
+    sign_text = opts.sign.text,
+    sign_hl_group = opts.sign.hl,
     priority = 100,
   }
+  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, p.line - 1, 0, mark)
 
-  pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, boundary_line - 1, 0, opts)
-
-  if render.virtual_lines and #render.virtual_lines > 0 then
+  if lines and (p.shown > 0 or p.footer) then
     local virt_lines = {}
-    for _, vl in ipairs(render.virtual_lines) do
-      table.insert(virt_lines, { { vl.text, vl.hl } })
+    for i = 1, p.shown do
+      virt_lines[#virt_lines + 1] = { { lines[i].text, lines[i].hl } }
     end
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, boundary_line - 1, 0, {
-      id = cell_id * 1000 + 1,
+    if p.footer then
+      virt_lines[#virt_lines + 1] = { { format.expand_footer(p.hidden, limits.EXPAND_RESULT_KEY), "SageFsOutput" } }
+    end
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, p.line - 1, 0, {
+      id = cell.id * 1000 + 1,
       virt_lines = virt_lines,
       virt_lines_above = false,
     })
   end
-
-  return render
+  return p
 end
 
-function M.render_all(buf, state)
+--- Render one cell's result (kept for callers that draw a single cell).
+---@param buf number
+---@param cell { id: number, start_line: number, end_line: number }
+---@param state table model
+---@param geom table|nil
+---@return table|nil the render options, nil for an idle cell
+function M.render_cell(buf, cell, state, geom)
+  local cs = cell_view(buf, cell.id, state)
+  local opts = format.build_render_options(cs, cell.id)
+  if not opts then return nil end
+  M.draw_result(buf, cell, cs, opts, geom or geometry(buf))
+  return opts
+end
+
+---@param buf number
+---@param state table model
+---@param view_opts { reveal: number|nil }|nil
+---   reveal: a cell id whose result was just produced. When there is not
+---   enough room beneath its anchor line, scroll the window a few rows (never
+---   past the anchor line) so there is. Plain re-renders never move the view.
+function M.render_all(buf, state, view_opts)
   local ns_id = M.get_namespace()
+  local reveal_id = view_opts and view_opts.reveal or nil
+  local reveal_scroll = nil
   M.clear_extmarks(buf)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local all_cells = cells.find_all_cells_auto(buf, lines)
+  local geom = geometry(buf)
 
   for _, cell in ipairs(all_cells) do
-    local render = M.render_cell(buf, cell.end_line, cell.id, state)
-
-    local cell_state = model.get_cell_state(state, cell.id)
+    local cs = cell_view(buf, cell.id, state)
+    local opts = format.build_render_options(cs, cell.id)
     local codelens =
-      render and render.codelens
-      or (cell_state.status == "idle" and { text = "▶ Eval", hl = "SageFsCodeLensDetected" })
+      opts and opts.codelens
+      or (cs.status == "idle" and { text = "▶ Eval", hl = "SageFsCodeLensDetected" })
 
+    -- The codelens goes in first so its row is counted when the result below
+    -- it is placed against the window.
     if codelens then
       pcall(vim.api.nvim_buf_set_extmark, buf, ns_id, cell.start_line - 1, 0, {
         id = cell.id * 1000 + 2,
         virt_lines = { { { codelens.text, codelens.hl or "SageFsCodeLensDetected" } } },
         virt_lines_above = true,
       })
+    end
+    if opts then
+      local revealing = reveal_id ~= nil and cell.id == reveal_id
+      local p = M.draw_result(buf, cell, cs, opts, geom, revealing)
+      if revealing and p and p.visible and geom.win and p.room < p.needed then
+        reveal_scroll = { win = geom.win, top = geom.top, line = p.line, by = p.needed - p.room }
+      end
+    end
+  end
+
+  if reveal_scroll then
+    local new_top = math.min(reveal_scroll.top + reveal_scroll.by, reveal_scroll.line)
+    if new_top > reveal_scroll.top then
+      vim.api.nvim_win_call(reveal_scroll.win, function()
+        vim.fn.winrestview({ topline = new_top })
+      end)
+      -- draw again against the new view; this pass never scrolls
+      M.render_all(buf, state)
     end
   end
 end
@@ -411,7 +559,7 @@ end
 
 --- Show content in a centered floating window with q-to-close
 ---@param lines string[]
----@param opts { title: string|nil, max_height: number|nil, min_width: number|nil }|nil
+---@param opts { title: string|nil, max_height: number|nil, min_width: number|nil, wrap: boolean|nil }|nil
 ---@return { buf: number, win: number }
 function M.show_float(lines, opts)
   opts = opts or {}
@@ -444,11 +592,30 @@ function M.show_float(lines, opts)
   end
 
   local win = vim.api.nvim_open_win(buf, true, win_opts)
+  if opts.wrap then
+    vim.api.nvim_set_option_value("wrap", true, { win = win })
+    vim.api.nvim_set_option_value("linebreak", true, { win = win })
+  end
   vim.keymap.set("n", "q", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, nowait = true })
 
   return { buf = buf, win = win }
+end
+
+--- Show the full result of a cell in a float (the expansion behind the
+--- "N more lines, <key> to expand" footer).
+---@param cs { status: string, output: string|nil, duration_ms: number|nil }
+---@return { buf: number, win: number }
+function M.show_result_float(cs)
+  local text = (cs.output or ""):gsub("\r", "")
+  if text == "" then text = "(no output)" end
+  local lines = vim.split(text, "\n", { plain = true })
+  if #lines > 1 and lines[#lines] == "" then lines[#lines] = nil end
+  local glyph = cs.status == "error" and "✖ Error" or (cs.status == "stale" and "~ Stale result" or "✓ Result")
+  local dur = format.format_duration(cs.duration_ms)
+  local title = glyph .. (dur and ("  " .. dur) or "") .. string.format("  (%d lines, q to close)", #lines)
+  return M.show_float(lines, { title = title, max_height = 40, min_width = 40, wrap = true })
 end
 
 return M

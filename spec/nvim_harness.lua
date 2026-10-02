@@ -913,7 +913,7 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
-  it("another session's fault leaves the active session's coverage alone", function()
+  it("another session's fault leaves the active session's coverage alone and is marked on the list, without a message", function()
     with_sse(function(sagefs, cap, notes)
       local coverage = require("sagefs.coverage")
       local saved_cov = sagefs.coverage_state
@@ -927,9 +927,13 @@ describe("session lifecycle over SSE", function()
       assert_truthy(kept, "the active session's coverage must survive someone else's fault")
       assert_eq("Faulted", sagefs.session_list[2].status, "the faulted session is marked")
       assert_eq("Starting", sagefs.active_session.status, "the active session is not")
-      local told = false
-      for _, n in ipairs(notes) do if n.msg:find("s2", 1, true) and n.msg:find("boom", 1, true) then told = true end end
-      assert_truthy(told, "the user is still told which session faulted")
+      -- Another session's fault is on the list (":SageFsSessions" shows
+      -- Faulted) but is not a message in this editor: on a shared daemon
+      -- those messages raised hit-enter prompts for sessions that are not
+      -- the user's (see the display harness for the same rule at the edge).
+      for _, n in ipairs(notes) do
+        assert_falsy(n.msg:find("boom", 1, true), "no message about someone else's fault: " .. n.msg)
+      end
     end)
   end)
 

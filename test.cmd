@@ -12,3 +12,4 @@ busted %*
 echo.
 echo === Integration tests (headless Neovim) ===
 nvim --headless --clean -u NONE -l spec\nvim_harness.lua
+nvim --headless --clean -u NONE -l spec\nvim_display_harness.lua

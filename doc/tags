@@ -22,6 +22,7 @@
 :SageFsExportFile	sagefs.txt	/*:SageFsExportFile*
 :SageFsFailures	sagefs.txt	/*:SageFsFailures*
 :SageFsHardReset	sagefs.txt	/*:SageFsHardReset*
+:SageFsHelp	sagefs.txt	/*:SageFsHelp*
 :SageFsHistory	sagefs.txt	/*:SageFsHistory*
 :SageFsHotReload	sagefs.txt	/*:SageFsHotReload*
 :SageFsLoadScript	sagefs.txt	/*:SageFsLoadScript*
@@ -29,6 +30,7 @@
 :SageFsPickTest	sagefs.txt	/*:SageFsPickTest*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
+:SageFsResult	sagefs.txt	/*:SageFsResult*
 :SageFsRunTests	sagefs.txt	/*:SageFsRunTests*
 :SageFsScopeMap	sagefs.txt	/*:SageFsScopeMap*
 :SageFsSessions	sagefs.txt	/*:SageFsSessions*
@@ -88,10 +90,14 @@ sagefs-diagnostics	sagefs.txt	/*sagefs-diagnostics*
 sagefs-events	sagefs.txt	/*sagefs-events*
 sagefs-faq	sagefs.txt	/*sagefs-faq*
 sagefs-health	sagefs.txt	/*sagefs-health*
+sagefs-hint	sagefs.txt	/*sagefs-hint*
 sagefs-hotreload	sagefs.txt	/*sagefs-hotreload*
 sagefs-introduction	sagefs.txt	/*sagefs-introduction*
 sagefs-keymaps	sagefs.txt	/*sagefs-keymaps*
+sagefs-pending	sagefs.txt	/*sagefs-pending*
 sagefs-quickstart	sagefs.txt	/*sagefs-quickstart*
+sagefs-results	sagefs.txt	/*sagefs-results*
+sagefs-session-routing	sagefs.txt	/*sagefs-session-routing*
 sagefs-sessions	sagefs.txt	/*sagefs-sessions*
 sagefs-testing	sagefs.txt	/*sagefs-testing*
 sagefs-type-explorer	sagefs.txt	/*sagefs-type-explorer*

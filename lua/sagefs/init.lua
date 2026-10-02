@@ -44,6 +44,11 @@ M.config = {
   -- Override for the one-time-welcome marker file (mainly for tests).
   -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
   welcome_marker_path = nil,
+  -- One-time hint of the three most useful commands on the first F# buffer.
+  -- `hint = false` turns it off; `hint_marker_path` overrides the marker file
+  -- (defaults to stdpath("data") .. "/sagefs_hint_seen").
+  hint = true,
+  hint_marker_path = nil,
   highlight = {
     success = { fg = "#a6e3a1", italic = true },
     error = { fg = "#f38ba8", italic = true },
@@ -142,6 +147,34 @@ local function session_matches(data)
   return testing.session_matches(data, M.active_session)
 end
 
+--- Did we just ask for a session, so its warmup events are the ones to show?
+local function expecting_warmup()
+  return M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
+end
+
+--- Is a lifecycle event for session `sid` about the session this editor uses
+--- (or is waiting on, right after creating one)?
+local function session_is_ours(sid)
+  return sessions.warmup_event_is_ours({ sessionId = sid ~= "?" and sid or nil }, M.active_session, expecting_warmup())
+end
+
+--- Our session is up: drop the warmup text (the statusline returns early while
+--- a phase is set, so "Ready!" stuck forever) and re-read the session list, so
+--- the session label stops saying "(Starting)".
+local function reset_warmup_text()
+  M.warmup_phase = nil
+  M.warmup_step = 0
+  M.warmup_total = 0
+  M.warmup_message = ""
+  M.warmup_progress = 0
+  M.warmup_expected_until = nil
+end
+
+local function clear_warmup_state()
+  reset_warmup_text()
+  vim.schedule(function() M.list_sessions() end)
+end
+
 local function fire_user_event(event_type, payload)
   local evt = events.build_autocmd_data(event_type, payload)
   if evt then
@@ -237,14 +270,6 @@ local function fold_session_update(data)
   return found, sid
 end
 
-local function clear_warmup_state()
-  M.warmup_phase = nil
-  M.warmup_step = 0
-  M.warmup_total = 0
-  M.warmup_message = ""
-  M.warmup_progress = 0
-end
-
 local function build_handlers()
   local handlers = {}
 
@@ -307,8 +332,10 @@ local function build_handlers()
     -- before a fault, and may announce a session the list does not know yet:
     -- the folded status is a best guess, the list is the authority.
     refresh_sessions_soon()
-    if not M.active_session or M.active_session.id == sid then
-      clear_warmup_state()
+    -- Ours, or no session picked yet: the warmup text is done. (The list
+    -- re-read above is the one the label needs, so no second one here.)
+    if not M.active_session or session_is_ours(sid) then
+      reset_warmup_text()
     end
   end
   handlers.session_event = function(raw)
@@ -359,24 +386,20 @@ local function build_handlers()
   handlers.warmup_progress = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
-    -- Only the active session's warmup belongs on this statusline (and in
-    -- these notifications); another session on a shared daemon must not
-    -- take it over. With no active session yet, show everything.
-    local event_sid = data.SessionId or data.sessionId
-    if event_sid and M.active_session and event_sid ~= M.active_session.id then return end
-    -- The `state` variant of warmup progress carries only step/total (no
-    -- Phase). It used to erase the phase and notify an empty "Warming up: ".
-    -- The phase-bearing SseWriter event says everything it does.
-    local phase = data.Phase or data.phase
-    if phase == nil then return end
+    -- Every session's warmup reaches every client of a shared daemon: only
+    -- react to the one this editor is waiting on.
+    if not sessions.warmup_event_is_ours(data, M.active_session, expecting_warmup()) then return end
     local prev_phase = M.warmup_phase
-    M.warmup_phase = phase
+    -- The 0.6 state-shaped progress event has a step but no phase: keep the
+    -- phase we know instead of blanking it (which made the next legacy event
+    -- look like a "transition" and announce an empty "Warming up:").
+    M.warmup_phase = data.Phase or data.phase or M.warmup_phase
     M.warmup_step = data.Step or data.step or 0
     M.warmup_total = data.Total or data.total or 0
     M.warmup_message = data.Message or data.message or ""
     M.warmup_progress = data.Progress or data.progress or 0
     -- Notify on phase transitions (not every namespace open)
-    if M.warmup_phase ~= prev_phase and M.warmup_phase ~= "opening_namespaces" then
+    if M.warmup_phase and M.warmup_phase ~= "" and M.warmup_phase ~= prev_phase and M.warmup_phase ~= "opening_namespaces" then
       local labels = {
         creating_fsi = "Creating FSI session...",
         scanning_sources = "Scanning source files...",
@@ -396,14 +419,21 @@ local function build_handlers()
     -- 0.6 wire: { sessionFaulted = <sid>, error = <msg> }; older: session_id/reason.
     local sid = data.sessionFaulted or data.session_id or data.SessionId or "?"
     local reason = data.error or data.reason or data.Reason or "unknown"
+    -- The session list learns of every fault (that is what keeps a faulted
+    -- session from showing "Ready"); only our own session's fault clears this
+    -- editor's state and shows a message.
     fold_session_update(data)
-    -- Clear the active session's state so stale results don't linger, but only
-    -- when the fault is the active session's (or says nothing about whose it is).
+    -- Someone else's session faulting is not this editor's state to clear or
+    -- its message to show (the event still fires for autocmd consumers). A
+    -- fault that says nothing about whose it is stays ours.
     local faulted_id = data.sessionFaulted or data.session_id or data.SessionId
-    if faulted_id == nil or not M.active_session or M.active_session.id == faulted_id then
-      M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
-      M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    if faulted_id ~= nil and not session_is_ours(faulted_id) then
+      fire_user_event("session_faulted", data)
+      return
     end
+    -- Clear all session-specific state so stale results don't linger
+    M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
+    M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
     notify(string.format("Session faulted [%s]: %s", sid, reason), vim.log.levels.ERROR)
     fire_user_event("session_faulted", data)
   end
@@ -413,6 +443,11 @@ local function build_handlers()
     local data = decode_event_data(raw)
     if not data then return end
     local sid = data.session_id or data.SessionId or "?"
+    if not session_is_ours(sid) then
+      fire_user_event("warmup_completed", data)
+      return
+    end
+    clear_warmup_state()
     local n = data.project_count or data.ProjectCount or 0
     local label = n == 1 and "1 project" or (tostring(n) .. " projects")
     if M.config.notify_warmup_completed ~= false then
@@ -690,7 +725,7 @@ local function show_shadow_warnings(buf, cell_id, shadows)
   end)
 end
 
-local function handle_result(buf, cell_id, result, end_line, my_eval_id)
+local function handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
   -- Only clear eval_id if we're still the current eval
   if eval_id == my_eval_id then
     eval_id = 0
@@ -700,7 +735,7 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id)
     pcall(vim.fn.timer_stop, eval_watchdog_timer)
     eval_watchdog_timer = nil
   end
-  local meta = { duration_ms = result.duration_ms, end_line = end_line }
+  local meta = { duration_ms = result.duration_ms, end_line = end_line, buf = buf, anchor_line = anchor_line }
   -- Stats: track eval completion
   if result.duration_ms then
     M.state = model.record_eval(M.state, result.duration_ms)
@@ -739,11 +774,72 @@ local function handle_result(buf, cell_id, result, end_line, my_eval_id)
     end)
   end
   vim.schedule(function()
-    render.render_all(buf, M.state)
+    -- reveal: this result was just produced, so make room for it on screen
+    render.render_all(buf, M.state, { reveal = cell_id })
   end)
 end
 
-local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line)
+-- ─── Why is nothing happening? ───────────────────────────────────────────────
+-- After config.EVAL_SLOW_AFTER_MS with no result, ask the daemon for the real
+-- state of the session the eval went to and show it on the running cell (and
+-- once on the message line), then keep it fresh every EVAL_STATUS_POLL_MS.
+
+local function watch_pending(buf, cell_id, my_eval_id, session_id, start_ns)
+  local limits = require("sagefs.config")
+  local pending = require("sagefs.pending")
+  local last_kind = nil
+
+  local function still_pending()
+    return eval_id == my_eval_id and model.is_cell_running(M.state, cell_id)
+  end
+
+  local function tick()
+    if not still_pending() then return end
+    M.list_sessions(function(result)
+      if not still_pending() then return end
+      local session = nil
+      if result.ok then
+        for _, s in ipairs(result.sessions) do
+          if s.id == session_id then session = s end
+        end
+        if not session_id then session = M.active_session end
+      else
+        session = M.active_session
+      end
+      local warmup = nil
+      if M.warmup_phase and M.warmup_phase ~= "" then
+        warmup = { phase = M.warmup_phase, step = M.warmup_step, total = M.warmup_total }
+      end
+      local c = pending.classify({
+        elapsed_ms = math.floor((vim.uv.hrtime() - start_ns) / 1e6),
+        connection = M.state.status,
+        daemon_reachable = result.ok,
+        port = M.config.port,
+        session = session,
+        warmup = warmup,
+      })
+      local cell = M.state.cells[cell_id]
+      if cell then cell.pending_text = c.short end
+      if c.kind ~= last_kind then
+        last_kind = c.kind
+        -- "Still running" is shown inline on the cell; only a problem earns a
+        -- message-line line (and a message that wraps raises a hit-enter prompt).
+        if c.level ~= "info" then
+          local levels = { warn = vim.log.levels.WARN, error = vim.log.levels.ERROR }
+          notify(c.long, levels[c.level])
+        end
+      end
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) then render.render_all(buf, M.state) end
+      end)
+      vim.defer_fn(tick, limits.EVAL_STATUS_POLL_MS)
+    end)
+  end
+
+  vim.defer_fn(tick, limits.EVAL_SLOW_AFTER_MS)
+end
+
+local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, block_start_line, anchor_line)
   -- Bug #3 fix: reject eval if cell already running (concurrent eval guard)
   if model.is_cell_running(M.state, cell_id) then
     notify("Cell already evaluating", vim.log.levels.WARN)
@@ -752,7 +848,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
   eval_id = eval_id + 1
   local my_eval_id = eval_id
   local start_time = vim.uv.hrtime()
-  M.state = model.set_cell_state(M.state, cell_id, "running", nil)
+  M.state = model.set_cell_state(M.state, cell_id, "running", nil, { end_line = end_line, buf = buf, anchor_line = anchor_line })
   vim.schedule(function()
     render.render_all(buf, M.state)
     cell_highlight.set_eval_hint(buf, "running")
@@ -766,6 +862,7 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
     eval_mode = eval_mode or "",
     block_start_line = block_start_line or 0,
   }
+  watch_pending(buf, cell_id, my_eval_id, body.sessionId, start_time)
   transport.http_json({
     method = "POST",
     url = base_url() .. "/exec",
@@ -797,9 +894,9 @@ local function post_exec(code, buf, cell_id, end_line, file_path, eval_mode, blo
             vim.diagnostic.set(ns.fsi_diagnostics, buf, vim_diags)
           end)
         end
-        handle_result(buf, cell_id, result, end_line, my_eval_id)
+        handle_result(buf, cell_id, result, end_line, my_eval_id, anchor_line)
       else
-        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id)
+        handle_result(buf, cell_id, { ok = false, error = "HTTP request failed", duration_ms = elapsed_ms }, end_line, my_eval_id, anchor_line)
       end
     end,
   })
@@ -861,7 +958,7 @@ function M.eval_cell()
   if not ctx then return end
   local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line, ctx.cursor_line)
 end
 
 function M.eval_cell_and_advance()
@@ -869,12 +966,33 @@ function M.eval_cell_and_advance()
   if not ctx then return end
   local fp = vim.api.nvim_buf_get_name(ctx.buf)
   render.flash_cell(ctx.buf, ctx.cell.start_line, ctx.cell.end_line)
-  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line)
+  post_exec(ctx.code, ctx.buf, ctx.cell_id, ctx.cell.end_line, fp, "block", ctx.cell.start_line, ctx.cursor_line)
 
   local next_start = cells.find_next_cell_start(ctx.lines, ctx.cursor_line)
   if next_start then
     vim.api.nvim_win_set_cursor(0, { next_start, 0 })
   end
+end
+
+--- Open the full result of the cell under the cursor in a float. This is what
+--- the "N more lines, <leader>rE to expand" footer points at.
+function M.show_result()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local all = cells.find_all_cells_auto(buf, lines)
+  local found
+  for _, c in ipairs(all) do
+    if cursor_line >= c.start_line and cursor_line <= c.end_line then found = c; break end
+  end
+  local cs = found and M.state.cells[found.id] or nil
+  local has_result = cs and (cs.buf == nil or cs.buf == buf)
+    and (cs.status == "success" or cs.status == "error" or cs.status == "stale")
+  if not has_result then
+    notify("No result for the cell under the cursor. Evaluate it first with <A-CR>.", vim.log.levels.WARN)
+    return
+  end
+  return render.show_result_float(cs)
 end
 
 function M.eval_selection()
@@ -990,6 +1108,20 @@ end
 
 -- ─── Session API ──────────────────────────────────────────────────────────────
 
+local warmup_poll_timer = nil
+
+--- While our session is still warming, look at the session list again until it
+--- is not (see config.SESSION_WARMUP_POLL_MS).
+local function poll_while_warming()
+  if warmup_poll_timer then return end
+  local s = M.active_session
+  if not (s and sessions.WARMING_STATUSES[s.status]) then return end
+  warmup_poll_timer = vim.fn.timer_start(require("sagefs.config").SESSION_WARMUP_POLL_MS, function()
+    warmup_poll_timer = nil
+    vim.schedule(function() M.list_sessions() end)
+  end)
+end
+
 function M.list_sessions(callback)
   local requested_at = M.session_event_seq
   session_http("GET", "/api/sessions", nil, function(ok, raw)
@@ -1004,6 +1136,7 @@ function M.list_sessions(callback)
       M.session_list = result.sessions
       local active_id = M.active_session and M.active_session.id or nil
       M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())
+      poll_while_warming()
     end
     if callback then callback(result) end
   end)
@@ -1034,12 +1167,17 @@ end
 
 local function create_targets(paths, working_dir, callback)
   working_dir = working_dir or vim.fn.getcwd()
+  -- The daemon answers only once the session is up, so its warmup events
+  -- arrive BEFORE the reply: expect them from the moment the request is out.
+  M.warmup_expected_until = (vim.uv.hrtime() / 1e6) + 180000
   session_http("POST", "/api/sessions/create", {
     projects = paths,
     workingDirectory = working_dir,
   }, function(ok, raw)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
+      -- the new session's warmup events are the ones to show, for a while
+      M.warmup_expected_until = (vim.uv.hrtime() / 1e6) + 180000
       notify(result.message or "Session created")
       M.list_sessions()
     else
@@ -1078,6 +1216,9 @@ function M.switch_session(session_id, callback)
     local result = sessions.parse_action_response(ok and raw or nil)
     if result.ok then
       notify("Switched to session " .. (result.session_id or session_id))
+      -- list_sessions keeps the CURRENT active id, so without this the plugin
+      -- kept evaluating in the session the user just switched away from.
+      M.active_session = { id = result.session_id or session_id }
       M.list_sessions()
     else
       notify(result.error or "Failed to switch", vim.log.levels.ERROR)
@@ -1213,7 +1354,7 @@ function M.session_picker()
     local items = {}
     local lookup = {}
     for _, s in ipairs(result.sessions) do
-      local line = sessions.format_session_line(s)
+      local line = sessions.picker_label(s)
       table.insert(items, line)
       lookup[line] = s
     end
@@ -1257,7 +1398,7 @@ function M.session_picker()
   end)
 end
 
-function M.discover_and_create(working_dir)
+function M.discover_and_create(working_dir, prompt, quiet_if_none)
   working_dir = working_dir or vim.fn.getcwd()
   local fsproj_files = vim.fn.glob(working_dir .. "/**/*.fsproj", false, true)
 
@@ -1269,11 +1410,13 @@ function M.discover_and_create(working_dir)
   items = format.filter_excluded_paths(items)
 
   if #items == 0 then
-    notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    if not quiet_if_none then
+      notify("No .fsproj files found in " .. working_dir, vim.log.levels.WARN)
+    end
     return
   end
 
-  vim.ui.select(items, { prompt = "Select project to load:" }, function(choice)
+  vim.ui.select(items, { prompt = prompt or "Select project to load:" }, function(choice)
     if not choice then return end
     M.create_session({ choice }, working_dir)
   end)
@@ -1310,46 +1453,169 @@ local function check_code(code)
 end
 
 -- ─── Smart Eval ───────────────────────────────────────────────────────────────
+-- Evals route by working directory (sessions.route). A session belongs to a
+-- directory and a git worktree is its own boundary, so the plugin never
+-- silently evaluates in another directory's session: when nothing here can
+-- take the eval it says which sessions exist and asks.
+
+--- Explicit "use this session for this directory" choices, keyed by the
+--- normalized directory. Set only by the user picking a session in the prompt.
+M.session_overrides = {}
+
+--- Nearest ancestor of `file` holding a `.git` (a directory in a plain
+--- checkout, a FILE in a git worktree): the checkout the file belongs to.
+local function checkout_root_of_dir(dir)
+  local found = vim.fs.find(".git", { upward = true, path = dir })[1]
+  return found and vim.fs.dirname(found) or nil
+end
+
+local function is_fsharp_path(path)
+  local lower = path:lower()
+  return lower:match("%.fsx?$") ~= nil or lower:match("%.fsi$") ~= nil
+end
+
+--- Where `buf` lives, as sessions.route wants it.
+---@param buf number|nil
+---@return sagefs.RouteTarget
+function M.eval_target(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buf)
+  -- Only an F# buffer says where we are; anything else (a help page, a
+  -- scratch buffer, the startup screen) routes by the working directory.
+  local file = (name ~= "" and is_fsharp_path(name)) and vim.fn.fnamemodify(name, ":p") or nil
+  local cwd = vim.fn.getcwd()
+  local root = checkout_root_of_dir(file and vim.fs.dirname(file) or cwd)
+  return {
+    file = file,
+    cwd = cwd,
+    root = root,
+    active_id = M.active_session and M.active_session.id or nil,
+    override_id = M.session_overrides[sessions.normalize_path(root or cwd)],
+  }
+end
+
+--- Offer to create a session for the directory (explicit project choice, the
+--- plugin never infers one), listing the sessions that exist. `eval_fn`, when
+--- given, runs if the user picks an existing session explicitly.
+function M.offer_session_for(target, others, eval_fn)
+  local dir = target.root or target.cwd
+  notify(sessions.no_session_message(dir, others), vim.log.levels.WARN)
+
+  local items = { "Create a session for " .. dir }
+  local picks = { { create = true } }
+  local shown = 0
+  for _, s in ipairs(others) do
+    if s.status ~= "Stopped" and shown < 5 then
+      shown = shown + 1
+      items[#items + 1] = "Evaluate in " .. sessions.compact_label(s, 64)
+      picks[#picks + 1] = { session = s }
+    end
+  end
+  items[#items + 1] = "Cancel"
+
+  vim.ui.select(items, { prompt = "SageFs: no session for " .. dir .. ". Nothing was sent. Choose:" }, function(choice, idx)
+    if not choice then return end
+    local pick = picks[idx]
+    if not pick then return end -- Cancel
+    if pick.create then
+      M.discover_and_create(dir)
+    elseif pick.session then
+      M.session_overrides[sessions.normalize_path(dir)] = pick.session.id
+      M.active_session = pick.session
+      if eval_fn then eval_fn() end
+    end
+  end)
+end
 
 local function smart_eval_with_session_check(eval_fn)
   return function()
+    local target = M.eval_target()
+
+    -- Fast path: the session we already hold is the one this directory routes
+    -- to, so there is nothing to ask the daemon.
     if M.active_session then
-      eval_fn()
-      return
+      local r = sessions.route(M.session_list, target)
+      if r.kind == "match" and r.session.id == M.active_session.id then
+        eval_fn()
+        return
+      end
     end
 
     M.list_sessions(function(result)
-      if result.ok and #result.sessions > 0 then
-        local cwd_session = sessions.find_session_for_dir(result.sessions, vim.fn.getcwd())
-        if cwd_session then
-          M.active_session = cwd_session
-          eval_fn()
-          return
-        end
-      end
-
       -- §5.6: `result.ok == false` (the transport/daemon itself is
-      -- unreachable) and "the daemon answered with zero sessions" used to
-      -- collapse into the identical "No active session for this directory"
-      -- message — the plugin HAD the transport failure in hand and rendered
-      -- the opposite of the truth, sending the user to "Create session now"
-      -- against a daemon that was never going to answer. Say what's
-      -- actually wrong and name the one command that fixes it.
+      -- unreachable) and "the daemon answered with no session for here" used
+      -- to collapse into the identical "No active session for this
+      -- directory" message — the plugin HAD the transport failure in hand and
+      -- rendered the opposite of the truth. Say what's actually wrong and
+      -- name the one command that fixes it.
       if not result.ok then
         notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
         return
       end
 
-      notify("No active session for this directory", vim.log.levels.WARN)
-      vim.ui.select({ "Create session now", "Cancel" }, {
-        prompt = "No SageFs session found. Create one?",
-      }, function(choice)
-        if choice == "Create session now" then
-          M.discover_and_create(vim.fn.getcwd())
+      target.active_id = M.active_session and M.active_session.id or nil
+      local r = sessions.route(result.sessions, target)
+
+      if r.kind == "match" then
+        M.active_session = r.session
+        eval_fn()
+        return
+      end
+
+      if r.kind == "ambiguous" then
+        local items, byname = {}, {}
+        for _, s in ipairs(r.candidates) do
+          local label = sessions.compact_label(s, 72)
+          items[#items + 1] = label
+          byname[label] = s
         end
-      end)
+        vim.ui.select(items, { prompt = "SageFs: several sessions serve " .. r.dir .. ". Evaluate in:" }, function(choice)
+          local s = choice and byname[choice]
+          if not s then return end
+          M.session_overrides[sessions.normalize_path(r.dir)] = s.id
+          M.active_session = s
+          eval_fn()
+        end)
+        return
+      end
+
+      M.offer_session_for(target, result.sessions, eval_fn)
     end)
   end
+end
+
+--- One line for :SageFsStatus: which session an eval from the current buffer
+--- would go to, and why not when there is none.
+function M.describe_eval_route()
+  local target = M.eval_target()
+  local r = sessions.route(M.session_list, target)
+  if r.kind == "match" then
+    return string.format("%s [%s] (%s)", r.session.name or r.session.id, (r.session.id or ""):sub(1, 8), r.session.status or "?")
+  elseif r.kind == "ambiguous" then
+    return string.format("ambiguous: %d sessions serve %s", #r.candidates, r.dir)
+  end
+  return string.format("nothing (no session for %s)", r.dir)
+end
+
+--- At startup, on a shared daemon: if no session belongs to this directory,
+--- offer to create one for it. The daemon having OTHER sessions is not a
+--- reason to stay quiet (it used to need zero).
+---@param result { ok: boolean, sessions: table[] }
+function M.offer_session_for_startup(result)
+  if not result or not result.ok then return end
+  local target = M.eval_target()
+  target.active_id = nil
+  local r = sessions.route(result.sessions, target)
+  if r.kind ~= "none" then return end
+  local dir = target.root or target.cwd
+  local prompt
+  if #result.sessions > 0 then
+    prompt = string.format("SageFs: no session for %s (%d other session%s exist). Create one with project:",
+      dir, #result.sessions, #result.sessions == 1 and "" or "s")
+  else
+    prompt = string.format("SageFs: no session for %s. Create one with project:", dir)
+  end
+  M.discover_and_create(dir, prompt, true)
 end
 
 -- Exposed for tests — see the start_sse/stop_sse note above.
@@ -1602,6 +1868,15 @@ function M.setup(opts)
     render_all = function(buf)
       render.render_all(buf, M.state)
     end,
+    first_attach = function(_buf)
+      require("sagefs.help").maybe_show_hint(M.config)
+    end,
+    has_results = function(buf)
+      for _, c in pairs(M.state.cells) do
+        if (c.buf == nil or c.buf == buf) and c.status ~= "idle" then return true end
+      end
+      return false
+    end,
     render_signs = function(buf)
       render.render_test_signs(buf, M.testing_state, M.annotations_state)
       render.render_coverage_signs(buf, M.coverage_state)
@@ -1641,18 +1916,7 @@ function M.setup(opts)
         if healthy then
           start_sse()
           M.list_sessions(function(result)
-            if result.ok and not M.active_session and #result.sessions == 0 then
-              local fsproj_files = vim.fn.glob(vim.fn.getcwd() .. "/**/*.fsproj", false, true)
-              if #fsproj_files > 0 then
-                local names = {}
-                for _, f in ipairs(fsproj_files) do
-                  table.insert(names, vim.fn.fnamemodify(f, ":~:."))
-                end
-                vim.ui.select(names, { prompt = "SageFs: Create session with project:" }, function(choice)
-                  if choice then M.create_session({ choice }) end
-                end)
-              end
-            end
+            M.offer_session_for_startup(result)
           end)
         end
       end)

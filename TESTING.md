@@ -62,6 +62,25 @@ The plugin's version tracks the SageFs release (see "Versions" in the README).
 
 **Coverage:** SSE parsing, cell boundary detection (`;;`), model state, transport, rendering, completions, format, diagnostics, etc.
 
+## 1b. nvim --headless display and session specs
+
+How results are placed in a real window, how an eval is routed by working
+directory, `:SageFsHelp`, the first-run hint and the slow-eval status. They run
+in a real headless Neovim with only the daemon transport stubbed (real
+windows, real extmarks, real checkouts on disk, including a git worktree):
+
+```bash
+nvim --headless --clean -u NONE -l spec/nvim_display_harness.lua
+```
+
+The file is self-contained like `spec/nvim_harness.lua` and exits non-zero on a
+failure. It is not named `*_spec.lua` so busted does not try to load it.
+
+The pure pieces have busted specs: `spec/placement_spec.lua` (where a result is
+drawn, with a seeded generator for the property that it is inside the window),
+`spec/result_display_spec.lua`, `spec/pending_spec.lua`,
+`spec/session_routing_spec.lua`, `spec/help_spec.lua`, `spec/cells_refine_spec.lua`.
+
 ## 2. nvim --headless (tree-sitter integration tests)
 
 Tests requiring Neovim's tree-sitter runtime. Run with:

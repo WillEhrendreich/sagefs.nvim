@@ -1,5 +1,31 @@
 local M = {}
 
+-- ─── Named constants ─────────────────────────────────────────────────────────
+-- Timings and keys the display layer shares. Named here so a spec, the docs
+-- and the code can all point at one definition.
+
+--- An eval with no result after this long gets a "why is nothing happening"
+--- status (session warming, daemon unreachable, still running) instead of a
+--- blank screen.
+M.EVAL_SLOW_AFTER_MS = 4000
+
+--- While an eval is still pending, the status is refreshed from the daemon
+--- this often.
+M.EVAL_STATUS_POLL_MS = 3000
+
+--- The key that opens the full result of the cell under the cursor in a float.
+--- Shown in the "N more lines, <key> to expand" footer.
+M.EXPAND_RESULT_KEY = "<leader>rE"
+
+--- While the plugin's session reads Starting/Building/Restarting/WarmingUp,
+--- the session list is re-read this often until it does not. The daemon
+--- answers a create request only once the session is up, so the events that
+--- announce readiness can come before the reply and be missed.
+M.SESSION_WARMUP_POLL_MS = 2000
+
+--- Result rows drawn under a cell before the footer takes over.
+M.RESULT_MAX_LINES = 12
+
 local sep = package.config:sub(1, 1)
 
 local function join_path(...)

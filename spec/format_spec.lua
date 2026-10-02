@@ -235,6 +235,11 @@ describe("format.format_inline [snapshot]", function()
     assert.are.equal("→ val it: int = 42 …", result.text)
   end)
 
+  it("a one-line result followed only by newlines gets no ellipsis (the daemon ends output with blank lines)", function()
+    local result = format.format_inline({ ok = true, output = "val x: int = 5\n\n" })
+    assert.are.equal("→ val x: int = 5", result.text)
+  end)
+
   it("error with simple message: ✖ prefix", function()
     local result = format.format_inline({ ok = false, error = "type mismatch" })
     assert.are.equal("✖ type mismatch", result.text)
@@ -316,6 +321,23 @@ describe("format.build_render_options", function()
 end)
 
 -- ─── format_status_report ─────────────────────────────────────────────────────
+
+describe("format_status_report: where an eval goes", function()
+  it("says which session an eval from the current buffer would go to", function()
+    local lines = format.format_status_report({
+      active_session = { id = "ab12cd34", name = "DemoEnv" },
+      eval_route = "DemoEnv [ab12cd34] (Ready)",
+      config = { port = 37749, dashboard_port = 37750 },
+    })
+    local joined = table.concat(lines, "\n")
+    assert.is_truthy(joined:find("Eval here: DemoEnv [ab12cd34] (Ready)", 1, true))
+  end)
+
+  it("says nothing when it was not asked", function()
+    local lines = format.format_status_report({ config = { port = 37749 } })
+    assert.is_falsy(table.concat(lines, "\n"):find("Eval here", 1, true))
+  end)
+end)
 
 describe("format_status_report", function()
   local testing = require("sagefs.testing")

@@ -15,28 +15,42 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       name = "SageFsEval",
       desc = "Evaluate current cell",
       handler = function()
-        plugin.eval_cell()
+        helpers.smart_eval(function() plugin.eval_cell() end)()
       end,
     },
     {
       name = "SageFsEvalAdvance",
       desc = "Evaluate current cell and move to next",
       handler = function()
-        plugin.eval_cell_and_advance()
+        helpers.smart_eval(function() plugin.eval_cell_and_advance() end)()
+      end,
+    },
+    {
+      name = "SageFsHelp",
+      desc = "List every SageFs command and keymap, one line each",
+      handler = function()
+        require("sagefs.help").show_help(vim.api.nvim_get_current_buf())
+      end,
+    },
+    {
+      name = "SageFsResult",
+      desc = "Show the full result of the cell under the cursor in a float",
+      handler = function()
+        plugin.show_result()
       end,
     },
     {
       name = "SageFsEvalFile",
       desc = "Evaluate entire file",
       handler = function()
-        plugin.eval_file()
+        helpers.smart_eval(function() plugin.eval_file() end)()
       end,
     },
     {
       name = "SageFsEvalLine",
       desc = "Evaluate current line only",
       handler = function()
-        plugin.eval_current_line()
+        helpers.smart_eval(function() plugin.eval_current_line() end)()
       end,
     },
     {
@@ -157,6 +171,7 @@ function M.register_commands(plugin, helpers)
         coverage_state = plugin.coverage_state,
         daemon_state = plugin.daemon_state,
         active_session = plugin.active_session,
+        eval_route = plugin.describe_eval_route and plugin.describe_eval_route() or nil,
         config = plugin.config,
       })
       local status_label = healthy and "✓ Connected" or "✗ Disconnected"
@@ -1475,17 +1490,22 @@ function M.register_keymaps(plugin, helpers, bufnr)
     vim.keymap.set(mode, lhs, rhs, { desc = desc, silent = true, buffer = bufnr })
   end
 
+  -- One-time hint of the three most useful commands on the first F# buffer.
+  if helpers.first_attach then helpers.first_attach(bufnr) end
+
   -- Alt-Enter keymaps (no prefix, always available)
   km("n", "<A-CR>", smart_eval, "SageFs: Evaluate cell")
   km("v", "<A-CR>", smart_eval_sel, "SageFs: Evaluate selection")
-  km("n", "<S-A-CR>", function() plugin.eval_cell_and_advance() end,
+  km("n", "<S-A-CR>", helpers.smart_eval(function() plugin.eval_cell_and_advance() end),
     "SageFs: Evaluate cell and advance")
 
   -- Core eval
   km("n", "<leader>re", smart_eval, "SageFs: Evaluate cell")
-  km("n", "<leader>rl", function() plugin.eval_current_line() end,
+  km("n", "<leader>rl", helpers.smart_eval(function() plugin.eval_current_line() end),
     "SageFs: Evaluate current line")
   km("n", "<leader>rf", "<cmd>SageFsEvalFile<CR>", "SageFs: Evaluate file")
+  km("n", require("sagefs.config").EXPAND_RESULT_KEY, "<cmd>SageFsResult<CR>",
+    "SageFs: Expand result of the cell under the cursor")
   km("n", "<leader>rc", function()
     helpers.clear_and_render()
   end, "SageFs: Clear results")
@@ -1625,9 +1645,36 @@ function M.register_autocmds(plugin, helpers)
 
   vim.api.nvim_create_autocmd("BufEnter", {
     group = group,
-    pattern = "*.fsx",
+    pattern = { "*.fs", "*.fsx" },
     callback = function(ev)
       helpers.render_all(ev.buf)
+    end,
+  })
+
+  -- A result is anchored on a line that is on screen. Scrolling (or resizing)
+  -- can take that line away, so re-place results for the windows that moved.
+  -- Debounced, and only for buffers that have a result to place.
+  local scroll_timer = nil
+  vim.api.nvim_create_autocmd({ "WinScrolled", "WinResized" }, {
+    group = group,
+    callback = function()
+      if scroll_timer then pcall(vim.fn.timer_stop, scroll_timer) end
+      scroll_timer = vim.fn.timer_start(25, function()
+        scroll_timer = nil
+        vim.schedule(function()
+          local seen = {}
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            if not seen[buf] then
+              seen[buf] = true
+              local ft = vim.bo[buf].filetype
+              if (ft == "fsharp" or ft == "fsx") and helpers.has_results(buf) then
+                helpers.render_all(buf)
+              end
+            end
+          end
+        end)
+      end)
     end,
   })
 
