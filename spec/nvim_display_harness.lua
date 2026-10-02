@@ -730,6 +730,79 @@ describe("the statusline after our session finishes warming", function()
   end)
 end)
 
+describe("a session that is still warming when we list it", function()
+  it("is re-read until it is Ready, so the statusline cannot stay on (Starting)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local config = require("sagefs.config")
+    config.SESSION_WARMUP_POLL_MS = 40
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local lists = 0
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        lists = lists + 1
+        -- the daemon flips to Ready between our first and second look; the
+        -- readiness event can arrive while the create request is still open,
+        -- when we do not yet know the session is ours
+        local status = lists >= 3 and "Ready" or "Starting"
+        vim.schedule(function()
+          opts.callback(true, vim.json.encode({ sessions = { {
+            id = "mine0001", status = status, projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+          } } }))
+        end)
+      end
+    end
+    sagefs.active_session = nil
+    sagefs.list_sessions()
+    vim.wait(1500, function() return sagefs.active_session and sagefs.active_session.status == "Ready" end, 20)
+    transport.http_json = original
+    ok_(sagefs.active_session and sagefs.active_session.status == "Ready",
+      "status after polling: " .. tostring(sagefs.active_session and sagefs.active_session.status) .. " after " .. lists .. " lists")
+  end)
+
+  it("stops polling once Ready (no daemon traffic forever)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local config = require("sagefs.config")
+    config.SESSION_WARMUP_POLL_MS = 30
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local lists = 0
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        lists = lists + 1
+        vim.schedule(function()
+          opts.callback(true, vim.json.encode({ sessions = { {
+            id = "mine0001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+          } } }))
+        end)
+      end
+    end
+    sagefs.active_session = nil
+    sagefs.list_sessions()
+    vim.wait(400, function() return false end, 20)
+    transport.http_json = original
+    eq(1, lists, "one list, no polling for a Ready session")
+  end)
+
+  it("a create request marks the expectation when it is SENT (the reply can arrive after the events)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    transport.http_json = function(opts) end -- never answers
+    sagefs.warmup_expected_until = nil
+    local original_notify = vim.notify
+    vim.notify = function() end
+    sagefs.create_session({ "App/App.fsproj" }, vim.fn.getcwd())
+    vim.notify = original_notify
+    transport.http_json = original
+    ok_(sagefs.warmup_expected_until and sagefs.warmup_expected_until > vim.uv.hrtime() / 1e6,
+      "expecting a warmup as soon as the request is out")
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
