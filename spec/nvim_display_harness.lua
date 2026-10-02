@@ -560,11 +560,11 @@ describe(":SageFsHelp and the first-run hint", function()
 
   it("every registered :SageFs* command has a description (the help is built from them)", function()
     require("sagefs").setup({ auto_connect = false })
+    -- Neovim 0.12 reports a command's description as `definition` and 0.13 as `desc`, so ask the
+    -- help module, which reads either, rather than one field.
     local missing = {}
-    for name, c in pairs(vim.api.nvim_get_commands({})) do
-      if name:match("^SageFs") and (c.desc == nil or c.desc == "") then
-        missing[#missing + 1] = name
-      end
+    for _, row in ipairs(require("sagefs.help").command_rows(vim.api.nvim_get_commands({}))) do
+      if row.undescribed then missing[#missing + 1] = row.name end
     end
     table.sort(missing)
     ok_(#missing == 0, "commands without a description: " .. table.concat(missing, ", "))
