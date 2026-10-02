@@ -214,6 +214,8 @@ describe("a slow eval says why", function()
     vim.wait(100, function() return false end, 20)
     transport.http_json = original
     vim.notify = original_notify
+    -- the eval never completes: stop its status watcher polling
+    sagefs.state = model.clear_cells(sagefs.state)
     return { buf = buf, cell = cell, notices = notices, sagefs = sagefs }
   end
 
@@ -436,6 +438,70 @@ describe("switching sessions", function()
     vim.notify = original_notify
     eq("s2", sagefs.active_session and sagefs.active_session.id, "active session after switch")
     eq("Ready", sagefs.active_session.status, "and it is the full record from the list")
+  end)
+end)
+
+describe(":SageFsHelp and the first-run hint", function()
+  it("registers :SageFsHelp", function()
+    require("sagefs").setup({ auto_connect = false })
+    ok_(vim.api.nvim_get_commands({})["SageFsHelp"], "SageFsHelp is a command")
+  end)
+
+  it("every registered :SageFs* command has a description (the help is built from them)", function()
+    require("sagefs").setup({ auto_connect = false })
+    local missing = {}
+    for name, c in pairs(vim.api.nvim_get_commands({})) do
+      if name:match("^SageFs") and (c.desc == nil or c.desc == "") then
+        missing[#missing + 1] = name
+      end
+    end
+    table.sort(missing)
+    ok_(#missing == 0, "commands without a description: " .. table.concat(missing, ", "))
+  end)
+
+  it(":SageFsHelp lists every registered command, generated from the live table", function()
+    require("sagefs").setup({ auto_connect = false })
+    vim.api.nvim_create_user_command("SageFsZzzProbe", function() end, { desc = "A probe added after setup" })
+    vim.cmd("SageFsHelp")
+    local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false)
+    local text = table.concat(lines, "\n")
+    for name in pairs(vim.api.nvim_get_commands({})) do
+      if name:match("^SageFs") then
+        ok_(text:find(":" .. name .. " ", 1, true), "help is missing :" .. name)
+      end
+    end
+    ok_(text:find("A probe added after setup", 1, true), "and shows its description")
+    vim.api.nvim_del_user_command("SageFsZzzProbe")
+    vim.cmd("close")
+  end)
+
+  it("shows the hint once on the first F# buffer and never again", function()
+    local marker = vim.fn.tempname()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false, hint_marker_path = marker })
+    local function float_count()
+      local n = 0
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_config(w).relative ~= "" then n = n + 1 end
+      end
+      return n
+    end
+    local before = float_count()
+    local buf = make_buffer({ "let a = 1" })
+    vim.bo[buf].filetype = "fsharp"
+    vim.wait(2500, function() return float_count() > before end, 20)
+    ok_(float_count() > before, "the hint is on screen")
+    ok_(vim.fn.filereadable(marker) == 1, "and remembered")
+    -- dismissed by moving
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+    vim.wait(500, function() return float_count() == before end, 20)
+    eq(before, float_count(), "any move dismisses it")
+    -- second F# buffer: no hint
+    local buf2 = make_buffer({ "let b = 2" })
+    vim.bo[buf2].filetype = "fsharp"
+    vim.wait(1800, function() return float_count() > before end, 20)
+    eq(before, float_count(), "never again")
+    os.remove(marker)
   end)
 end)
 
