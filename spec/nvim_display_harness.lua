@@ -759,6 +759,41 @@ describe("the statusline after our session finishes warming", function()
     ok_(line:find("(Ready)", 1, true), "the session reads Ready: " .. line)
   end)
 
+  it("a fault during warmup drops the warmup text too (a failed build left 'Scanning sources...' forever)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        opts.callback(true, vim.json.encode({ sessions = { {
+          id = "mine0001", status = "Faulted", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+        } } }))
+      end
+    end
+    local original_connect = transport.connect_sse
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    local original_notify = vim.notify
+    vim.notify = function() end
+    sagefs.active_session = { id = "mine0001", name = "App", status = "Starting", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.start_sse()
+    captured({ { type = "warmup_progress", data = vim.json.encode({ sessionId = "mine0001", Phase = "scanning_sources", Step = 2, Total = 4 }) } })
+    ok_(sagefs.statusline():find("Scanning sources", 1, true), "mid-warmup the statusline says so: " .. sagefs.statusline())
+    captured({ { type = "state", data = vim.json.encode({ sessionFaulted = "mine0001", error = "build failed" }) } })
+    vim.wait(150, function() return false end, 10)
+    transport.http_json = original_http
+    transport.connect_sse = original_connect
+    vim.notify = original_notify
+    eq(nil, sagefs.warmup_phase, "warmup phase cleared")
+    local line = sagefs.statusline()
+    ok_(not line:find("Scanning", 1, true), "no leftover warmup text: " .. line)
+    ok_(line:find("(Faulted)", 1, true), "the session reads Faulted: " .. line)
+  end)
+
   it("also when the daemon says it with a state event ({ sessionReady = id })", function()
     local sagefs = require("sagefs")
     sagefs.setup({ auto_connect = false })
