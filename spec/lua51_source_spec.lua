@@ -33,3 +33,13 @@ describe("source files that run under every supported Lua", function()
     end)
   end
 end)
+
+describe("docs for contributors", function()
+  for _, path in ipairs({ "README.md", "TESTING.md" }) do
+    it(path .. " gives no Lua 5.4 or 5.5 guidance (the plugin targets LuaJIT, Lua 5.1 semantics)", function()
+      local text = read(path)
+      assert.is_nil(text:find("5%.4"), "mentions Lua 5.4")
+      assert.is_nil(text:find("5%.5"), "mentions Lua 5.5")
+    end)
+  end
+end)

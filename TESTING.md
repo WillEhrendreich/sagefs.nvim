@@ -16,8 +16,9 @@ These tests mock `vim.*` APIs via `spec/helper.lua`.
 `run_busted.lua` carries Windows LuaRocks paths. On Linux and macOS, plain
 `busted` at the repo root is enough: `.busted` points it at `spec/` and at
 `spec/helper.lua` (which mocks `vim.*`), and skips `spec/e2e/`. This is the
-command the GitHub workflow runs and the one SageFs's `scripts/sync-nvim-version`
-runs as its gate before it publishes a plugin release.
+command the GitHub workflow runs (under Lua 5.1). SageFs's `scripts/sync-nvim-version`
+runs the same suite as its gate before it publishes a plugin release, but through
+`luajit` with the Lua 5.1 LuaRocks tree: the interpreter Neovim itself embeds.
 
 ```bash
 busted                                                      # exits non-zero on any failure
@@ -29,19 +30,26 @@ path of your shell. With several Lua versions installed, pick the tree that
 matches the interpreter busted will use, for example:
 
 ```bash
-eval "$(luarocks --lua-version 5.5 path)"
+eval "$(luarocks --lua-version 5.1 path)"
 ```
 
 Do not add a `lua = "..."` key to `.busted`. It makes busted re-run itself through
 that interpreter name without the LuaRocks package path, which is exactly the
 failure above, and `spec/busted_config_spec.lua` guards against it.
 
-The specs run on Lua 5.1 (what the workflow installs), 5.4, 5.5 and LuaJIT. That
-means no `file:read("a")` or `("l")` (use `"*a"` and `"*l"`), no `//`, no
-`goto`, no `\u{XXXX}` string escape (write the character; `spec/lua51_source_spec.lua`
-checks), and no assigning to a loop variable (5.5 makes those constants). To
-check another interpreter, run busted with that Lua and its LuaRocks tree, for
-example `eval "$(luarocks --lua-version 5.1 path)"; lua5.1 ~/.luarocks/lib/luarocks/rocks-5.1/busted/*/bin/busted`.
+sagefs.nvim only targets the Lua that Neovim embeds, which is LuaJIT (Lua 5.1
+semantics). The specs run under LuaJIT, and the GitHub workflow runs them under
+PUC Lua 5.1, so write 5.1 Lua: no `//`, no `goto`, no bit operators, no
+`table.unpack` without a fallback to `unpack`, and no `\u{XXXX}` string escape
+(write the character; `spec/lua51_source_spec.lua` checks). To run the suite the
+way the release hook does, with the Lua 5.1 LuaRocks tree:
+
+```bash
+rocks="$HOME/.luarocks"
+LUA_PATH="$rocks/share/lua/5.1/?.lua;$rocks/share/lua/5.1/?/init.lua;;" \
+  LUA_CPATH="$rocks/lib/lua/5.1/?.so;;" \
+  luajit "$rocks"/lib/luarocks/rocks-5.1/busted/*/bin/busted
+```
 
 The summary line is where the current counts live: busted prints
 `N successes / N failures / N errors / N pending`, the headless harness prints
