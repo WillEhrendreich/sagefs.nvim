@@ -231,3 +231,29 @@ describe("sagefs.sessions.warmup_event_is_ours", function()
     assert.is_false(sessions.warmup_event_is_ours({ sessionId = "new00001" }, nil, false))
   end)
 end)
+
+-- A shared daemon has many sessions with long temp-directory paths; the
+-- picker lines wrapped over three terminal rows each.
+describe("sagefs.sessions.compact_label", function()
+  it("fits one terminal row: project file name, short id, status, the tail of the directory", function()
+    local s = sess("ab12cd34ef56", "/tmp/claude-1000/-home-will-Work/48b15843-64fb-4a9f-99ff-fab2923ce52f/scratchpad/rv-demoenv", "Ready", "DemoEnv")
+    s.projects = { "/tmp/claude-1000/-home-will-Work/48b15843-64fb-4a9f-99ff-fab2923ce52f/scratchpad/rv-demoenv/DemoEnv.Tests/DemoEnv.Tests.fsproj" }
+    local label = sessions.compact_label(s, 72)
+    assert.is_true(#label <= 72, #label .. ": " .. label)
+    assert.is_truthy(label:find("DemoEnv.Tests.fsproj", 1, true))
+    assert.is_truthy(label:find("ab12cd34", 1, true))
+    assert.is_truthy(label:find("Ready", 1, true))
+    assert.is_truthy(label:find("rv-demoenv", 1, true), "the directory's tail is what tells sessions apart")
+  end)
+
+  it("keeps a short directory whole", function()
+    local label = sessions.compact_label(sess("ab12cd34ef56", "/work/app", "Ready", "App"), 72)
+    assert.is_truthy(label:find("/work/app", 1, true))
+    assert.is_falsy(label:find("…", 1, true))
+  end)
+
+  it("never loses the id even when the width is tiny", function()
+    local label = sessions.compact_label(sess("ab12cd34ef56", "/work/app", "Ready", "App"), 10)
+    assert.is_truthy(label:find("ab12cd34", 1, true))
+  end)
+end)
