@@ -33,20 +33,53 @@ local UPDATE_DAEMON = "dotnet tool update --global sagefs"
 ---@field advice string|nil
 ---@field warn boolean true only for a real incompatibility
 
+--- Largest apiVersion magnitude the plugin will take at face value. Real api
+--- versions are small integers; anything beyond int32 is a malformed answer.
+local MAX_API_VERSION = 2147483647
+
+local function unknown(message)
+  return { status = "unknown", message = message, warn = false }
+end
+
+--- Turn whatever the daemon sent into a whole number, or say why it cannot.
+--- Numeric strings ("3") are accepted as that number.
+---@return number|nil api_version
+---@return string|nil problem a ready-made message when there is no usable number
+local function usable_api_version(raw)
+  local n = raw
+  if type(raw) == "string" then
+    local trimmed = raw:match("^%s*(.-)%s*$")
+    n = trimmed:match("^[%+%-]?[%d%.]+$") and tonumber(trimmed) or nil
+    if n == nil then
+      return nil, string.format('daemon api version is not a number: "%s"', raw)
+    end
+  elseif type(raw) ~= "number" then
+    return nil, string.format("daemon api version is not a number: %s",
+      type(raw) == "boolean" and tostring(raw) or ("a " .. type(raw)))
+  end
+  if n ~= n or n == math.huge or n == -math.huge
+    or n ~= math.floor(n) or math.abs(n) > MAX_API_VERSION then
+    return nil, string.format("daemon api version is not a whole number the plugin can compare: %s", tostring(raw))
+  end
+  return math.floor(n)
+end
+
 --- Judge a daemon's apiVersion against the declared range.
 ---@param api_version any the `apiVersion` the daemon reported
 ---@return sagefs.CompatResult
 function M.check(api_version)
   local r = M.api_range
-  if type(api_version) ~= "number" then
-    return {
-      status = "unknown",
-      message = string.format(
-        "plugin understands api %d to %d, daemon api version not known yet (connect to a daemon to check)",
-        r.min, r.max),
-      warn = false,
-    }
+  if api_version == nil then
+    return unknown(string.format(
+      "plugin understands api %d to %d, daemon api version not known yet (connect to a daemon to check)",
+      r.min, r.max))
   end
+
+  local n, problem = usable_api_version(api_version)
+  if not n then
+    return unknown(string.format("plugin understands api %d to %d, but the %s", r.min, r.max, problem))
+  end
+  api_version = n
 
   local range = r.min == r.max and tostring(r.min) or string.format("%d to %d", r.min, r.max)
 
