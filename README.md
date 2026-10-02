@@ -111,6 +111,9 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Smart eval** | If no session exists, prompts to create one before evaluating. |
 | **Session context** | Floating window showing assemblies, namespaces, warmup details. |
 | **Hot reload controls** | Per-file toggle, watch-all, unwatch-all via picker. |
+| **Hot reload truth** | The statusline, a virtual-text mark on the saved file, `:SageFsReloadStatus` and the dashboard say what the last save did: applied and not run yet, patched and ran, never ran, or restart needed with the cause, and whether it went in by detour or metadata delta. See [Hot reload: what the plugin says](#hot-reload-what-the-plugin-says). |
+| **REPL freshness** | When the app is patched ahead of the REPL, the statusline says `REPL BEHIND app`, and an eval says why and how to fix it. |
+| **Cohort view** | `:SageFsCohort` → members, claims, the landing queue and the trunk lines, read over MCP `get_cohort_status`. |
 | **SSE dispatch pipeline** | All SageFs event types classified and routed through pcall-protected dispatch. |
 | **SSE live updates** | Subscribes to SageFs event stream with exponential backoff reconnect (1s→32s). |
 | **State recovery** | Full state synced on SSE reconnect — no stale data after drops. |
@@ -133,8 +136,8 @@ This plugin provides the Neovim integration layer. **60 Lua modules under `lua/s
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | 37 event types fired via `User` autocmds for scripting integration. |
-| **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon. |
+| **User autocmd events** | 44 event types fired via `User` autocmds for scripting integration. |
+| **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon │ hot reload │ REPL freshness. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
 | **Treesitter cell detection** | Structural `;;` detection filtering boundaries in strings/comments. |
@@ -272,6 +275,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsRunApp [project]` | Run the session's application (optional project name; default target otherwise) |
 | `:SageFsStopApp` | Stop the session's running application |
 | `:SageFsHotReload` | Hot reload file picker |
+| `:SageFsReloadStatus` | What the last save did to the running app, how it got there, and whether the REPL is behind the app |
+| `:SageFsCohort` | Members, claims, the landing queue and the trunk lines of the daemon's cohort (`q` closes, `r` refreshes) |
 | `:SageFsWatchAll` | Watch all project files for hot reload |
 | `:SageFsUnwatchAll` | Unwatch all files |
 | `:SageFsReset` | Soft reset active FSI session |
@@ -309,6 +314,46 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsCellStyle [style]` | Set or cycle cell highlight style (off/minimal/normal/full) |
 | `:SageFsBindings` | Show FSI binding state |
 | `:SageFsEvalLine` | Evaluate current line only |
+
+## Hot reload: what the plugin says
+
+For a long time I dropped the daemon's report of what a save did. A patch that had landed and one that was live looked the same, and a restart the app needed went unmentioned. Now one function turns the report into words, and the statusline, a virtual-text mark on the first line of the saved file, `:SageFsReloadStatus` and the dashboard's hot reload section all use it ([`reload_state.lua`](lua/sagefs/reload_state.lua)).
+
+| The daemon reports | The plugin says |
+|---|---|
+| `PatchPending` | applied, new body has not run yet |
+| `Patched` | patched (ran) |
+| `NeverEntered` | applied, but the new body never ran (N of M did): exercise it, or the callee was inlined |
+| `Restarted` | restarted: the cause |
+| `RestartRequired` | restart needed: the cause |
+| `CompileFailed` | did not compile; the app keeps running the last code that did |
+| `NoEffect` | no effect (N of M changed definitions reached the running app) |
+| `KeptLiveState` | kept live value, with the binding and the initializer that waits for a reset |
+
+A patch is applied first and patched once its new body has been seen running ([how the daemon decides](https://github.com/WillEhrendreich/SageFs/blob/master/docs/hot-reload.md#what-patched-means)), so `PatchPending` is never shown as live. The mechanism comes from the report's `mechanism` field (`detour` or `metadata-delta`) and shows as `[detour]` or `[delta]` in the statusline and `via metadata delta` in the panel. I never read it from the words of the message. A verdict or a mechanism outside the sets I know is shown as unrecognized and not guessed at.
+
+The statusline keeps the things you have to act on (pending, never ran, restarts, compile failures) until the next save replaces them. A patched or kept verdict fades after 15 seconds and a no-effect one after 8. With `notify_reload = true` (the default) a `vim.notify` also fires for a never-ran patch, a restart and a compile failure.
+
+The cause of a restart is the first line of the report's `message`. The daemon's own stream also has closed cause names (`FieldsChanged`, `MetadataDeltaUnavailable` and the rest of [`RudeCause`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/MetadataDelta/RudeCause.fs)), but they sit in the worker's reload payload and not in the session report the plugin reads. `reload_state.parse` already reads `reasons` and `declarations` when a payload has them, so a daemon that adds them to the session report needs no plugin change.
+
+### The REPL can be behind the app
+
+When a save is patched into an app that `:SageFsRunApp` started, the app runs the new code and the REPL (and live tests) keep the build from before it. A REPL call to what changed then runs the old body. The daemon carries that as `replFreshness` on every session report ([`SessionReload.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/SessionReload.fs)), and the plugin shows it two ways:
+
+- the statusline says `⚠ REPL BEHIND app (2 saves)` until the session is level again;
+- the first eval says it in one line, with the fix, and then stays quiet about the same state for a minute: `The REPL is BEHIND the app (1 save: Handlers.describe): calls to what changed run the OLD code. :SageFsHardReset rebuilds the REPL and stops the running app (:SageFsRunApp starts it again).`
+
+The rebuild replaces the worker, so the running app stops with it. The message says so because that is the price of the fix. The daemon also appends a `WARNING: The REPL is BEHIND the app` line after the text of an eval result; the plugin takes that line off the cell output and turns it into the message above.
+
+### The cohort and the trunk
+
+`:SageFsCohort` opens a scratch buffer with the cohort's members, claims, landing queue, the integration session and, once an integration is configured, the trunk: one `trunk <landingId>: ...` line per landing, in the same words as above (`Program.fs applied, new body has not run yet (via metadata delta)`). There is no REST route for it, so the plugin makes an MCP `tools/call` of `get_cohort_status` ([`mcp_client.lua`](lua/sagefs/mcp_client.lua)). The view refreshes on the cohort events (`SageFsCohortMatrix`, `SageFsClaimChanged`, `SageFsLandingChanged`, `SageFsSaveObserved`, `SageFsCohortChanged`) and on every reload report, because a trunk line turns from applied to patched with no cohort event at all.
+
+A member id in the cohort is `mcp:` followed by that agent's MCP session id, which works as its bearer handle. The daemon prints it in full, so the plugin shows only the first six characters.
+
+### Adding the next field
+
+The daemon's session report fields are read in one list, [`status_fields.lua`](lua/sagefs/status_fields.lua). A new closed field, such as the `sourceState` that is coming, is one `register` call with its JSON key, its parser and its statusline segment. Nothing else enumerates the fields.
 
 ## ✂️ Snippets
 
@@ -414,13 +459,20 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `type_explorer_cache.lua` | 37 | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | 69 | FSI event history formatting for picker and preview |
 | `export.lua` | 25 | Session export to .fsx format |
-| `events.lua` | 73 | User autocmd event definitions (37 event types) |
+| `events.lua` | 82 | User autocmd event definitions (44 event types) |
 | `completions.lua` | 30 | Omnifunc completion parsing and formatting |
 | `util.lua` | 52 | Shared utilities (json_decode) |
 | `hotreload_model.lua` | 66 | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | 77 | Daemon lifecycle state machine (idle→starting→running→stopped) |
 | `test_trace.lua` | 75 | Test trace parsing and formatting |
 | `app_run.lua` | 166 | Run/stop the session's application — request building, `AppStateView` parsing, notify/statusline formatting |
+| `closed_set.lua` | 53 | Closed sets of named wire tokens with a membership test |
+| `reload_state.lua` | 524 | Hot reload report parsing, the one display function, and the per-session fold |
+| `repl_freshness.lua` | 181 | `InSync` / `BehindApp`, the statusline segment, the eval message, the WARNING banner, the announcement gate |
+| `status_fields.lua` | 100 | Registry of per-session report fields (`lastReload`, `replFreshness`, the next one) |
+| `cohort.lua` | 446 | `get_cohort_status` parser, trunk verdicts, rendering, member-handle masking |
+| `mcp_client.lua` | 207 | Small MCP client over the daemon's streamable HTTP transport |
+| `wire_runtime.lua` | 218 | The reload and REPL-freshness glue, with every impure thing injected |
 | `annotations.lua` | 263 | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | 63 | Display density presets (minimal/normal/full), layer visibility control |
 | `diff.lua` | 81 | Semantic diff between cell evaluation results |
@@ -446,6 +498,9 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `render.lua` | 454 | Extmarks, test/coverage gutter signs, floating windows |
 | `commands.lua` | 1656 | All 53 commands, keymaps, autocmds |
 | `hotreload.lua` | 130 | Hot reload file toggle API |
+| `reload_ui.lua` | 91 | Hot reload highlight groups and the virtual-text mark on the saved file |
+| `cohort_view.lua` | 159 | `:SageFsCohort` scratch buffer, refresh on cohort events |
+| `wire_commands.lua` | 45 | `:SageFsReloadStatus` and `:SageFsCohort` registration |
 | **Dashboard** | | |
 | `dashboard/init.lua` | 460 | Floating dashboard (SageFsDashboard) |
 | `dashboard/compositor.lua` | 121 | Dashboard layout compositor |
@@ -496,8 +551,8 @@ nvim --headless --clean -u NONE -l spec/nvim_harness.lua  # Integration only
 
 | Suite | Runner | Count | What it covers |
 |-------|--------|-------|----------------|
-| **Busted (pure)** | `busted` via LuaRocks | 1480 (latest run on Linux: 1480 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
-| **Integration** | Headless Neovim (`nvim -l`) | 66 (latest run: 66 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping. |
+| **Busted (pure)** | `busted` via LuaRocks | 1687 (latest run on Linux: 1687 passed, 3 failed, 4 pending) | Pure module logic — cells, format, model, SSE dispatch, sessions, testing, diagnostics, coverage, type explorer, type explorer cache, history, export, events, hotreload model, daemon, pipeline, completions, cell highlight, diff, depgraph, timeline, time_travel, scope_map, notebook, type_flow, health. State machine validation, property tests, snapshot tests, composition, idempotency. |
+| **Integration** | Headless Neovim (`nvim -l`) | 73 (latest run: 73 passed, 0 failed) | Real vim APIs — plugin setup, user command registration, extmark rendering, highlight groups, keymaps, autocmds, cell lifecycle, SSE→model→extmark pipeline, multi-buffer isolation, test gutter signs, coverage gutter signs, combined statusline, command-reference integrity, SSE session-scoping. |
 | **E2E** | Headless Neovim + real SageFs | 28 test cases across 6 spec files | Full daemon lifecycle — eval (health, simple/error/module/multi-line), SSE event streaming, session management (list/metadata/reset), live testing (toggle/run/policy/SSE events), hot reload (module types, file modification, daemon resilience), code completions (System.String, List, project module). |
 | **Total** | | **1546 unit+integration passing** | 1480 busted + 66 headless-Neovim integration (latest run); E2E suite requires a running SageFs daemon. The 3 busted failures on Linux are pre-existing and platform-specific, not a regression: 2 assert Windows path separators (`config_spec.lua`) and 1 is a timing-sensitive allocation benchmark (`bench_perf_spec.lua`) — both need an OS guard, not a fix to the code under test. |
 
@@ -557,9 +612,16 @@ vim.api.nvim_create_autocmd("User", {
 | `SageFsWarmupCompleted` | Session warmup finished | assemblies, namespaces |
 | `SageFsFileReloaded` | A watched file was reloaded | file path |
 | `SageFsSystemAlarm` | System alarm raised | alarm payload |
+| `SageFsReloadReported` | What a save did to the running app (or its report was cleared) | `reloadReported` object, `sessionId` |
+| `SageFsReplFreshnessChanged` | A session's REPL freshness was read from the session list | `sessionId`, `freshness` |
+| `SageFsCohortMatrix` | The cohort frame changed | members, claims, landings, integration head |
+| `SageFsClaimChanged` | A claim was acquired, released, orphaned or reassigned | claim id, scope, holder, fence, kind |
+| `SageFsLandingChanged` | A landing changed state | landing id, requester, state, blocker, next action |
+| `SageFsSaveObserved` | A cohort member's watcher saw a save inside another member's claim | claim id, observer, holder, path |
+| `SageFsCohortChanged` | The cohort changed (someone joined, left, claimed, released or landed) | none |
 | `SageFsCoverageView` | Coverage view event | coverage view payload |
 
-The full catalog (37 event types) is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
+The full catalog (44 event types) is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
 
 ## SageFs MCP Tools Reference
 
