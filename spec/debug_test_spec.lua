@@ -434,6 +434,27 @@ describe("debug_test.failing_tests_at", function()
     assert.are.equal(1, #dt.failing_tests_at(state, nil, "/x/Other.fs", 8), "and it is found in its own file")
   end)
 
+  it("does not take another project's file of the same trailing path for this one", function()
+    local state = testing.new()
+    testing.update_test(state, {
+      testId = "A", displayName = "fails in /a/Util.fs", fullName = "a", status = "Failed",
+      origin = { Case = "SourceMapped", Fields = { "/a/Util.fs", 3 } },
+    })
+    assert.are.equal(1, #dt.failing_tests_at(state, nil, "/a/Util.fs", nil))
+    assert.are.same({}, dt.failing_tests_at(state, nil, "/b/a/Util.fs", nil), "running it would start the wrong test")
+    assert.are.same({}, dt.failing_tests_at(state, nil, "/Util.fs", nil))
+  end)
+
+  it("still finds a test by a project-relative path against the absolute buffer path", function()
+    local state = testing.new()
+    testing.update_test(state, {
+      testId = "R", displayName = "relative", fullName = "r", status = "Failed",
+      origin = { Case = "SourceMapped", Fields = { "src/Util.fs", 3 } },
+    })
+    assert.are.equal(1, #dt.failing_tests_at(state, nil, "/home/w/proj/src/Util.fs", nil))
+    assert.are.same({}, dt.failing_tests_at(state, nil, "/home/w/proj/mysrc/Util.fs", nil))
+  end)
+
   it("marks lines that carry a debuggable failure so the hint can be drawn", function()
     local marks = dt.hint_marks(testing.new(), annotation_state(), file)
     assert.are.equal(1, marks[8])
