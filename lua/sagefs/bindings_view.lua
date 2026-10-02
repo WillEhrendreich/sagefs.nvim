@@ -44,6 +44,12 @@ function M.new_controller(deps)
     if deps.on_change then deps.on_change() end
   end
 
+  -- The view remembers the mode, the last click's line and a notice of ONE
+  -- session; every entry point first makes sure it still is that session's.
+  local function sync()
+    lb.sync_view(view, deps.session_id and deps.session_id() or nil)
+  end
+
   local function sid_or_warn()
     local sid = deps.session_id and deps.session_id() or nil
     if not sid then
@@ -66,6 +72,7 @@ function M.new_controller(deps)
 
   --- Run one "not evaluated" getter (the click).
   function ctl.click(row)
+    sync()
     if not row then return end
     if row.action ~= "click" then
       deps.notify("Nothing to run on this row.", LEVELS.INFO)
@@ -94,6 +101,7 @@ function M.new_controller(deps)
 
   --- Switch the walk mode. Everything runs your getters after every eval, so it asks first.
   function ctl.set_mode(mode)
+    sync()
     local sid = sid_or_warn()
     if not sid then return end
     local function go()
@@ -121,6 +129,7 @@ function M.new_controller(deps)
 
   --- Read the mode (and the click's containment line) without changing anything.
   function ctl.read_mode(then_)
+    sync()
     local sid = sid_or_warn()
     if not sid then return end
     send(lb.build_read_mode_request(sid), MODE_TIMEOUT_S, function(ok, raw)
@@ -189,7 +198,7 @@ function M.redraw()
   local plugin = pane.plugin
   local view = pane.ctl.view
   local sid = plugin.active_session and plugin.active_session.id or nil
-  view.session_id = sid
+  lb.sync_view(view, sid)
   local snapshot = lb.get(plugin.live_bindings_state, sid)
   local rendered = lb.render(snapshot, view)
   pane.rows = rendered.rows

@@ -32,27 +32,60 @@ local function tagged(v)
   return nil, nil
 end
 
+-- ─── Readers that never throw ────────────────────────────────────────────────
+--
+-- The daemon's version drifts away from the plugin's, and a field of the wrong
+-- type must not throw from the fold or from a redraw (a throw on a redraw
+-- leaves the pane broken until the snapshot is replaced).
+
+--- A table to iterate: the value when it is one, else an empty one.
+local function list(v)
+  if type(v) == "table" then return v end
+  return {}
+end
+
+--- Text to draw: a string or a number, else an empty string.
+local function text(v)
+  local t = type(v)
+  if t == "string" then return v end
+  if t == "number" or t == "boolean" then return tostring(v) end
+  return ""
+end
+
+-- Indentation is two spaces per level; a depth no real tree reaches must not
+-- turn into a gigabyte of spaces.
+local MAX_DEPTH = 64
+
+local function depth_of(v)
+  local n = tonumber(v) or 0
+  if n ~= n then return 0 end
+  return math.max(0, math.min(MAX_DEPTH, math.floor(n)))
+end
+
 -- ─── Node normalization ──────────────────────────────────────────────────────
 
 local function normalize_node(raw)
+  raw = list(raw)
   local kind, fields = du(raw.Kind or raw.kind)
   local node = {
-    label = raw.Label or raw.label or "",
-    type_name = raw.TypeName or raw.typeName or "",
-    preview = raw.Preview or raw.preview or "",
-    kind = kind or "Leaf",
+    label = text(raw.Label or raw.label),
+    type_name = text(raw.TypeName or raw.typeName),
+    preview = text(raw.Preview or raw.preview),
+    kind = type(kind) == "string" and kind or "Leaf",
     best_effort = (raw.BestEffort or raw.bestEffort) == true,
-    depth = raw.Depth or raw.depth or 0,
+    depth = depth_of(raw.Depth or raw.depth),
     children = {},
   }
   if node.kind == "NotEvaluated" then
-    local case, reason_fields = du(fields and fields[1])
-    local detail = reason_fields and reason_fields[1]
+    local case, reason_fields = du(type(fields) == "table" and fields[1] or nil)
+    local detail = type(reason_fields) == "table" and reason_fields[1] or nil
     if type(detail) == "table" then detail = detail[1] end
-    node.reason = { case = case or "Unknown", detail = detail }
+    node.reason = { case = type(case) == "string" and case or "Unknown", detail = detail }
   end
-  for _, child in ipairs(raw.Children or raw.children or {}) do
-    table.insert(node.children, normalize_node(child))
+  for _, child in ipairs(list(raw.Children or raw.children)) do
+    if type(child) == "table" then
+      table.insert(node.children, normalize_node(child))
+    end
   end
   return node
 end
@@ -77,16 +110,18 @@ function M.apply_snapshot(state, payload)
   local sid = payload.SessionId or payload.sessionId
   if type(sid) ~= "string" or sid == "" then return state end
   local bindings = {}
-  for _, raw in ipairs(payload.Bindings or payload.bindings or {}) do
-    table.insert(bindings, {
-      name = raw.Name or raw.name or "",
-      type_signature = raw.TypeSignature or raw.typeSignature or "",
-      root = normalize_node(raw.Root or raw.root or {}),
-    })
+  for _, raw in ipairs(list(payload.Bindings or payload.bindings)) do
+    if type(raw) == "table" then
+      table.insert(bindings, {
+        name = text(raw.Name or raw.name),
+        type_signature = text(raw.TypeSignature or raw.typeSignature),
+        root = normalize_node(raw.Root or raw.root),
+      })
+    end
   end
   state.sessions[sid] = {
     session_id = sid,
-    generation = payload.Generation or payload.generation or 0,
+    generation = tonumber(payload.Generation or payload.generation) or 0,
     truncated = (payload.Truncated or payload.truncated) == true,
     captured_at = payload.CapturedAt or payload.capturedAt,
     bindings = bindings,
@@ -188,7 +223,9 @@ end
 
 local function notice_for(outcome)
   local kind, value = tagged(outcome)
+  if type(value) ~= "table" then value = nil end
   local detail_kind, detail_value = tagged(value and value[1])
+  if type(detail_value) ~= "table" then detail_value = nil end
   if kind == "MemberShown" then
     return nil
   elseif kind == "MemberRefused" then
@@ -254,6 +291,22 @@ function M.new_view(session_id)
     expanded = {},
     _effective = {},
   }
+end
+
+--- Make the view belong to `session_id`: when the active session changed, what
+--- the view remembered (the mode, the last click's containment line, the notice
+--- and the folds) was about the previous session and is dropped.
+---@return table view
+function M.sync_view(view, session_id)
+  if view.session_id ~= session_id then
+    view.session_id = session_id
+    view.mode = nil
+    view.containment = ""
+    view.notice = nil
+    view.expanded = {}
+    view._effective = {}
+  end
+  return view
 end
 
 --- Fold or unfold a row (by the key a render gave it).
