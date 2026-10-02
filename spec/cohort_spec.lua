@@ -1,7 +1,11 @@
--- Cohort and trunk: parse the get_cohort_status text, render it, and keep the
--- bearer handle in a member id out of the buffer. Texts are the real idle
--- status the dev daemon sent, and the Trunk-section text written from the
--- formatter (spec/wire_fixtures.lua explains why that one is not captured).
+-- Cohort and trunk: parse the get_cohort_status text and render it. A member id
+-- is a one-way fingerprint now (`mcp:m-<16 hex>`) or a minted run (`cap:<hex>`),
+-- and both are shown in full; an older daemon's `mcp:<session id>` is still a
+-- bearer handle, so that form is still kept out of the buffer. Texts are the
+-- real idle status the dev daemon sent (an older daemon, so its ids are the
+-- old form), the Trunk-section text written from the formatter
+-- (spec/wire_fixtures.lua explains why that one is not captured), and a status
+-- written from the new daemon's formatter for the new id forms.
 require("spec.helper")
 local C = require("sagefs.cohort")
 local fx = require("spec.wire_fixtures")
@@ -189,14 +193,97 @@ describe("cohort.parse_trunk_verdict: every verdict the trunk can give", functio
   end)
 end)
 
-describe("cohort.mask_member", function()
-  it("keeps the kind and the first six characters of an mcp handle and hides the rest", function()
-    assert.are.equal("mcp:tJj5NF…", C.mask_member("mcp:tJj5NFu4OCqmI2WIWkiBFA"))
+-- Written from SageFs.Core/Features/CohortStatusText.fs and the member id
+-- formats of the capability-token work (docs/mcp-tools.md, member tokens): a
+-- connection is `mcp:m-<16 hex>`, a minted run is `cap:<16 hex>`.
+local NEW_STATUS = table.concat({
+  "Cohort ledger head: v20",
+  "Conductor: mcp:m-0123456789abcdef",
+  "Members (3):",
+  "  - mcp:m-0123456789abcdef [Implementer] present",
+  "  - cap:fedcba9876543210 [Observer] present",
+  "  - cap:00112233445566ff [Implementer] departed 2026-10-02 09:00:00Z",
+  "Claims (1):",
+  '  - c-1 File "src/Foo/a.fs" held-by=cap:00112233445566ff fence=2 state=Held (Mcp "x")',
+  "Integration head: 09e824af17c04b884be4132353111a44801975d1",
+  "Landings (1):",
+  '  - l-1 requester=cap:00112233445566ff state=Verifying "a" position 1 in queue statement="hi" commits=[1a2b3c4]',
+  "Integration session: pending",
+  "",
+}, "\n")
+
+describe("cohort.mask_member: ids are fingerprints now, so they are shown whole", function()
+  it("shows a connection fingerprint in full", function()
+    assert.are.equal("mcp:m-0123456789abcdef", C.mask_member("mcp:m-0123456789abcdef"))
+  end)
+
+  it("shows a minted run's id in full", function()
+    assert.are.equal("cap:fedcba9876543210", C.mask_member("cap:fedcba9876543210"))
   end)
 
   it("leaves a short or non-handle id alone", function()
     assert.are.equal("alice", C.mask_member("alice"))
     assert.are.equal("mcp:abc", C.mask_member("mcp:abc"))
+    assert.are.equal("", C.mask_member(nil))
+  end)
+
+  it("still hides an older daemon's id, which is the connection's bearer handle", function()
+    assert.are.equal("mcp:tJj5NF…", C.mask_member("mcp:tJj5NFu4OCqmI2WIWkiBFA"))
+  end)
+end)
+
+describe("cohort.parse_status: the member kinds", function()
+  local model = C.parse_status(NEW_STATUS)
+
+  it("reads a connection fingerprint, a minted run and a departed minted run", function()
+    assert.are.equal(3, #model.members)
+    assert.are.equal("mcp:m-0123456789abcdef", model.members[1].id)
+    assert.are.equal("Implementer", model.members[1].role)
+    assert.are.equal("cap:fedcba9876543210", model.members[2].id)
+    assert.are.equal("Observer", model.members[2].role)
+    assert.are.equal("present", model.members[2].seat)
+    assert.are.equal("departed", model.members[3].seat)
+    assert.are.equal("2026-10-02 09:00:00Z", model.members[3].since)
+  end)
+
+  it("names the kind of each id: connection, capability, and the older form", function()
+    assert.are.equal("connection", model.members[1].kind)
+    assert.are.equal("capability", model.members[2].kind)
+    assert.are.equal("capability", model.members[3].kind)
+    local old = C.parse_status(fx.read("cohort-status-idle.txt"))
+    assert.are.equal("legacy", old.members[1].kind)
+  end)
+
+  it("gives the kind of an id it has never seen as other, without failing", function()
+    local m = C.parse_status("Cohort ledger head: v1\nConductor: x\nMembers (1):\n  - agent-7 [Observer] present\nClaims (0):\nIntegration head: abc\nLandings: (none)\nIntegration session: pending\n")
+    assert.are.equal("agent-7", m.members[1].id)
+    assert.are.equal("other", m.members[1].kind)
+  end)
+
+  it("reads a claim held by, and a landing requested by, a minted run", function()
+    assert.are.equal("cap:00112233445566ff", model.claims[1].held_by)
+    assert.are.equal("cap:00112233445566ff", model.landings[1].requester)
+  end)
+end)
+
+describe("cohort.render: the new id forms", function()
+  local text = table.concat(line_texts(C.render(C.parse_status(NEW_STATUS))), "\n")
+
+  it("shows connection fingerprints and minted ids whole, as conductor, member, holder and requester", function()
+    assert.truthy(text:find("Conductor: mcp:m-0123456789abcdef", 1, true))
+    assert.truthy(text:find("cap:fedcba9876543210  Observer  present", 1, true))
+    assert.truthy(text:find("held by cap:00112233445566ff", 1, true))
+    assert.is_nil(text:find("…", 1, true))
+  end)
+
+  it("marks a minted run, so it is told from a connection", function()
+    local minted, plain = 0, 0
+    for _, line in ipairs(line_texts(C.render(C.parse_status(NEW_STATUS)))) do
+      if line:find("cap:fedcba9876543210", 1, true) and line:find("minted run", 1, true) then minted = minted + 1 end
+      if line:find("mcp:m-0123456789abcdef  Implementer", 1, true) and line:find("minted", 1, true) then plain = plain + 1 end
+    end
+    assert.are.equal(1, minted)
+    assert.are.equal(0, plain)
   end)
 end)
 
@@ -275,7 +362,7 @@ describe("cohort events from the SSE stream", function()
     assert.are.equal("SageFsCohortChanged", events.build_autocmd_data("cohort_changed", {}).pattern)
   end)
 
-  it("the member id in a cohort_matrix frame is masked before it is shown", function()
+  it("the member id in a cohort_matrix frame from an older daemon is masked before it is shown", function()
     local parsed = sse.parse_chunk(fx.read("sse-cohort-matrix.txt"))
     local data = vim.json.decode(parsed[1].data)
     local lines = C.matrix_summary(data)
