@@ -517,4 +517,4 @@ if #errors > 0 then
   end
 end
 
-vim.cmd("qa" .. (failed > 0 and "!" or ""))
+if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

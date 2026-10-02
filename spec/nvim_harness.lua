@@ -2162,5 +2162,5 @@ if #errors > 0 then
   end
 end
 
--- Exit with appropriate code
-vim.cmd("qa!")
+-- Exit non-zero on a failure so CI can go red
+if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

@@ -34,6 +34,9 @@ jobs:
       - name: Run integration tests
         run: nvim --headless --clean -u NONE -l spec/nvim_harness.lua
 
+      - name: Run display and session harness
+        run: nvim --headless --clean -u NONE -l spec/nvim_display_harness.lua
+
   # E2E tests disabled — SageFs session routing API is still stabilizing.
   # Re-enable when SageFs exposes working_directory on all HTTP endpoints.
   # Specs and harness are in spec/e2e/ ready to go.
