@@ -422,6 +422,25 @@ Analysis ~
     `q` closes the buffer, `r` refreshes it.
     See |sagefs-cohort|.
 
+:SageFsMintMember {role} [scope] [minutes]              *:SageFsMintMember*
+    Mint a cohort member token with the daemon's `mint_member` tool and
+    show it once in a float. {role} is Observer, Analysis, Verifier or
+    Implementer (completed with <Tab>). [scope] is a repo-relative
+    directory prefix; empty or `.` means the whole repo. [minutes] is 0 to
+    480; 0 means the daemon's default of 120. The token is shown in a
+    scratch buffer with no swap file and no undo, closed by `q` or by
+    leaving the window. It is never passed to |vim.notify()|, so it is not
+    in |:messages|, and the command line holds no token, so it is not in
+    the command history. Only the cohort's conductor may mint, and the
+    plugin's own MCP connection is the conductor only if it joined first.
+    Anyone else gets the daemon's refusal. See |sagefs-member-token|.
+
+:SageFsRevokeMember {cap:id}                           *:SageFsRevokeMember*
+    Revoke a minted member with the daemon's `revoke_member` tool. {cap:id}
+    is the `cap:<hex>` id shown by |:SageFsCohort| or by the mint reply. The
+    token is refused from the next call, for ever. Conductor only.
+    See |sagefs-member-token|.
+
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
 
@@ -546,6 +565,9 @@ The token is never printed. Failure texts are scrubbed, the debug log
 (`vim.g.sagefs_debug`) shows the header as (hidden), and |:checkhealth|
 says `member_token = set (hidden)`. SageFs keeps only a token's hash, so a
 leaked token cannot be taken back, only revoked.
+
+|:SageFsMintMember| and |:SageFsRevokeMember| mint and revoke tokens from
+the editor. A token is shown once, in a float, and nowhere else.
 
 ==============================================================================
 7. LIVE TESTING                                          *sagefs-testing*

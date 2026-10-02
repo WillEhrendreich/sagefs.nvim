@@ -32,12 +32,14 @@
 :SageFsHistory	sagefs.txt	/*:SageFsHistory*
 :SageFsHotReload	sagefs.txt	/*:SageFsHotReload*
 :SageFsLoadScript	sagefs.txt	/*:SageFsLoadScript*
+:SageFsMintMember	sagefs.txt	/*:SageFsMintMember*
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
 :SageFsPickTest	sagefs.txt	/*:SageFsPickTest*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
 :SageFsReloadStatus	sagefs.txt	/*:SageFsReloadStatus*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
 :SageFsResult	sagefs.txt	/*:SageFsResult*
+:SageFsRevokeMember	sagefs.txt	/*:SageFsRevokeMember*
 :SageFsRunApp	sagefs.txt	/*:SageFsRunApp*
 :SageFsRunTests	sagefs.txt	/*:SageFsRunTests*
 :SageFsScopeMap	sagefs.txt	/*:SageFsScopeMap*

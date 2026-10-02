@@ -1,5 +1,5 @@
--- sagefs/wire_commands.lua — :SageFsReloadStatus and :SageFsCohort
--- REQUIRES vim — thin registration, the words come from pure modules
+-- sagefs/wire_commands.lua: :SageFsReloadStatus, :SageFsCohort and the member token commands
+-- REQUIRES vim: thin registration, the words come from pure modules
 
 local M = {}
 
@@ -40,6 +40,7 @@ function M.register(plugin)
   end, { desc = "What the last save did to the running app, and whether the REPL is behind it" })
 
   require("sagefs.cohort_view").register(function() return plugin.config.port end)
+  require("sagefs.member_view").register(function() return plugin.config.port end)
 end
 
 return M

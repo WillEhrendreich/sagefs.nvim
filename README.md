@@ -118,6 +118,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Hot reload truth** | The statusline, a virtual-text mark on the saved file, `:SageFsReloadStatus` and the dashboard say what the last save did: applied and not run yet, patched and ran, never ran, or restart needed with the cause, and whether it went in by detour or metadata delta. See [Hot reload: what the plugin says](#hot-reload-what-the-plugin-says). |
 | **REPL freshness** | When the app is patched ahead of the REPL, the statusline says `REPL BEHIND app`, and an eval says why and how to fix it. |
 | **Cohort view** | `:SageFsCohort` → members, claims, the landing queue and the trunk lines, read over MCP `get_cohort_status`. |
+| **Member tokens** | `member_token` (or `SAGEFS_MEMBER_TOKEN`) runs the plugin as a minted cohort member; `:SageFsMintMember` and `:SageFsRevokeMember` mint and revoke, showing a token once. |
 | **SSE dispatch pipeline** | All SageFs event types classified and routed through pcall-protected dispatch. |
 | **SSE live updates** | Subscribes to SageFs event stream with exponential backoff reconnect (1s→32s). |
 | **State recovery** | Full state synced on SSE reconnect - no stale data after drops. |
@@ -293,6 +294,8 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsHotReload` | Hot reload file picker |
 | `:SageFsReloadStatus` | What the last save did to the running app, how it got there, and whether the REPL is behind the app |
 | `:SageFsCohort` | Members, claims, the landing queue and the trunk lines of the daemon's cohort (`q` closes, `r` refreshes) |
+| `:SageFsMintMember <role> [scope] [minutes]` | Mint a cohort member token (`mint_member`, conductor only) and show it once in a float |
+| `:SageFsRevokeMember <cap:id>` | Revoke a minted member (`revoke_member`, conductor only) |
 | `:SageFsWatchAll` | Watch all project files for hot reload |
 | `:SageFsUnwatchAll` | Unwatch all files |
 | `:SageFsReset` | Soft reset active FSI session |
@@ -394,6 +397,8 @@ opts = { member_token = "sfm_..." }
 ```
 
 or set `SAGEFS_MEMBER_TOKEN` in the environment before Neovim starts (the same variable `sagefs mcp` reads). The setup option wins when both are set. The plugin sends the token as the `X-SageFs-Member-Token` header on every MCP request it makes ([`mcp_client.lua`](lua/sagefs/mcp_client.lua), [`member_token.lua`](lua/sagefs/member_token.lua)); with none configured it sends no header, and a daemon without tokens sees exactly what it saw before. The token appears in no message, log line or error text the plugin prints: failures are scrubbed, the debug log (`vim.g.sagefs_debug`) prints the header as `(hidden)`, and `:checkhealth sagefs` says `member_token = set (hidden)`. SageFs keeps only a token's hash, so a token that leaks cannot be taken back, only revoked. Put it in an environment variable or a file outside your dotfiles repo.
+
+`:SageFsMintMember <role> [scope] [minutes]` calls the daemon's `mint_member` (role is `Observer`, `Analysis`, `Verifier` or `Implementer`; scope is a repo-relative directory prefix, empty or `.` for the whole repo; minutes is 0 to 480, 0 meaning the daemon's 120) and shows the reply, which holds the token, once in a float ([`member_view.lua`](lua/sagefs/member_view.lua)). The float is a scratch buffer with no swap file, no undo and no entry in the buffer list. It closes on `q` or when you leave it. The token is never passed to `vim.notify`, so it is not in `:messages`, and the command line holds only the role, scope and minutes, so it is not in the command history. `:SageFsRevokeMember cap:<hex>` calls `revoke_member`. Only the cohort's conductor may do either, and a connection that is not the conductor gets the daemon's refusal, which says so. The plugin's connection is its own MCP session, so it is the conductor only if it joined the cohort first. A daemon from before member tokens has no such tools and answers with its own error text, which the plugin shows as it is.
 
 ### Adding the next field
 
@@ -648,7 +653,8 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `help.lua` | `:SageFsHelp` and the first-run hint; the command list comes from the live command table |
 | `cohort_view.lua` | `:SageFsCohort`: the cohort and the trunk in a scratch buffer, refreshed on cohort events |
 | `reload_ui.lua` | Highlight groups and the virtual-text mark on the saved file for the hot reload verdict |
-| `wire_commands.lua` | `:SageFsReloadStatus` and `:SageFsCohort` registration |
+| `wire_commands.lua` | `:SageFsReloadStatus`, `:SageFsCohort` and the member token commands' registration |
+| `member_view.lua` | `:SageFsMintMember` and `:SageFsRevokeMember`: the arguments, the call, and the float that shows a token once |
 | `wire_testing.lua` | Registry that wires the debug-test, live bindings and coverage hover features into `commands.lua` and `init.lua` with one line each |
 | `bindings_view.lua` | `:SageFsBindings`: the live bindings tree in a split, with click-to-run on a getter and the Safe/Everything/Off mode switch (uses `vim.api`) |
 | `coverage_hover.lua` | Which tests cover the line under the cursor (float, jump to a test) and the per-symbol coverage badge; the decisions are pure, the window code is not |
