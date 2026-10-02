@@ -4,7 +4,8 @@
 -- Self-contained like spec/nvim_harness.lua (no busted); exits non-zero on failure.
 
 local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])")
-local plugin_root = script_dir .. ".."
+-- absolute: several specs :cd into temp checkouts and modules load lazily
+local plugin_root = vim.fn.fnamemodify(script_dir .. "..", ":p"):gsub("[/\\]$", "")
 vim.opt.rtp:prepend(plugin_root)
 package.path = plugin_root .. "/lua/?.lua;" .. plugin_root .. "/lua/?/init.lua;" .. package.path
 

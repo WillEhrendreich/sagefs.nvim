@@ -37,6 +37,11 @@ M.config = {
   -- Override for the one-time-welcome marker file (mainly for tests).
   -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
   welcome_marker_path = nil,
+  -- One-time hint of the three most useful commands on the first F# buffer.
+  -- `hint = false` turns it off; `hint_marker_path` overrides the marker file
+  -- (defaults to stdpath("data") .. "/sagefs_hint_seen").
+  hint = true,
+  hint_marker_path = nil,
   highlight = {
     success = { fg = "#a6e3a1", italic = true },
     error = { fg = "#f38ba8", italic = true },
@@ -1711,6 +1716,9 @@ function M.setup(opts)
     end,
     render_all = function(buf)
       render.render_all(buf, M.state)
+    end,
+    first_attach = function(_buf)
+      require("sagefs.help").maybe_show_hint(M.config)
     end,
     has_results = function(buf)
       for _, c in pairs(M.state.cells) do

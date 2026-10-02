@@ -26,6 +26,13 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       end,
     },
     {
+      name = "SageFsHelp",
+      desc = "List every SageFs command and keymap, one line each",
+      handler = function()
+        require("sagefs.help").show_help(vim.api.nvim_get_current_buf())
+      end,
+    },
+    {
       name = "SageFsResult",
       desc = "Show the full result of the cell under the cursor in a float",
       handler = function()
@@ -1470,6 +1477,9 @@ function M.register_keymaps(plugin, helpers, bufnr)
   local function km(mode, lhs, rhs, desc)
     vim.keymap.set(mode, lhs, rhs, { desc = desc, silent = true, buffer = bufnr })
   end
+
+  -- One-time hint of the three most useful commands on the first F# buffer.
+  if helpers.first_attach then helpers.first_attach(bufnr) end
 
   -- Alt-Enter keymaps (no prefix, always available)
   km("n", "<A-CR>", smart_eval, "SageFs: Evaluate cell")
