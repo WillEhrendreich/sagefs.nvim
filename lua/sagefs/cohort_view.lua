@@ -3,7 +3,7 @@
 --
 -- get_cohort_status has no REST route, so the text is fetched with an MCP
 -- tools/call (mcp_client). The view shows members, claims, the landing queue and
--- the `trunk <landingId>: ...` lines, with member handles masked. It refreshes
+-- the `trunk <landingId>: ...` lines, with an older daemon's member handles masked. It refreshes
 -- when the daemon says the cohort moved (cohort_matrix, claim_changed,
 -- landing_changed, save_observed, cohortChanged) and when a reload report
 -- arrives, because a trunk line changes from "applied, new body has not run yet"

@@ -417,8 +417,9 @@ Analysis ~
     Show the daemon's cohort in a scratch buffer: members, claims, the
     landing queue, the integration session and the trunk lines. It reads
     the MCP tool `get_cohort_status`, refreshes when a cohort event or a
-    reload report arrives, and shows only the first six characters of an
-    `mcp:` member id. `q` closes the buffer, `r` refreshes it.
+    reload report arrives. A member id `mcp:m-<hex>` or `cap:<hex>` is shown
+    whole; an older daemon's `mcp:` session id is cut to six characters.
+    `q` closes the buffer, `r` refreshes it.
     See |sagefs-cohort|.
 
 ==============================================================================
@@ -781,7 +782,10 @@ The cohort and the trunk ~
 route. The trunk section shows one `trunk <landingId>: ...` line per landing
 in the same words as above. A trunk line changes from applied to patched
 with no cohort event, so the buffer also refreshes on every reload report.
-An `mcp:` member id is that agent's MCP session id, so only its first six
+A member id is `mcp:m-<16 hex>` (a connection's fingerprint), `cap:<hex>` (a
+run minted with `mint_member`, marked `(minted run)`) or, from a daemon older
+than member tokens, `mcp:` plus the agent's MCP session id. The first two are
+shown whole. The third works as a bearer handle, so only its first six
 characters are shown.
 
 ==============================================================================

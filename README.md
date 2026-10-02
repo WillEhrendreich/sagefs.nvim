@@ -383,7 +383,7 @@ The daemon reads the disk when it is asked and never pushes the answer, so the p
 
 `:SageFsCohort` opens a scratch buffer with the cohort's members, claims, landing queue, the integration session and, once an integration is configured, the trunk: one `trunk <landingId>: ...` line per landing, in the same words as above (`Program.fs applied, new body has not run yet (via metadata delta)`). There is no REST route for it, so the plugin makes an MCP `tools/call` of `get_cohort_status` ([`mcp_client.lua`](lua/sagefs/mcp_client.lua)). The view refreshes on the cohort events (`SageFsCohortMatrix`, `SageFsClaimChanged`, `SageFsLandingChanged`, `SageFsSaveObserved`, `SageFsCohortChanged`) and on every reload report, because a trunk line turns from applied to patched with no cohort event at all.
 
-A member id in the cohort is `mcp:` followed by that agent's MCP session id, which works as its bearer handle. The daemon prints it in full, so the plugin shows only the first six characters.
+A member id in the cohort is one of three forms. `mcp:m-<16 hex>` is a connection's fingerprint, a one-way hash that is no use as a credential, and `cap:<hex>` is a run minted with `mint_member` (the view adds `(minted run)` after its role). The plugin shows both whole. A daemon from before member tokens prints `mcp:` followed by the agent's MCP session id, which works as that connection's bearer handle, so for that form the plugin still shows only the first six characters. Read in [`cohort.lua`](lua/sagefs/cohort.lua), `member_kind` names the form.
 
 ### Member tokens
 
@@ -619,7 +619,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `rebuild.lua` | `lastRestart`: the statusline segment, the "started in the background" answer, and the rule for following a rebuild until it ends |
 | `source_state.lua` | `InSync` / `Stale` / `Rebuilding` / `Unknown`, the statusline segment, the panel lines, the `:SageFsStatus` line |
 | `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, `sourceState`, `lastRestart`, the next one is one `register` call) |
-| `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member-handle masking |
+| `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member kinds (`mcp:m-`, `cap:`, older `mcp:`), masking of an older daemon's handles |
 | `mcp_client.lua` | Small MCP client over the daemon's streamable HTTP transport |
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |
 | `live_bindings.lua` | Live bindings model: a pure fold over the daemon's `live_bindings` snapshots (SSE profile and click-outcome profile) |

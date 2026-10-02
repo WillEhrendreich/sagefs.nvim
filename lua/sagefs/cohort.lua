@@ -15,10 +15,12 @@
 --   Trunk: checkout=<path> landings (n):
 --     trunk <landingId>: <verdict>
 --
--- A member id is `mcp:<Mcp-Session-Id>`, which is the bearer handle of that agent's
--- MCP connection. The status prints it in full, and `%A` of a claim's state prints
--- it again. Nothing here puts a full handle in a buffer: ids are masked for display
--- and a state is reduced to its case name.
+-- A member id is one of three forms. `mcp:m-<16 hex>` is a connection's one-way
+-- fingerprint, `cap:<hex>` is a run minted with mint_member (a capability token is
+-- its own member), and an older daemon prints `mcp:<Mcp-Session-Id>`, which is the
+-- bearer handle of that agent's MCP connection. The first two are not secrets and
+-- are shown whole. The third still is one, so mask_member hides it, and `%A` of a
+-- claim's state can print it again, so a state is reduced to its case name.
 
 local reload_state = require("sagefs.reload_state")
 
@@ -29,14 +31,29 @@ local M = {}
 local ELLIPSIS = "…"
 local EM_DASH = "\226\128\148"
 
---- Mask the secret part of a member id: `mcp:` and the first six characters.
+--- What kind of member an id names: "connection" (`mcp:m-<16 hex>`), "capability"
+--- (`cap:<hex>`, a minted run), "legacy" (an older daemon's `mcp:<session id>`) or
+--- "other".
+---@param id string|nil
+---@return string
+function M.member_kind(id)
+  if type(id) ~= "string" then return "other" end
+  if id:match("^mcp:m%-%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") then return "connection" end
+  if id:match("^cap:%x+$") then return "capability" end
+  if id:match("^mcp:.") then return "legacy" end
+  return "other"
+end
+
+--- A member id for display. Fingerprints and minted ids are shown whole. An id from
+--- an older daemon is its connection's bearer handle, so only `mcp:` and the first
+--- six characters are kept.
 ---@param id string|nil
 ---@return string
 function M.mask_member(id)
   if type(id) ~= "string" then return "" end
-  local kind, rest = id:match("^(mcp:)(.+)$")
-  if kind and #rest > 6 then
-    return kind .. rest:sub(1, 6) .. ELLIPSIS
+  if M.member_kind(id) == "legacy" then
+    local rest = id:sub(5)
+    if #rest > 6 then return "mcp:" .. rest:sub(1, 6) .. ELLIPSIS end
   end
   return id
 end
@@ -170,7 +187,7 @@ end
 local function parse_member(line)
   local id, role, seat_text = line:match("^%s+%- (%S+) %[(%w+)%] (.*)$")
   if not id then return nil end
-  local m = { id = id, role = role }
+  local m = { id = id, role = role, kind = M.member_kind(id) }
   local since = seat_text:match("^departed (.*)$")
   if since then
     m.seat, m.since = "departed", since
@@ -389,7 +406,8 @@ function M.render(model)
   add(string.format("Members (%d)", model.members_total), "Title")
   for _, m in ipairs(model.members) do
     local seat = m.seat == "departed" and ("departed " .. (m.since or "")) or m.seat
-    add(string.format("  %s  %s  %s", M.mask_member(m.id), m.role, seat), m.seat == "departed" and "SageFsReloadQuiet" or nil)
+    local tail = m.kind == "capability" and "  (minted run)" or ""
+    add(string.format("  %s  %s  %s%s", M.mask_member(m.id), m.role, seat, tail), m.seat == "departed" and "SageFsReloadQuiet" or nil)
   end
   add("")
   add(string.format("Claims (%d)", model.claims_total), "Title")
@@ -422,7 +440,7 @@ function M.render(model)
 end
 
 --- A short summary of a cohort_matrix SSE frame, for when the status text cannot
---- be fetched. Ids are masked like everywhere else.
+--- be fetched. Ids are shown like everywhere else.
 ---@param data table decoded cohort_matrix payload
 ---@return string[]
 function M.matrix_summary(data)
