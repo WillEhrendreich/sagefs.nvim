@@ -42,9 +42,13 @@ function M.new(deps)
     return deps.active_session and deps.active_session() or nil
   end
 
+  -- Strict: with no active session nothing is "ours". On a shared daemon every
+  -- session's report arrives here, and a directory with no session of its own must
+  -- not announce them. The report is still folded into the model, so it shows the
+  -- moment a session is picked.
   local function is_active(sid)
     local a = active()
-    return a == nil or a.id == nil or a.id == sid
+    return a ~= nil and a.id == sid
   end
 
   local function level_for(display)
