@@ -224,11 +224,7 @@ local function case_of(v)
   return v
 end
 
-local function same_file(a, b)
-  if not a or not b then return false end
-  a, b = a:gsub("\\", "/"), b:gsub("\\", "/")
-  return a == b or a:sub(-#b) == b or b:sub(-#a) == a
-end
+local same_file = util.paths_match
 
 --- Failing tests in `file` (optionally only those on `line`), from the daemon's
 --- file annotations (a DebugTest CodeLens, or a Failed test annotation) and from

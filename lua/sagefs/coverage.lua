@@ -148,10 +148,6 @@ local function norm_path(path)
   return (path:gsub("\\", "/"))
 end
 
-local function is_relative(path)
-  return path:sub(1, 1) ~= "/" and not path:match("^%a:/")
-end
-
 --- Find a key of `map` for `file`: exact, then separator-normalized, then a
 --- relative path (a daemon path relative to the project) against the absolute
 --- buffer path that ends with it, on a whole path component. Two absolute paths
@@ -161,11 +157,7 @@ local function resolve_key(map, file)
   local key = norm_path(file)
   if map[key] ~= nil then return key end
   for candidate in pairs(map) do
-    local short, long = key, candidate
-    if #short > #long then short, long = long, short end
-    if #short < #long and is_relative(short) and long:sub(-(#short + 1)) == "/" .. short then
-      return candidate
-    end
+    if util.paths_match(key, candidate) then return candidate end
   end
   return nil
 end
