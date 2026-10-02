@@ -64,5 +64,5 @@ example `file_annotations_covering_synthetic.json` fills in `CoveringTests`,
 which were empty in every payload the daemon sent while I captured).
 
 Running one spec file: busted's CLI here takes no file argument, so point a
-config at it, e.g. `{ default = { pattern = "debug_test_spec", ROOT = {"spec/"}, helper = "spec/helper.lua" } }`
+config at it, e.g. `return { default = { pattern = "debug_test_spec", ROOT = {"spec/"}, helper = "spec/helper.lua" } }`
 with `lua run_busted.lua -f that-config.lua`.
