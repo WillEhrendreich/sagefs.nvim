@@ -138,6 +138,13 @@ local function session_matches(data)
   return testing.session_matches(data, M.active_session)
 end
 
+--- Is a lifecycle event for session `sid` about the session this editor uses
+--- (or is waiting on, right after creating one)?
+local function session_is_ours(sid)
+  local expecting = M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
+  return sessions.warmup_event_is_ours({ sessionId = sid ~= "?" and sid or nil }, M.active_session, expecting)
+end
+
 local function fire_user_event(event_type, payload)
   local evt = events.build_autocmd_data(event_type, payload)
   if evt then
@@ -334,6 +341,12 @@ local function build_handlers()
     -- 0.6 wire: { sessionFaulted = <sid>, error = <msg> }; older: session_id/reason.
     local sid = data.sessionFaulted or data.session_id or data.SessionId or "?"
     local reason = data.error or data.reason or data.Reason or "unknown"
+    -- Someone else's session faulting is not this editor's state to clear or
+    -- its message to show (the event still fires for autocmd consumers).
+    if not session_is_ours(sid) then
+      fire_user_event("session_faulted", data)
+      return
+    end
     -- Clear all session-specific state so stale results don't linger
     M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
     M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
@@ -346,6 +359,10 @@ local function build_handlers()
     local data = decode_event_data(raw)
     if not data then return end
     local sid = data.session_id or data.SessionId or "?"
+    if not session_is_ours(sid) then
+      fire_user_event("warmup_completed", data)
+      return
+    end
     local n = data.project_count or data.ProjectCount or 0
     local label = n == 1 and "1 project" or (tostring(n) .. " projects")
     if M.config.notify_warmup_completed ~= false then
