@@ -80,7 +80,7 @@ grammar, none of which are available in busted.
 The spec file includes a guard (`if not vim or not vim.opt then return end`)
 so busted skips it without errors.
 
-**Coverage:** Tree-sitter cell detection across 5 fixture files:
+**Coverage:** Tree-sitter cell detection across the fixture files in `fixtures/`:
 - `fixtures/basic_bindings.fs`: simple lets, records, DUs, match
 - `fixtures/complex_expressions.fs`: multi-arm match, async CE, seq CE
 - `fixtures/attributed_and_typed.fs`: attributes, let rec...and, interfaces
@@ -91,7 +91,7 @@ so busted skips it without errors.
 ## Fixture files
 
 Fixture files in `fixtures/` are test data. **Do not edit without updating
-`spec/treesitter_cells_spec.lua`** — tests assert specific line numbers.
+`spec/treesitter_cells_spec.lua`** - tests assert specific line numbers.
 
 ## Known gaps
 

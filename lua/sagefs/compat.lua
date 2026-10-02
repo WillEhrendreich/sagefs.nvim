@@ -1,4 +1,4 @@
--- sagefs/compat.lua — Does this plugin speak the daemon's wire contract?
+-- sagefs/compat.lua: Does this plugin speak the daemon's wire contract?
 -- Pure Lua, no vim dependency.
 --
 -- Two different questions, deliberately kept apart:

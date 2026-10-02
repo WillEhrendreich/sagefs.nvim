@@ -1,4 +1,4 @@
--- sagefs/spawn.lua — The one place the plugin starts external processes.
+-- sagefs/spawn.lua: The one place the plugin starts external processes.
 -- vim.fn.jobstart raises E475 when the binary is missing, which used to
 -- surface as a raw Lua traceback. jobstart here returns (job_id) or
 -- (nil, message) and never raises, and the messages say what to do.

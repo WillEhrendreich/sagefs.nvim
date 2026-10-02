@@ -1,4 +1,4 @@
--- sagefs/fileio.lua — The one place the plugin writes files.
+-- sagefs/fileio.lua: The one place the plugin writes files.
 -- Makes the parent directory first and turns every failure into a message,
 -- so a missing or unwritable directory (a fresh machine's stdpath("data"),
 -- a read-only home) can never raise out of setup() or a command.
