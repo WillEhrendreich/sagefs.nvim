@@ -145,6 +145,19 @@ local function session_is_ours(sid)
   return sessions.warmup_event_is_ours({ sessionId = sid ~= "?" and sid or nil }, M.active_session, expecting)
 end
 
+--- Our session is up: drop the warmup text (the statusline returns early while
+--- a phase is set, so "Ready!" stuck forever) and re-read the session list, so
+--- the session label stops saying "(Starting)".
+local function clear_warmup_state()
+  M.warmup_phase = nil
+  M.warmup_step = 0
+  M.warmup_total = 0
+  M.warmup_message = ""
+  M.warmup_progress = 0
+  M.warmup_expected_until = nil
+  vim.schedule(function() M.list_sessions() end)
+end
+
 local function fire_user_event(event_type, payload)
   local evt = events.build_autocmd_data(event_type, payload)
   if evt then
@@ -363,22 +376,21 @@ local function build_handlers()
       fire_user_event("warmup_completed", data)
       return
     end
-    -- Our session is up: drop the warmup text (the statusline returns early
-    -- while a phase is set, so "Ready!" stuck forever) and re-read the session
-    -- list, so the session label stops saying "(Starting)".
-    M.warmup_phase = nil
-    M.warmup_step = 0
-    M.warmup_total = 0
-    M.warmup_message = ""
-    M.warmup_progress = 0
-    M.warmup_expected_until = nil
-    vim.schedule(function() M.list_sessions() end)
+    clear_warmup_state()
     local n = data.project_count or data.ProjectCount or 0
     local label = n == 1 and "1 project" or (tostring(n) .. " projects")
     if M.config.notify_warmup_completed ~= false then
       notify(string.format("Session ready [%s] — %s loaded", sid, label))
     end
     fire_user_event("warmup_completed", data)
+  end
+
+  -- Daemon 0.6 announces readiness as a state event ({ sessionReady = <sid> }).
+  handlers.session_ready = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local sid = data.sessionReady or data.sessionId or "?"
+    if session_is_ours(sid) then clear_warmup_state() end
   end
 
   -- Phase 7C: FileReloaded — silent state update (no notify), fire autocmd
