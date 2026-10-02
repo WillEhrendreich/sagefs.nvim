@@ -990,6 +990,135 @@ describe("an eval from a directory outside the routed session's", function()
   end)
 end)
 
+-- ─── Source state: a green test over a stale build is not green ──────────────
+-- /api/sessions carries sourceState (SourceState.toWire): InSync, Stale with the
+-- files, Rebuilding, Unknown. The 0.6.875 daemon does not send it yet.
+
+describe("source state on the statusline and in :SageFsStatus", function()
+  local STALE = { state = "Stale", message = "STALE SOURCE: 1 file(s) changed",
+    changedFiles = { { path = "/w/App/App.fs", because = "EditedAfterBuild", detail = "/w/App/App.fs (edited 08:05, the build is from 08:00)" } } }
+
+  local function with_list(source_state, body)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local entry = { id = "src00001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+      replFreshness = { state = "InSync" } }
+    entry.sourceState = source_state
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        opts.callback(true, vim.json.encode({ sessions = { entry } }))
+      end
+    end
+    sagefs.warmup_phase = nil
+    sagefs.active_session = { id = "src00001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    local done = false
+    sagefs.list_sessions(function() done = true end)
+    vim.wait(500, function() return done end, 10)
+    local ok, err = pcall(body, sagefs)
+    transport.http_json = original_http
+    if not ok then error(err, 0) end
+  end
+
+  it("a stale build says STALE SOURCE in the statusline", function()
+    with_list(STALE, function(sagefs)
+      local line = sagefs.statusline()
+      ok_(line:find("(Ready)", 1, true), "the session still reads Ready: " .. line)
+      ok_(line:find("⚠ STALE SOURCE (1 file)", 1, true), "the statusline says the source is stale: " .. line)
+    end)
+  end)
+
+  it("a rebuild in progress says so, and a current build adds nothing", function()
+    with_list({ state = "Rebuilding", since = "2026-10-02T08:10:00Z", message = "A rebuild is in progress" }, function(sagefs)
+      ok_(sagefs.statusline():find("⟳ rebuilding", 1, true), sagefs.statusline())
+    end)
+    with_list({ state = "InSync", filesChecked = 3, message = "ok" }, function(sagefs)
+      local line = sagefs.statusline()
+      ok_(not line:find("STALE", 1, true) and not line:find("rebuilding", 1, true), line)
+    end)
+  end)
+
+  it("a daemon that sends no sourceState adds nothing to the statusline", function()
+    with_list(nil, function(sagefs)
+      local line = sagefs.statusline()
+      ok_(line:find("(Ready)", 1, true), line)
+      ok_(not line:lower():find("source", 1, true), "nothing about the source: " .. line)
+    end)
+  end)
+
+  it(":SageFsStatus names the stale build and the files", function()
+    with_list(STALE, function(sagefs)
+      local original_check = sagefs.health_check
+      sagefs.health_check = function(cb) cb(true) end
+      vim.cmd("SageFsStatus")
+      sagefs.health_check = original_check
+      local text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+      pcall(vim.cmd, "close")
+      ok_(text:find("Source:    STALE: 1 file changed on disk after the build", 1, true), text)
+    end)
+  end)
+
+  it("a save of an F# file re-reads the session list, because that is when the disk moves ahead of the build", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local lists = 0
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        lists = lists + 1
+        opts.callback(true, vim.json.encode({ sessions = { {
+          id = "src00001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(), sourceState = STALE,
+        } } }))
+      end
+    end
+    sagefs.active_session = { id = "src00001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_name(buf, vim.fn.getcwd() .. "/src_state_probe_" .. buf .. ".fs")
+    vim.wait(400, function() return false end, 10) -- let any pending refresh from an earlier case finish
+    lists = 0
+    for _ = 1, 3 do vim.api.nvim_exec_autocmds("BufWritePost", { buffer = buf }) end
+    vim.wait(800, function() return lists > 0 end, 10)
+    vim.wait(300, function() return false end, 10)
+    transport.http_json = original_http
+    eq(1, lists, "three quick saves share one session list read")
+    ok_(sagefs.statusline():find("STALE SOURCE", 1, true), "and the statusline now says it: " .. sagefs.statusline())
+  end)
+
+  it("a finished test run re-reads the session list, so a green run over a stale build is marked", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local original_connect = transport.connect_sse
+    local lists = 0
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        lists = lists + 1
+        opts.callback(true, vim.json.encode({ sessions = { {
+          id = "src00001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(), sourceState = STALE,
+        } } }))
+      end
+    end
+    local captured
+    transport.connect_sse = function(_url, opts)
+      captured = opts.on_events
+      return { start = function() end, stop = function() end }
+    end
+    sagefs.active_session = { id = "src00001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.start_sse()
+    vim.wait(400, function() return false end, 10)
+    lists = 0
+    captured({ { type = "test_run_completed", data = vim.json.encode({ SessionId = "src00001", Generation = 1 }) } })
+    vim.wait(800, function() return lists > 0 end, 10)
+    transport.http_json = original_http
+    transport.connect_sse = original_connect
+    ok_(lists >= 1, "the session list was read after the run completed")
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

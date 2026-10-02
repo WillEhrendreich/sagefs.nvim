@@ -202,6 +202,27 @@ describe("wire_runtime.report_lines (the :SageFsReloadStatus panel)", function()
     assert.truthy(joined:find("REPL is BEHIND the app", 1, true))
   end)
 
+  it("says the build is behind the files on disk, naming a file and the remedy", function()
+    local S = require("sagefs.source_state")
+    local h = harness({ active = {
+      id = "adfd6b6b",
+      source_state = S.parse({ state = "Stale", changedFiles = { { path = "/w/A.fs", because = "EditedAfterBuild", detail = "/w/A.fs (edited)" } } }),
+    } })
+    local text = {}
+    for _, l in ipairs(h.rt.report_lines()) do table.insert(text, l.text) end
+    local joined = table.concat(text, "\n")
+    assert.truthy(joined:find("STALE SOURCE", 1, true))
+    assert.truthy(joined:find("/w/A.fs (edited)", 1, true))
+    assert.truthy(joined:find(":SageFsHardReset", 1, true))
+  end)
+
+  it("adds no source line for a daemon that does not send sourceState", function()
+    local h = harness({ active = { id = "z" } })
+    for _, l in ipairs(h.rt.report_lines()) do
+      assert.is_nil(l.text:find("ource", 1, true))
+    end
+  end)
+
   it("says there is nothing yet when nothing has been reported", function()
     local h = harness({ active = { id = "z" } })
     local lines = h.rt.report_lines()

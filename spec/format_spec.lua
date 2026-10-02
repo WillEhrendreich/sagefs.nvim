@@ -339,6 +339,29 @@ describe("format_status_report: where an eval goes", function()
   end)
 end)
 
+describe("format_status_report: the build and the REPL", function()
+  local S = require("sagefs.source_state")
+  local function report(session)
+    return table.concat(format.format_status_report({ active_session = session, config = { port = 37749 } }), "\n")
+  end
+
+  it("says a stale build in the words of the statusline, so a green test is not trusted blindly", function()
+    local joined = report({ id = "x", source_state = S.parse({ state = "Stale", changedFiles = { { path = "/a.fs" }, { path = "/b.fs" } } }) })
+    assert.is_truthy(joined:find("Source:    STALE: 2 files changed on disk after the build", 1, true))
+  end)
+
+  it("says the REPL is behind the app when the daemon said so", function()
+    local joined = report({ id = "x", repl_freshness = { state = "BehindApp", known = true, saves_since = 2, declarations = {} } })
+    assert.is_truthy(joined:find("REPL:      BEHIND the app (2 saves)", 1, true))
+  end)
+
+  it("adds neither line for a daemon that sends neither field", function()
+    local joined = report({ id = "x" })
+    assert.is_falsy(joined:find("Source:", 1, true))
+    assert.is_falsy(joined:find("REPL:", 1, true))
+  end)
+end)
+
 describe("format_status_report", function()
   local testing = require("sagefs.testing")
   local coverage = require("sagefs.coverage")
