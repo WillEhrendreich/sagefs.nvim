@@ -54,6 +54,8 @@ local CONFIGURED_GRACE_MS = 1500
 -- that cannot start (missing binary) never creates one and fires no event, so
 -- without this check the hold would sit until the two minute backstop.
 M.SESSION_START_GRACE_MS = 5000
+-- A continue that fails to reach the daemon is tried once more after this pause.
+M.CONTINUE_RETRY_MS = 1000
 
 -- ─── Pure: adapter discovery ─────────────────────────────────────────────────
 
@@ -382,10 +384,18 @@ local function new_run(deps)
     })
   end
 
+  local retried = false
+
   local function poll()
     ask_continue(function(ok, raw)
       if state == "finished" then return end
       local answer = M.parse_answer(ok, raw)
+      if answer.status == "transport_error" and not retried then
+        retried = true
+        table.insert(cancels, deps.defer(M.CONTINUE_RETRY_MS, poll))
+        return
+      end
+      retried = false
       local kind = M.classify_continue(answer)
       if kind == "still_running" then
         if debug_ended then
@@ -397,6 +407,10 @@ local function new_run(deps)
         return
       end
       local text, level = M.format_final(answer, held and held.testName)
+      if answer.status == "transport_error" then
+        text = text .. string.format(" The test may stay held on the daemon for up to %d seconds.",
+          math.floor(((held and held.holdMs) or 120000) / 1000))
+      end
       notify(text, level)
       detach()
       finish()
