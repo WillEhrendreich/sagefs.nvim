@@ -25,6 +25,20 @@ describe("mcp_client request bodies", function()
     assert.is_nil(b.id)
   end)
 
+  it("sends empty arguments as a JSON object, not an array (Lua cannot tell {} from [])", function()
+    -- Found live: `arguments = {}` went out as `[]` and the daemon answered "An error occurred."
+    local original = vim.empty_dict
+    local marker = setmetatable({}, { __tag = "empty_dict" })
+    vim.empty_dict = function() return marker end
+    local ok, err = pcall(function()
+      assert.are.equal(marker, mcp.call_body(1, "get_cohort_status", {}).params.arguments)
+      assert.are.equal(marker, mcp.call_body(1, "get_cohort_status", nil).params.arguments)
+      assert.are.same({ a = 1 }, mcp.call_body(1, "x", { a = 1 }).params.arguments)
+    end)
+    vim.empty_dict = original
+    assert(ok, err)
+  end)
+
   it("tools/call carries the tool name and arguments", function()
     local b = mcp.call_body(7, "get_cohort_status", {})
     assert.are.equal("tools/call", b.method)
