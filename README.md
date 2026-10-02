@@ -413,7 +413,7 @@ opts = {
 
 ### Inline Results
 
-After you evaluate with `<Alt-Enter>`, the result is on screen. I used to draw every result on the cell's last line. In a cell taller than the window that line is off screen, so the result existed and you could not see it. Now each result hangs off a line of the cell that is visible ([`placement.lua`](lua/sagefs/placement.lua) decides which, as a pure function, and the property that the result lands inside the window is checked against 8000 generated windows in [`spec/placement_spec.lua`](spec/placement_spec.lua)):
+After you evaluate with `<Alt-Enter>`, the result is on screen. I used to draw every result on the cell's last line. In a cell taller than the window that line is off screen, so the result existed and you could not see it. Now each result hangs off a line of the cell that is visible ([`placement.lua`](lua/sagefs/placement.lua) decides which, as a pure function, and the property that the result lands inside the window is checked as a property over generated windows in [`spec/placement_spec.lua`](spec/placement_spec.lua)):
 
 - A one-line result is ghost text at the end of the line, and nothing else.
 - A longer result goes under the cell's last line when that line is on screen and has room. When the cell is taller than the window, it goes under the line you evaluated from.
@@ -595,6 +595,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member-handle masking |
 | `mcp_client.lua` | Small MCP client over the daemon's streamable HTTP transport |
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |
+| `live_bindings.lua` | Live bindings model: a pure fold over the daemon's `live_bindings` snapshots (SSE profile and click-outcome profile) |
 | `app_run.lua` | Run/stop the session's application: request building, `AppStateView` parsing, notify/statusline formatting |
 | `annotations.lua` | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | Display density presets (minimal/normal/full), layer visibility control |
@@ -620,6 +621,11 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `cohort_view.lua` | `:SageFsCohort`: the cohort and the trunk in a scratch buffer, refreshed on cohort events |
 | `reload_ui.lua` | Highlight groups and the virtual-text mark on the saved file for the hot reload verdict |
 | `wire_commands.lua` | `:SageFsReloadStatus` and `:SageFsCohort` registration |
+| `wire_testing.lua` | Registry that wires the debug-test, live bindings and coverage hover features into `commands.lua` and `init.lua` with one line each |
+| `bindings_view.lua` | `:SageFsBindings`: the live bindings tree in a split, with click-to-run on a getter and the Safe/Everything/Off mode switch (uses `vim.api`) |
+| `coverage_hover.lua` | Which tests cover the line under the cursor (float, jump to a test) and the per-symbol coverage badge; the decisions are pure, the window code is not |
+| `debug_test.lua` | Debug a failing test through nvim-dap: hold the test on the daemon, attach, release; the lifecycle that never leaks a hold |
+| `debug_test_ui.lua` | `:SageFsDebugTest`, the quiet "debug" hint on a failing-test line, and the keymap |
 | `init.lua` | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | Extmarks, test/coverage gutter signs, floating windows |
