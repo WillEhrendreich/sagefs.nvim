@@ -11,9 +11,11 @@ local M = {}
 --- Default cap on result rows drawn under a cell before the footer takes over.
 M.DEFAULT_MAX_LINES = 12
 
---- The fewest rows worth anchoring a result on when more would not fit:
---- two lines of output plus the footer.
-M.MIN_ROWS = 3
+--- The fewest rows worth anchoring a result on: four lines of output and the
+--- footer. A line with at least this much room beneath it keeps the result
+--- (truncated, with the footer); moving up into the cell to find more room
+--- splits the code, so it only happens when there is less than this.
+M.MIN_ROWS = 5
 
 ---@class sagefs.PlacementInput
 ---@field cell_start number  1-indexed first line of the cell
@@ -82,16 +84,14 @@ function M.place(a)
     preferred = hi
   end
 
-  -- Walk up from the preferred line to the first one with room for everything;
-  -- failing that, the first with room for the minimum; failing that, the top
-  -- of the cell's visible part (the most room there is).
-  local line, fallback
+  -- Keep the preferred line when it has room for the minimum (the result is
+  -- then truncated to fit, with the footer). Otherwise walk up the cell to
+  -- the first line that has; failing that, the top of the cell's visible part
+  -- (the most room there is).
+  local line = lo
   for l = preferred, lo, -1 do
-    local room = avail(l)
-    if room >= full_rows then line = l; break end
-    if not fallback and room >= min_rows then fallback = l end
+    if avail(l) >= min_rows then line = l; break end
   end
-  line = line or fallback or lo
 
   local room = avail(line)
   local shown, footer
