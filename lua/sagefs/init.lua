@@ -128,7 +128,10 @@ local function decode_event_data(raw)
   local json_str = type(raw) == "string" and raw or (raw and raw.data)
   if not json_str then return nil end
   local ok, data = pcall(vim.json.decode, json_str)
-  return ok and data or nil
+  -- Every handler reads fields off the payload: a JSON null (vim.NIL), number
+  -- or string is not one, so it is no event.
+  if not ok or type(data) ~= "table" then return nil end
+  return data
 end
 
 --- Three-way session filter (Wlaschin pattern):
@@ -394,9 +397,13 @@ local function build_handlers()
     local sid = data.sessionFaulted or data.session_id or data.SessionId or "?"
     local reason = data.error or data.reason or data.Reason or "unknown"
     fold_session_update(data)
-    -- Clear all session-specific state so stale results don't linger
-    M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
-    M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    -- Clear the active session's state so stale results don't linger, but only
+    -- when the fault is the active session's (or says nothing about whose it is).
+    local faulted_id = data.sessionFaulted or data.session_id or data.SessionId
+    if faulted_id == nil or not M.active_session or M.active_session.id == faulted_id then
+      M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
+      M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    end
     notify(string.format("Session faulted [%s]: %s", sid, reason), vim.log.levels.ERROR)
     fire_user_event("session_faulted", data)
   end
