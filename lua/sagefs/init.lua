@@ -38,6 +38,9 @@ M.config = {
   -- The sagefs binary :SageFsStart spawns. A bare name is looked up on PATH;
   -- set a full path when sagefs is installed somewhere PATH does not see.
   sagefs_path = "sagefs",
+  -- Daemon lifecycle events that ask for a fresh /api/sessions answer (a
+  -- session turning Ready) are coalesced: at most one GET per this many ms.
+  session_refresh_debounce_ms = 250,
   -- Override for the one-time-welcome marker file (mainly for tests).
   -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
   welcome_marker_path = nil,
@@ -200,12 +203,32 @@ local TARGET_MAP = {
   annotations = { key = "annotations_state", mod = function() return annotations end },
 }
 
+M.session_event_seq = 0
+M.session_event_stamp = {}
+
+local session_refresh_pending = false
+
+--- Ask for the authoritative /api/sessions answer soon. A burst of requests
+--- inside one window shares a single GET.
+local function refresh_sessions_soon()
+  if session_refresh_pending then return end
+  session_refresh_pending = true
+  vim.defer_fn(function()
+    session_refresh_pending = false
+    M.list_sessions()
+  end, M.config.session_refresh_debounce_ms or 250)
+end
+
 --- Fold a session lifecycle announcement (sessions.lifecycle_update) into
 --- the session list and the active session. Returns whether the session was
 --- known, plus its id.
 local function fold_session_update(data)
   local sid, fields = sessions.lifecycle_update(data)
   if not sid then return false, nil end
+  -- Remember when this session last changed by event, so an older
+  -- /api/sessions answer cannot undo it (see M.list_sessions).
+  M.session_event_seq = M.session_event_seq + 1
+  M.session_event_stamp[sid] = M.session_event_seq
   local found
   M.session_list, M.active_session, found = sessions.apply_update(M.session_list, M.active_session, sid, fields)
   return found, sid
@@ -275,13 +298,12 @@ local function build_handlers()
   handlers.session_ready = function(raw)
     local data = decode_event_data(raw)
     if not data then return end
-    local found, sid = fold_session_update(data)
+    local _, sid = fold_session_update(data)
     if not sid then return end
-    if not found then
-      -- Ready arrived before the session list knew this session (the list
-      -- request after create is still in flight): fetch it.
-      M.list_sessions()
-    end
+    -- The daemon also sends Ready as a plain "state changed" signal right
+    -- before a fault, and may announce a session the list does not know yet:
+    -- the folded status is a best guess, the list is the authority.
+    refresh_sessions_soon()
     if not M.active_session or M.active_session.id == sid then
       clear_warmup_state()
     end
@@ -962,9 +984,16 @@ end
 -- ─── Session API ──────────────────────────────────────────────────────────────
 
 function M.list_sessions(callback)
+  local requested_at = M.session_event_seq
   session_http("GET", "/api/sessions", nil, function(ok, raw)
     local result = sessions.parse_sessions_response(ok and raw or nil)
     if result.ok then
+      -- Events folded in since the request went out are newer than this answer.
+      local newer = {}
+      for sid, stamp in pairs(M.session_event_stamp) do
+        if stamp > requested_at then newer[sid] = true end
+      end
+      result.sessions = sessions.keep_newer(result.sessions, M.session_list, newer)
       M.session_list = result.sessions
       local active_id = M.active_session and M.active_session.id or nil
       M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())

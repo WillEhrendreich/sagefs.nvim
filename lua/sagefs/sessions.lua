@@ -192,6 +192,10 @@ function M.apply_update(session_list, active_session, sid, fields)
     local copy = {}
     for k, v in pairs(s) do copy[k] = v end
     for k, v in pairs(fields) do copy[k] = v end
+    -- A fault reason only means something while the session is Faulted.
+    if fields.status ~= nil and fields.status ~= "Faulted" and fields.fault_reason == nil then
+      copy.fault_reason = nil
+    end
     return copy
   end
 
@@ -213,6 +217,36 @@ function M.apply_update(session_list, active_session, sid, fields)
   end
 
   return new_list, new_active, found
+end
+
+--- The parts of a session that lifecycle events own.
+local LIVE_FIELDS = { "status", "fault_reason", "health" }
+
+--- Merge a /api/sessions answer with live state. `newer` is the set of
+--- session ids (id -> true) that had a lifecycle event folded in AFTER the
+--- request for `snapshot` was sent: the answer predates that event, so for
+--- those sessions the live status, fault_reason and health in `current` win
+--- and everything else comes from the snapshot. Pure: no input is mutated.
+---@param snapshot table[] the parsed /api/sessions answer
+---@param current table[]|nil the session list as it is now
+---@param newer table<string, boolean>|nil
+---@return table[]
+function M.keep_newer(snapshot, current, newer)
+  local live = {}
+  for _, s in ipairs(current or {}) do live[s.id] = s end
+  local merged = {}
+  for i, s in ipairs(snapshot) do
+    local cur = newer and newer[s.id] and live[s.id]
+    if cur then
+      local copy = {}
+      for k, v in pairs(s) do copy[k] = v end
+      for _, k in ipairs(LIVE_FIELDS) do copy[k] = cur[k] end
+      merged[i] = copy
+    else
+      merged[i] = s
+    end
+  end
+  return merged
 end
 
 --- Read a session lifecycle announcement. Returns the session id and the
