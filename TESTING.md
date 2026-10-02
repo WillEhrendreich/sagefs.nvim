@@ -38,7 +38,8 @@ failure above, and `spec/busted_config_spec.lua` guards against it.
 
 The specs run on Lua 5.1 (what the workflow installs), 5.4, 5.5 and LuaJIT. That
 means no `file:read("a")` or `("l")` (use `"*a"` and `"*l"`), no `//`, no
-`goto`, and no assigning to a loop variable (5.5 makes those constants). To
+`goto`, no `\u{XXXX}` string escape (write the character; `spec/lua51_source_spec.lua`
+checks), and no assigning to a loop variable (5.5 makes those constants). To
 check another interpreter, run busted with that Lua and its LuaRocks tree, for
 example `eval "$(luarocks --lua-version 5.1 path)"; lua5.1 ~/.luarocks/lib/luarocks/rocks-5.1/busted/*/bin/busted`.
 

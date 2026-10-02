@@ -78,7 +78,7 @@ See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full deta
 
 ## Plugin Status
 
-This plugin provides the Neovim integration layer: 53 user commands on top of a pure-Lua core that busted tests outside Neovim, plus a thin layer that a headless-Neovim harness tests. How to run both is under [Running Tests](#running-tests). I keep test and module counts out of this README because they go stale with every release; each runner prints its own summary line, and that is where the current numbers live.
+This plugin provides the Neovim integration layer: a command for each thing it does, on top of a pure-Lua core that busted tests outside Neovim, plus a thin layer that a headless-Neovim harness tests. How to run both is under [Running Tests](#running-tests). I keep test and module counts out of this README because they go stale with every release; each runner prints its own summary line, and that is where the current numbers live.
 
 ### New in Latest
 
@@ -136,7 +136,7 @@ This plugin provides the Neovim integration layer: 53 user commands on top of a 
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | 44 event types fired via `User` autocmds for scripting integration. |
+| **User autocmd events** | Every daemon event fired via `User` autocmds for scripting integration. |
 | **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon │ hot reload │ REPL freshness. The session status follows the daemon's own announcements (`sessionReady`, `sessionFaulted`, session health), and the plugin re-reads the session list on every (re)connect, so `(Starting)` turns into `(Ready)` when the daemon says so. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
@@ -518,7 +518,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `type_explorer_cache.lua` | In-memory cache for type explorer data, invalidated on hard reset |
 | `history.lua` | FSI event history formatting for picker and preview |
 | `export.lua` | Session export to .fsx format |
-| `events.lua` | User autocmd event definitions (44 event types) |
+| `events.lua` | User autocmd event definitions (the catalog of event names) |
 | `completions.lua` | Omnifunc completion parsing and formatting |
 | `util.lua` | Shared utilities (json_decode) |
 | `hotreload_model.lua` | Pure hot reload URL builder, state, picker formatting |
@@ -561,7 +561,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `init.lua` | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | Extmarks, test/coverage gutter signs, floating windows |
-| `commands.lua` | All 53 commands, keymaps, autocmds |
+| `commands.lua` | The commands, keymaps and autocmds |
 | `hotreload.lua` | Hot reload file toggle API |
 | **Dashboard** | |
 | `dashboard/init.lua` | Floating dashboard (SageFsDashboard) |
@@ -687,7 +687,7 @@ vim.api.nvim_create_autocmd("User", {
 | `SageFsCohortChanged` | The cohort changed (someone joined, left, claimed, released or landed) | none |
 | `SageFsCoverageView` | Coverage view event | coverage view payload |
 
-The full catalog (44 event types) is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
+The full catalog is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
 
 ## SageFs MCP Tools Reference
 

@@ -41,9 +41,9 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 Architecture: pure Lua modules with zero vim API dependencies (fully
 testable under busted), plus an integration layer in init.lua that wires
 pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
-1712 tests passing (1602 busted + 110 headless-Neovim integration, latest
-run; 3 busted failures are pre-existing and platform-specific); 55 user
-commands registered.
+The runners print their own counts (see TESTING.md); I keep numbers out of
+this file because they go stale with every release. |:SageFsHelp| lists the
+commands that are registered right now.
 
 ==============================================================================
 2. QUICKSTART                                            *sagefs-quickstart*
