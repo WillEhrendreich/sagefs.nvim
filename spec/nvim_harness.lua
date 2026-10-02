@@ -2274,7 +2274,8 @@ describe("skipped tests over SSE", function()
     vim.cmd("SageFsTestPanel")
     local text
     vim.wait(500, function()
-      text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+      local panel = vim.fn.bufnr("sagefs://tests")
+      text = panel > 0 and table.concat(vim.api.nvim_buf_get_lines(panel, 0, -1, false), "\n") or ""
       return text:find("a pending test", 1, true) ~= nil
     end, 10)
     pcall(vim.cmd, "SageFsTestPanel")

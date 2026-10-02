@@ -160,6 +160,8 @@ function M.update_test(state, entry)
     category = entry.category or "Unit",
     policy = entry.currentPolicy or "OnEveryChange",
     status = entry.status or "Detected",
+    -- Why the daemon skipped it ("pending (ptest)", "not focused"); only while Skipped.
+    skip_reason = entry.status == "Skipped" and entry.skipReason or nil,
     output = nil,
   }
 
@@ -190,6 +192,7 @@ function M.update_result(state, testId, status, output)
   local existing = state.tests[testId]
   if existing then
     existing.status = status
+    existing.skip_reason = nil -- this legacy shape carries no reason
     existing.output = output
   else
     -- Test appeared without discovery — create a minimal entry
@@ -236,8 +239,18 @@ end
 --- Also unwraps F# DU values (e.g. Status = {Case="Stale"} → status = "Stale")
 ---@param entry table
 ---@return table normalized entry
+--- The reason the daemon gave for a Skipped status ({Case="Skipped", Fields={reason}}),
+--- read before the status is unwrapped to its case name. nil when there is none.
+local function skip_reason_of(status)
+  if type(status) ~= "table" or status.Case ~= "Skipped" or type(status.Fields) ~= "table" then return nil end
+  local reason = status.Fields[1]
+  if type(reason) == "string" and reason ~= "" then return reason end
+  return nil
+end
+
 function M.normalize_entry(entry)
   if not entry then return entry end
+  local skip_reason = skip_reason_of(entry.status) or skip_reason_of(entry.Status)
   -- Fields that are F# DUs and need unwrapping
   local du_fields = { "status", "category", "currentPolicy", "previousStatus",
                       "Status", "Category", "CurrentPolicy", "PreviousStatus" }
@@ -248,6 +261,7 @@ function M.normalize_entry(entry)
         entry[f] = unwrap_du(entry[f])
       end
     end
+    entry.skipReason = skip_reason
     return entry
   end
   local out = {}
@@ -265,6 +279,7 @@ function M.normalize_entry(entry)
       out[f] = unwrap_du(out[f])
     end
   end
+  out.skipReason = skip_reason
   return out
 end
 
@@ -1002,6 +1017,17 @@ local STATUS_ICON = {
   Stale = "~", Detected = "◦", Skipped = "⊘", PolicyDisabled = "⊘",
 }
 
+--- The text after a test's name: why the daemon skipped it, when it said.
+---@param status string
+---@param reason string|nil
+---@return string
+local function skip_suffix(status, reason)
+  if status == "Skipped" and type(reason) == "string" and reason ~= "" then
+    return string.format(" (skipped: %s)", reason)
+  end
+  return ""
+end
+
 --- Format all tests as a flat list of display strings
 ---@param state table
 ---@return string[]
@@ -1013,6 +1039,7 @@ function M.format_test_list(state)
       displayName = test.displayName or id,
       status = test.status or "Detected",
       file = test.file,
+      skip_reason = test.skip_reason,
     })
   end
   table.sort(entries, function(a, b)
@@ -1024,7 +1051,7 @@ function M.format_test_list(state)
   local lines = {}
   for _, e in ipairs(entries) do
     local icon = STATUS_ICON[e.status] or "?"
-    table.insert(lines, string.format("%s %s", icon, e.displayName))
+    table.insert(lines, string.format("%s %s%s", icon, e.displayName, skip_suffix(e.status, e.skip_reason)))
   end
   return lines
 end
@@ -1247,6 +1274,7 @@ function M.format_panel_entries(state)
       status = test.status or "Detected",
       file = test.file,
       line = test.line,
+      skip_reason = test.skip_reason,
     })
   end
   table.sort(raw, function(a, b)
@@ -1265,7 +1293,7 @@ function M.format_panel_entries(state)
   for _, e in ipairs(raw) do
     local icon = STATUS_ICON[e.status] or "?"
     table.insert(entries, {
-      text = string.format("%s %s", icon, e.displayName),
+      text = string.format("%s %s%s", icon, e.displayName, skip_suffix(e.status, e.skip_reason)),
       file = e.file,
       line = e.line,
     })
@@ -1433,7 +1461,7 @@ function M.format_scoped_panel_entries(state, scope, annotations_state)
   for _, t in ipairs(filtered) do
     local icon = STATUS_ICON[t.status] or "?"
     table.insert(entries, {
-      text = string.format("%s %s", icon, t.displayName or t.testId),
+      text = string.format("%s %s%s", icon, t.displayName or t.testId, skip_suffix(t.status, t.skip_reason)),
       file = t.file,
       line = t.line,
     })

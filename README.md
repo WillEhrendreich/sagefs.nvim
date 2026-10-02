@@ -124,7 +124,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Live diagnostics** | F# errors/warnings streamed via SSE into `vim.diagnostic`. |
 | **Check on save** | `BufWritePost` sends `.fsx` file content for type-checking (LSP already covers `.fs`). Diagnostics arrive via SSE. Behind `check_on_save` config flag. |
 | **Live test gutter signs** | Pass/fail/running/stale signs per test in the sign column. |
-| **Live test panel** | `:SageFsTestPanel` → persistent split with test results, `<CR>` to jump to source. |
+| **Live test panel** | `:SageFsTestPanel` → persistent split with test results, `<CR>` to jump to source. A skipped test says why: `⊘ name (skipped: pending (ptest))`, or `not focused` for every test an `ftest` pushed aside. |
 | **Tests for current file** | `:SageFsTestsHere` → floating window with tests for the file you're editing. |
 | **Run tests** | `:SageFsRunTests [pattern]` → trigger test execution with optional filter. |
 | **Test policy controls** | `:SageFsTestPolicy` → drill-down `vim.ui.select` for category+policy. |
