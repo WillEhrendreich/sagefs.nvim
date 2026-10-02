@@ -85,8 +85,9 @@ function M.format_inline(result)
     -- Take first line only for inline display
     local first_line = text:match("^([^\n]*)")
     if first_line then text = first_line end
-    -- Indicate more lines exist
-    if (result.output or ""):find("\n") then
+    -- Indicate more lines exist (trailing newlines are not more lines: the
+    -- daemon ends its output with blank ones)
+    if (result.output or ""):gsub("[\r\n]+$", ""):find("\n") then
       text = text .. " …"
     end
   else
