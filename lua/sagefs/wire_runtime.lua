@@ -95,8 +95,10 @@ function M.new(deps)
       elseif display and not display.attention then
         last_note[sid] = nil
       end
-      -- The REPL's freshness is the daemon's word on the session list.
-      if deps.refresh_sessions then deps.refresh_sessions() end
+      -- The REPL's freshness is the daemon's word on the session list. It cannot have
+      -- changed while a save is still compiling, so only a resolved report asks.
+      local compiling = report and report.phase == reload_state.PHASE.Compiling
+      if deps.refresh_sessions and not compiling then deps.refresh_sessions() end
     end
     if deps.redraw then deps.redraw() end
   end
