@@ -146,6 +146,13 @@ local function make_env(script, dap_opts, extra)
       end
     end,
     defer = function(ms, fn)
+      -- A zero delay is "next tick". By default it runs at once, so specs that
+      -- fire a debugger event see the release immediately; extra.manual_ticks
+      -- keeps it pending until env.fire_ticks().
+      if ms == 0 and not extra.manual_ticks then
+        fn()
+        return function() end
+      end
       local timer = { ms = ms, fn = fn, cancelled = false }
       table.insert(env.timers, timer)
       return function() timer.cancelled = true end
@@ -168,6 +175,14 @@ local function make_env(script, dap_opts, extra)
     local n = 0
     for _, c in ipairs(env.calls) do if c.route == "continue" then n = n + 1 end end
     return n
+  end
+  function env.fire_ticks()
+    for _, t in ipairs(env.timers) do
+      if t.ms == 0 and not t.cancelled then
+        t.cancelled = true
+        t.fn()
+      end
+    end
   end
   function env.fire_timers(min_ms)
     for _, t in ipairs(env.timers) do
@@ -867,6 +882,37 @@ describe("debug_test.start, a debugger that never comes up or goes away early", 
     dt.start(env.deps, { test_id = "X" })
     env.dap.end_session()
     assert.are.equal(0, env.dap.listener_count())
+  end)
+end)
+
+describe("debug_test.start, Neovim quitting right behind the debugger closing", function()
+  -- nvim-dap closes its sessions on ExitPre, just before VimLeavePre. An
+  -- asynchronous release started there is cut off when Neovim exits (measured
+  -- against the real daemon: 6 of 8 quits left the test held), so the release
+  -- waits one tick: a quit takes the synchronous route first.
+  local RELEASED = { true, { status = "released_without_debugger", message = "not attached" } }
+
+  it("releases through the synchronous route when the quit follows before the next tick", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } }, nil, { manual_ticks = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.dap.end_session()
+    assert.are.equal(0, env.continues(), "not released yet: the next tick has not come")
+    env.exit_hooks[1]()
+    assert.are.equal(1, #env.sync_releases)
+    env.fire_ticks()
+    assert.are.equal(0, env.continues(), "the tick finds nothing left to release")
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("releases on the next tick when no quit follows", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } }, nil, { manual_ticks = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.dap.end_session()
+    assert.are.equal(0, env.continues())
+    env.fire_ticks()
+    assert.are.equal(1, env.continues())
+    assert.are.equal(0, #env.sync_releases)
+    assert.are.equal("finished", run.state())
   end)
 end)
 
