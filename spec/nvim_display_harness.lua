@@ -88,6 +88,55 @@ end
 
 io.write("\n═══ sagefs.nvim display specs (headless Neovim) ═══\n\n")
 
+-- Runs first on purpose: the warming specs further down leave a session list
+-- poll armed, and its GET would be mistaken for the re-read this spec wants.
+describe("after a slow eval finishes", function()
+  it("re-reads the session list, so the statusline stops saying (Evaluating)", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local config = require("sagefs.config")
+    config.EVAL_SLOW_AFTER_MS = 60
+    config.EVAL_STATUS_POLL_MS = 60
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local exec_callback = nil
+    local eval_over = false
+    local lists_after_eval = 0
+    transport.http_json = function(opts)
+      if opts.url:find("/api/sessions$") then
+        if eval_over then lists_after_eval = lists_after_eval + 1 end
+        -- while the eval runs the daemon says Evaluating (what the slow-eval
+        -- status poll stores); afterwards it says Ready
+        local status = eval_over and "Ready" or "Evaluating"
+        vim.schedule(function()
+          opts.callback(true, vim.json.encode({ sessions = { {
+            id = "s1", status = status, projects = { "Demo.fsproj" }, workingDirectory = vim.fn.getcwd(), evalCount = 0,
+          } } }))
+        end)
+      elseif opts.url:find("/exec$") then
+        exec_callback = opts.callback
+      end
+    end
+    local buf = make_buffer({ "let a = 1;;" })
+    sagefs.active_session = { id = "s1", name = "Demo", status = "Ready", projects = { "Demo.fsproj" }, working_directory = vim.fn.getcwd() }
+    sagefs.eval_cell()
+    vim.wait(2000, function()
+      local cell = sagefs.state.cells[1]
+      return cell and cell.pending_text ~= nil and sagefs.active_session and sagefs.active_session.status == "Evaluating"
+    end, 20)
+    eq("Evaluating", sagefs.active_session and sagefs.active_session.status, "the poll stored the daemon's word")
+    ok_(exec_callback ~= nil, "the eval request went out")
+    eval_over = true
+    exec_callback(true, vim.json.encode({ success = true, result = "val a: int = 1", duration_ms = 5 }))
+    vim.wait(1500, function() return sagefs.active_session and sagefs.active_session.status == "Ready" end, 20)
+    transport.http_json = original
+    ok_(lists_after_eval >= 1, "the session list is read again when the eval is over")
+    eq("Ready", sagefs.active_session and sagefs.active_session.status, "and the statusline says Ready")
+    sagefs.state = model.clear_cells(sagefs.state)
+  end)
+end)
+
+
 describe("result placement in a real window", function()
   it("shows the result of a cell taller than the window, anchored where the user evaluated", function()
     local buf = make_buffer(tall_cell_lines(120))
