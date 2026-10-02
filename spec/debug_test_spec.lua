@@ -31,18 +31,39 @@ local function fake_dap(opts)
   opts = opts or {}
   local dap = {
     adapters = opts.adapters or {},
-    listeners = { before = {}, after = {} },
+    -- on_session is flat in nvim-dap: key -> function(old_session, new_session)
+    listeners = { before = {}, after = {}, on_session = {} },
     runs = {},
     terminated = 0,
     disconnected = {},
     run_throws = opts.run_throws,
+    no_session = opts.no_session, -- the adapter cannot be started: nvim-dap prints an error, no session
   }
   function dap.run(config)
     if dap.run_throws then error(dap.run_throws) end
     table.insert(dap.runs, config)
-    dap._session = { config = config }
+    if dap.no_session then return end
+    dap._session = { id = #dap.runs, config = config }
   end
   function dap.session() return dap._session end
+  function dap.sessions()
+    local out = {}
+    if dap._session then out[dap._session.id] = dap._session end
+    return out
+  end
+  --- Like nvim-dap closing a session (the adapter died, or dap.close()): the
+  --- session is marked closed, then focus moves and on_session listeners run.
+  function dap.end_session()
+    local old = dap._session
+    if not old then return end
+    old.closed = true
+    dap._session = nil
+    local keys = {}
+    for k in pairs(dap.listeners.on_session) do table.insert(keys, k) end
+    table.sort(keys)
+    for _, k in ipairs(keys) do dap.listeners.on_session[k](old, nil) end
+  end
+  function dap.close() dap.end_session() end
   function dap.terminate() dap.terminated = dap.terminated + 1 end
   function dap.disconnect(args) table.insert(dap.disconnected, args or {}) end
   --- Fire every listener registered for (when, event), like nvim-dap does.
@@ -56,9 +77,13 @@ local function fake_dap(opts)
   end
   function dap.listener_count()
     local n = 0
-    for _, when in pairs(dap.listeners) do
-      for _, bucket in pairs(when) do
-        for _ in pairs(bucket) do n = n + 1 end
+    for name, when in pairs(dap.listeners) do
+      if name == "on_session" then
+        for _ in pairs(when) do n = n + 1 end
+      else
+        for _, bucket in pairs(when) do
+          for _ in pairs(bucket) do n = n + 1 end
+        end
       end
     end
     return n
@@ -734,6 +759,77 @@ describe("debug_test.start, a hold that is still in flight", function()
     local run = dt.start(env.deps, { test_id = "X" })
     assert.are.equal("held", run.state())
     assert.are.equal(1, #env.dap.runs)
+  end)
+end)
+
+describe("debug_test.start, a debugger that never comes up or goes away early", function()
+  local RELEASED = { true, { status = "released_without_debugger", message = "not attached" } }
+
+  it("releases when the adapter dies before it answered initialize", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    assert.are.equal(0, env.continues())
+    env.dap.end_session() -- /bin/false: the adapter exits, nvim-dap closes the session
+    assert.are.equal(1, env.continues())
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("releases when the user closes the debugger before the adapter answered", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    local run = dt.start(env.deps, { test_id = "X" })
+    env.dap.close()
+    assert.are.equal(1, env.continues())
+    assert.are.equal("finished", run.state())
+  end)
+
+  it("ignores another session being closed", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    dt.start(env.deps, { test_id = "X" })
+    for _, fn in pairs(env.dap.listeners.on_session) do
+      fn({ id = 99, closed = true, config = { name = "someone else" } }, nil)
+    end
+    assert.are.equal(0, env.continues())
+  end)
+
+  it("a session that only changed focus is not an end", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    dt.start(env.deps, { test_id = "X" })
+    for _, fn in pairs(env.dap.listeners.on_session) do
+      fn(env.dap._session, { id = 99, config = { name = "someone else" } })
+    end
+    assert.are.equal(0, env.continues(), "our session is still open")
+  end)
+
+  it("releases when no debug session of ours ever appears (adapter binary missing)", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } }, { no_session = true })
+    local run = dt.start(env.deps, { test_id = "X" })
+    local check
+    for _, t in ipairs(env.timers) do
+      if t.ms == dt.SESSION_START_GRACE_MS then check = t end
+    end
+    assert.is_truthy(check, "a start check is armed for SESSION_START_GRACE_MS")
+    assert.is_true(dt.SESSION_START_GRACE_MS <= 5000, "a few seconds, not the two minute backstop")
+    assert.are.equal(0, env.continues())
+    check.fn()
+    assert.are.equal(1, env.continues())
+    assert.are.equal("finished", run.state())
+    assert.is_truthy(env.all_notes():lower():find("debugger did not start", 1, true))
+  end)
+
+  it("the start check leaves a debugger that did come up alone", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    dt.start(env.deps, { test_id = "X" })
+    for _, t in ipairs(env.timers) do
+      if t.ms == dt.SESSION_START_GRACE_MS then t.fn() end
+    end
+    assert.are.equal(0, env.continues())
+  end)
+
+  it("removes the on_session listener when the run is over", function()
+    local env = make_env({ debug = { { true, HELD } }, continue = { RELEASED } })
+    dt.start(env.deps, { test_id = "X" })
+    env.dap.end_session()
+    assert.are.equal(0, env.dap.listener_count())
   end)
 end)
 
