@@ -1403,7 +1403,7 @@ function M.offer_session_for(target, others, eval_fn)
   for _, s in ipairs(others) do
     if s.status ~= "Stopped" and shown < 5 then
       shown = shown + 1
-      items[#items + 1] = "Evaluate in " .. sessions.picker_label(s) .. " (not this directory)"
+      items[#items + 1] = "Evaluate in " .. sessions.compact_label(s, 64)
       picks[#picks + 1] = { session = s }
     end
   end
@@ -1461,7 +1461,7 @@ local function smart_eval_with_session_check(eval_fn)
       if r.kind == "ambiguous" then
         local items, byname = {}, {}
         for _, s in ipairs(r.candidates) do
-          local label = sessions.picker_label(s)
+          local label = sessions.compact_label(s, 72)
           items[#items + 1] = label
           byname[label] = s
         end

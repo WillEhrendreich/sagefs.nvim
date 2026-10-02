@@ -317,6 +317,29 @@ function M.no_session_message(dir, others)
   return msg
 end
 
+--- A one-row label for a session in a choose-one prompt: project file name,
+--- short id, status, and the TAIL of the working directory (the part that
+--- tells sessions apart). At most `width` bytes; the id is never dropped.
+---@param s table normalized session
+---@param width number|nil
+---@return string
+function M.compact_label(s, width)
+  width = width or 72
+  local proj = s.projects and s.projects[1]
+  proj = (proj and proj ~= "") and (proj:match("([^/\\]+)$") or proj) or "(no project)"
+  local head = string.format("%s [%s] %s", proj, short_id(s.id), s.status or "?")
+  local dir = s.working_directory or ""
+  local room = width - #head - 2
+  if dir == "" or room < 6 then return head end
+  if #dir > room then
+    local cut = #dir - (room - 3) + 1
+    -- start on a character boundary
+    while cut <= #dir and dir:byte(cut) >= 128 and dir:byte(cut) < 192 do cut = cut + 1 end
+    dir = "…" .. dir:sub(cut)
+  end
+  return head .. "  " .. dir
+end
+
 --- Picker label: the line the picker always showed, plus the working directory
 --- and short id, so two sessions of one project can be told apart (and so the
 --- picker's label -> session lookup cannot collide).
