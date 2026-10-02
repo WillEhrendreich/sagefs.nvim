@@ -22,6 +22,8 @@ local project_config = require("sagefs.config")
 local density = require("sagefs.density")
 local cell_highlight = require("sagefs.cell_highlight")
 local util = require("sagefs.util")
+local wire_runtime = require("sagefs.wire_runtime")
+local reload_ui = require("sagefs.reload_ui")
 
 local M = {}
 
@@ -34,6 +36,10 @@ M.config = {
   dashboard_port = 37750,
   auto_connect = true,
   check_on_save = false,
+  -- Say so (vim.notify) when a save needs attention: the new body never ran, a
+  -- restart is needed, the file did not compile. The statusline shows the state
+  -- either way.
+  notify_reload = true,
   -- Override for the one-time-welcome marker file (mainly for tests).
   -- Defaults to stdpath("data") .. "/sagefs_welcomed" when nil.
   welcome_marker_path = nil,
@@ -142,6 +148,26 @@ local function fire_user_event(event_type, payload)
   end
 end
 
+-- The daemon's hot reload and REPL-freshness wire, folded and surfaced
+-- (wire_runtime.lua has the logic; this only supplies the editor's hands).
+local wire = nil
+function M.wire_runtime()
+  if not wire then
+    wire = wire_runtime.new({
+      notify = notify,
+      now_ms = function() return vim.uv.hrtime() / 1e6 end,
+      refresh_sessions = function(cb) M.list_sessions(cb) end,
+      active_session = function() return M.active_session end,
+      redraw = function() vim.schedule(function() pcall(vim.cmd, "redrawstatus") end) end,
+      redraw_later = function(ms) vim.defer_fn(function() pcall(vim.cmd, "redrawstatus") end, ms) end,
+      ui = reload_ui,
+      notify_reload = M.config.notify_reload,
+      on_freshness = function(sid, f) fire_user_event("repl_freshness_changed", { sessionId = sid, freshness = f }) end,
+    })
+  end
+  return wire
+end
+
 -- Dispatch table: action string → handler(raw_event)
 -- Each handler receives the raw SSE event and decodes data as needed.
 local dispatch_table
@@ -177,6 +203,13 @@ local SSE_HANDLER_DEFS = {
   { action = "run_tests_requested", event = "run_tests_requested" },
   { action = "eval_completed", event = "eval_completed" },
   { action = "hot_reload_triggered", event = "hot_reload_triggered" },
+  -- Cohort rows: one cohort spans every session, so none is session-scoped.
+  -- :SageFsCohort refreshes on these (cohort_view.lua).
+  { action = "cohort_matrix", event = "cohort_matrix" },
+  { action = "claim_changed", event = "claim_changed" },
+  { action = "landing_changed", event = "landing_changed" },
+  { action = "save_observed", event = "save_observed" },
+  { action = "cohort_changed", event = "cohort_changed" },
   -- Feature hooks (server-computed, push-only)
   { action = "eval_diff", event = "eval_diff" },
   { action = "cell_dependencies", event = "cell_dependencies" },
@@ -349,7 +382,23 @@ local function build_handlers()
     -- 0.6 wire: { fileReloaded = <path>, sessionId = <sid> }; older: file/elapsed_ms.
     M.last_reload_file = data.fileReloaded or data.file or data.File
     M.last_reload_ms = data.elapsed_ms or data.ElapsedMs
+    reload_ui.note_file(data.sessionId, M.last_reload_file)
     fire_user_event("file_reloaded", data)
+  end
+
+  -- The `state` envelope's ReloadReported: what the last save did to the running
+  -- app (applied, patched and ran, restart needed, ...). Read, not dropped.
+  handlers.session_ready = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.wire_runtime().on_session_ready(data)
+  end
+
+  handlers.reload_reported = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    M.wire_runtime().on_reload_reported(data)
+    fire_user_event("reload_reported", data)
   end
 
   -- Phase 7C: SystemAlarm — store for statusline, notify ERROR, fire autocmd
@@ -497,6 +546,7 @@ local function start_sse()
       M.testing_state = testing.new()
       M.coverage_state = coverage.new()
       M.annotations_state = annotations.new()
+      M.wire_runtime().on_reconnect()
       fire_user_event("connected")
       -- Forward connection to dashboard
       if M._dashboard then M._dashboard.on_event("connected") end
@@ -601,6 +651,8 @@ local function show_shadow_warnings(buf, cell_id, shadows)
 end
 
 local function handle_result(buf, cell_id, result, end_line, my_eval_id)
+  -- Take the daemon's "REPL is BEHIND the app" banner off the output and say it once, with the remedy.
+  result = M.wire_runtime().on_eval(result)
   -- Only clear eval_id if we're still the current eval
   if eval_id == my_eval_id then
     eval_id = 0
@@ -907,6 +959,7 @@ function M.list_sessions(callback)
       M.session_list = result.sessions
       local active_id = M.active_session and M.active_session.id or nil
       M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())
+      M.wire_runtime().on_sessions(result.sessions)
     end
     if callback then callback(result) end
   end)
@@ -1023,6 +1076,7 @@ function M.hard_reset(callback)
   session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
     if ok then
       notify("Hard reset complete (rebuild)")
+      M.wire_runtime().on_hard_reset()
     else
       local decode_ok, parsed = util.json_decode(raw)
       notify("Failed to hard reset: " .. util.format_server_error(decode_ok and parsed or nil, raw), vim.log.levels.ERROR)
@@ -1455,6 +1509,11 @@ function M.statusline()
   local app_sl = require("sagefs.app_run").format_statusline(M.app_run_state)
   if app_sl ~= "" then table.insert(parts, app_sl) end
 
+  -- What the last save did, and whether the REPL is behind the app
+  for _, seg in ipairs(M.wire_runtime().statusline_segments()) do
+    table.insert(parts, seg)
+  end
+
   -- Phase 7C: system alarm indicator (highest visibility — always last in bar)
   if M.system_alarm then
     local phase = M.system_alarm.phase or M.system_alarm.Phase or "?"
@@ -1470,6 +1529,8 @@ function M.setup(opts)
   opts = opts or {}
   M.config = vim.tbl_deep_extend("force", M.config, opts)
   M.config.port = tonumber(vim.env.SAGEFS_MCP_PORT) or M.config.port
+  wire = nil -- rebuilt with this config on next use
+  reload_ui.setup()
 
   render.get_namespace()
   render.setup_highlights(M.config.highlight)
@@ -1518,6 +1579,7 @@ function M.setup(opts)
   }
 
   commands.register_commands(M, helpers)
+  require("sagefs.wire_commands").register(M)
   -- register_keymaps is invoked per-F#-buffer from inside register_autocmds
   -- (roast item 13 / §5.6): <A-CR> and <leader>r* must not be global.
   commands.register_autocmds(M, helpers)

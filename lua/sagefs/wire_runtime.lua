@@ -9,6 +9,7 @@
 --   refresh_sessions(cb)      re-read GET /api/sessions (the REPL's freshness lives there)
 --   active_session()          the active normalized session, or nil
 --   redraw()                  ask for a statusline redraw
+--   redraw_later(ms)          optional: ask for one after a delay (a fading segment)
 --   ui { show(sid, display), clear(sid) }   optional virtual text surface
 --   notify_reload             false turns the reload notifications off (the state is still shown)
 --   on_freshness(sid, f)      optional: called when a session's REPL freshness is read
@@ -68,9 +69,16 @@ function M.new(deps)
     if not info.changed then return end
     model = new_model
     local sid = info.sid
+    if info.report and info.report.file and deps.ui and deps.ui.note_file then
+      deps.ui.note_file(sid, info.report.file)
+    end
     if is_active(sid) then
       local report = info.report
       local display = report and reload_state.display(report) or nil
+      if display and display.fade_ms and deps.redraw_later then
+        -- The statusline segment fades by the clock; something has to redraw it then.
+        deps.redraw_later(display.fade_ms + 50)
+      end
       if deps.ui then
         if display and report.phase ~= reload_state.PHASE.None then
           deps.ui.show(sid, display)
@@ -109,6 +117,19 @@ function M.new(deps)
         end
       end
     end
+    if deps.redraw then deps.redraw() end
+  end
+
+  --- A session came back ready: its worker was replaced. The daemon cleared the
+  --- reload report (unless it is the restart that caused the swap) and the REPL
+  --- freshness with the old worker, so forget what events said and read the list.
+  function rt.on_session_ready(data)
+    local sid = type(data) == "table" and (data.sessionReady or data.sessionId) or nil
+    if type(sid) ~= "string" then return end
+    model = reload_state.forget(model, sid)
+    banner_override[sid] = nil
+    last_note[sid] = nil
+    if deps.refresh_sessions then deps.refresh_sessions() end
     if deps.redraw then deps.redraw() end
   end
 

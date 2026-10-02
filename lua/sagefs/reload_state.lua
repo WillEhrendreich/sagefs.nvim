@@ -470,6 +470,11 @@ function M.apply_sse(model, data, now_ms)
   return clear_session(model, sid), { changed = true, sid = sid, cleared = true }
 end
 
+--- Drop one session's report and the verdict it replaced.
+function M.forget(model, sid)
+  return clear_session(model, sid)
+end
+
 function M.current(model, sid)
   return model.by_session[sid]
 end

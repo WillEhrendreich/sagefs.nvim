@@ -17,12 +17,19 @@ local PROTOCOL_VERSION = "2025-06-18"
 
 -- ─── Pure: bodies and replies ────────────────────────────────────────────────
 
+-- Lua cannot tell {} from []: an empty table must be marked as a JSON object, or
+-- `arguments` goes out as `[]` and the daemon answers "An error occurred.".
+local function object(t)
+  if (t == nil or next(t) == nil) and vim.empty_dict then return vim.empty_dict() end
+  return t or {}
+end
+
 function M.initialize_body(id)
   return {
     jsonrpc = "2.0", id = id, method = "initialize",
     params = {
       protocolVersion = PROTOCOL_VERSION,
-      capabilities = vim.empty_dict and vim.empty_dict() or {},
+      capabilities = object({}),
       clientInfo = { name = "sagefs.nvim", version = "1" },
     },
   }
@@ -35,7 +42,7 @@ end
 function M.call_body(id, name, arguments)
   return {
     jsonrpc = "2.0", id = id, method = "tools/call",
-    params = { name = name, arguments = arguments or (vim.empty_dict and vim.empty_dict() or {}) },
+    params = { name = name, arguments = object(arguments) },
   }
 end
 
