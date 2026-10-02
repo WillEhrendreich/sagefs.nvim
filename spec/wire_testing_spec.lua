@@ -47,6 +47,20 @@ describe("live_bindings SSE wiring", function()
   end)
 end)
 
+describe("wire_testing.render", function()
+  it("hands the density to the debug hint so minimal draws none", function()
+    local ui = require("sagefs.debug_test_ui")
+    local prev = ui.render_hints
+    local seen
+    ui.render_hints = function(_, _, _, opts) seen = opts end
+    local density = { codelens = false }
+    require("sagefs.wire_testing").render(1, { density_state = density })
+    ui.render_hints = prev
+    assert.is_truthy(seen)
+    assert.are.equal(density, seen.density)
+  end)
+end)
+
 describe("wire_testing command registration", function()
   it("registers :SageFsBindings as the live view and keeps the tracked list as :SageFsBindingList", function()
     local registered = {}

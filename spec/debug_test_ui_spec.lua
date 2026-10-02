@@ -44,10 +44,19 @@ describe("debug_test_ui.resolve_target", function()
     assert.are.equal("a negative integer yields None", r.name)
   end)
 
-  it("off the marker, a file with exactly one failing test debugs that one", function()
+  it("off the marker, the file's only failing test is offered by name, never started unasked", function()
     local r = ui.resolve_target({ args = "", testing_state = testing.new(), annotations_state = annotation_state(), file = FILE, line = 20 })
-    assert.are.equal("start", r.kind)
+    assert.are.equal("confirm", r.kind)
     assert.are.same({ test_id = "D39C4D7B318839A9" }, r.target)
+    assert.are.equal("a negative integer yields None", r.name)
+    assert.are.equal(8, r.line)
+    assert.is_truthy(r.message:find("No failing test on this line", 1, true))
+    assert.is_truthy(r.message:find("a negative integer yields None", 1, true))
+  end)
+
+  it("an explicit argument never asks: it names the test itself", function()
+    local r = ui.resolve_target({ args = "negative integer", testing_state = testing.new(), annotations_state = annotation_state(), file = FILE, line = 20 })
+    assert.are.equal("start", r.kind)
   end)
 
   it("asks which one when several tests fail on the line", function()
@@ -68,19 +77,69 @@ describe("debug_test_ui.resolve_target", function()
   end)
 end)
 
+describe("debug_test_ui.run, off the failing line", function()
+  local function plugin_for_file()
+    return { testing_state = testing.new(), annotations_state = annotation_state() }
+  end
+
+  local function run_with(choice_index)
+    local started, notes, prompts = {}, {}, {}
+    ui.run(plugin_for_file(), { notify = function(msg) table.insert(notes, msg) end }, "", {
+      buf = 1, file = FILE, line = 20,
+      start = function(target) table.insert(started, target) end,
+      select = function(items, opts, cb)
+        table.insert(prompts, { items = items, prompt = opts.prompt })
+        cb(choice_index and items[choice_index] or nil)
+      end,
+    })
+    return started, notes, prompts
+  end
+
+  it("names the test and asks before starting it", function()
+    local started, _, prompts = run_with(nil)
+    assert.are.equal(1, #prompts)
+    assert.is_truthy(prompts[1].prompt:find("a negative integer yields None", 1, true))
+    assert.are.equal(0, #started, "nothing starts until you say yes")
+  end)
+
+  it("starts it when you confirm", function()
+    local started = run_with(1)
+    assert.are.same({ { test_id = "D39C4D7B318839A9" } }, started)
+  end)
+
+  it("does not start it when you decline", function()
+    local started = run_with(2)
+    assert.are.equal(0, #started)
+  end)
+end)
+
 describe("debug_test_ui hint", function()
   it("draws a right-aligned debug hint, quiet, with the keymap", function()
     local spec = ui.hint_extmark(1, "<leader>")
     assert.are.equal("right_align", spec.virt_text_pos)
     local text = spec.virt_text[1][1]
     assert.is_truthy(text:find("debug", 1, true))
-    assert.is_truthy(text:find("<leader>rtD", 1, true))
+    assert.is_truthy(text:find("<leader>rtg", 1, true))
     assert.are.equal("SageFsDebugHint", spec.virt_text[1][2])
   end)
 
   it("counts when several fail on one line", function()
     local text = ui.hint_extmark(3, "<leader>").virt_text[1][1]
     assert.is_truthy(text:find("3", 1, true))
+  end)
+
+  it("draws no hint when the density turned code lens style marks off, and clears old ones", function()
+    local calls = { clear = 0, set = 0 }
+    local api = {
+      nvim_buf_get_name = function() return FILE end,
+      nvim_create_namespace = function() return 99 end,
+      nvim_buf_line_count = function() return 60 end,
+      nvim_buf_clear_namespace = function() calls.clear = calls.clear + 1 end,
+      nvim_buf_set_extmark = function() calls.set = calls.set + 1 end,
+    }
+    ui.render_hints(5, testing.new(), annotation_state(), { api = api, leader = "<leader>", density = { codelens = false } })
+    assert.are.equal(1, calls.clear)
+    assert.are.equal(0, calls.set)
   end)
 
   it("renders one extmark per failing line and clears the old ones first", function()
@@ -125,15 +184,30 @@ describe("debug_test_ui registration", function()
     assert.is_truthy(registered.SageFsDebugRelease)
   end)
 
-  it("maps <leader>rtD on the buffer", function()
+  it("maps <leader>rtg on the buffer", function()
     local mapped = {}
     local prev = vim.keymap
     vim.keymap = { set = function(mode, lhs, rhs, opts) table.insert(mapped, { mode = mode, lhs = lhs, opts = opts }) end }
     ui.register_keymaps({}, { notify = function() end }, 12)
     vim.keymap = prev
     assert.are.equal(1, #mapped)
-    assert.are.equal("<leader>rtD", mapped[1].lhs)
+    assert.are.equal("<leader>rtg", mapped[1].lhs)
     assert.are.equal(12, mapped[1].opts.buffer)
+  end)
+
+  it("the key is one nobody else maps, and not one shifted letter from disabling live testing", function()
+    local src = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
+    local count = 0
+    for _, name in ipairs({ "commands.lua", "coverage_hover.lua", "debug_test_ui.lua", "init.lua", "bindings_view.lua" }) do
+      local f = io.open(src .. "../lua/sagefs/" .. name, "rb")
+      if f then
+        local text = f:read("*a")
+        f:close()
+        for _ in text:gmatch('"<leader>rtg"') do count = count + 1 end
+      end
+    end
+    assert.are.equal(1, count, "<leader>rtg is defined exactly once across the plugin")
+    assert.are_not.equal("<leader>rtD", ui.KEY, "rtD is one shifted letter from rtd, which disables live testing")
   end)
 
   it(":SageFsDebugRelease says so when nothing is open", function()
