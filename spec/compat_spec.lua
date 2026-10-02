@@ -57,12 +57,92 @@ describe("sagefs.compat", function()
     end)
 
     it("is unknown, and never a warning, when no apiVersion has been seen", function()
-      for _, v in ipairs({ "nope", false }) do
+      for _, v in ipairs({ false }) do
         local r = compat.check(v)
         assert.equals("unknown", r.status)
         assert.is_false(r.warn)
       end
       assert.equals("unknown", compat.check(nil).status)
+    end)
+  end)
+
+  describe("check on an apiVersion that is not a usable whole number", function()
+    local function assert_unknown_naming(v, raw)
+      local r = compat.check(v)
+      assert.equals("unknown", r.status)
+      assert.is_false(r.warn)
+      assert.is_truthy(r.message:find(raw, 1, true), "message should name the raw value " .. raw .. ": " .. r.message)
+      assert.is_nil(r.message:find("daemon speaks api", 1, true), r.message)
+      assert.is_nil(r.message:find("not known yet", 1, true), r.message)
+      assert.is_nil(compat.startup_warning(v))
+    end
+
+    it("treats a fractional apiVersion as unknown, never as the integer below it", function()
+      assert_unknown_naming(3.5, "3.5")
+    end)
+
+    it("treats a huge apiVersion as unknown, never as a wrapped negative", function()
+      local r = compat.check(1e300)
+      assert.is_nil(r.message:find("9223372036854775808", 1, true), r.message)
+      assert_unknown_naming(1e300, "1e+300")
+      assert_unknown_naming(-1e300, "-1e+300")
+    end)
+
+    it("treats infinity and NaN as unknown", function()
+      assert_unknown_naming(math.huge, "inf")
+      assert.equals("unknown", compat.check(0 / 0).status)
+      assert.is_false(compat.check(0 / 0).warn)
+    end)
+
+    it("still judges a whole number held in a float as that integer", function()
+      assert.equals("compatible", compat.check(3.0).status)
+    end)
+  end)
+
+  describe("check on an apiVersion sent as a string", function()
+    it("accepts a numeric string as that number", function()
+      local r = compat.check("3")
+      assert.equals("compatible", r.status)
+      assert.equals("plugin understands api 3, daemon speaks api 3: compatible", r.message)
+      assert.equals("plugin_too_old", compat.check("99").status)
+      assert.is_true(compat.check("99").warn)
+      assert.equals("daemon_too_old", compat.check("2").status)
+      assert.equals("compatible", compat.check(" 3 ").status)
+    end)
+
+    it("warns at startup for a numeric string outside the range", function()
+      assert.is_truthy(compat.startup_warning("99"):find("api 99", 1, true))
+    end)
+
+    it("says the value is not a number, and quotes it, when it is not numeric", function()
+      for _, raw in ipairs({ "abc", "", "0x10", "1e2", "3-" }) do
+        local r = compat.check(raw)
+        assert.equals("unknown", r.status)
+        assert.is_false(r.warn)
+        assert.is_truthy(r.message:find("api version is not a number", 1, true), r.message)
+        assert.is_truthy(r.message:find('"' .. raw .. '"', 1, true), r.message)
+        assert.is_nil(r.message:find("not known yet", 1, true), r.message)
+      end
+    end)
+
+    it("treats a string holding a fraction like a fractional number", function()
+      local r = compat.check("3.5")
+      assert.equals("unknown", r.status)
+      assert.is_nil(r.message:find("daemon speaks api", 1, true), r.message)
+    end)
+
+    it("says it is not a number for a boolean or a table, not that it is not known yet", function()
+      for _, v in ipairs({ true, {} }) do
+        local r = compat.check(v)
+        assert.equals("unknown", r.status)
+        assert.is_false(r.warn)
+        assert.is_truthy(r.message:find("api version is not a number", 1, true), r.message)
+        assert.is_nil(r.message:find("not known yet", 1, true), r.message)
+      end
+    end)
+
+    it("keeps the not-known-yet wording for nothing at all", function()
+      assert.is_truthy(compat.check(nil).message:find("not known yet", 1, true))
     end)
   end)
 
