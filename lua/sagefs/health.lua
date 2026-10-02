@@ -7,6 +7,29 @@ local discovery = require("sagefs.daemon_discovery")
 local compat = require("sagefs.compat")
 local spawn = require("sagefs.spawn")
 
+--- The items of the "Configuration:" line. A member token is said to be set and
+--- never shown; with none configured the line is what it was before tokens.
+---@param cfg table the plugin's config
+---@param env_token string|nil the SAGEFS_MEMBER_TOKEN value
+---@return string[]
+function M.config_lines(cfg, env_token)
+  local lines = {
+    "port = " .. tostring(cfg.port or 37749),
+    "dashboard_port = " .. tostring(cfg.dashboard_port or 37750),
+    "auto_connect = " .. tostring(cfg.auto_connect),
+    "check_on_save = " .. tostring(cfg.check_on_save),
+  }
+  if cfg.cell_highlight then
+    table.insert(lines, "cell_highlight.style = " .. tostring(cfg.cell_highlight.style or "normal"))
+  end
+  local member_token = require("sagefs.member_token")
+  local token = member_token.resolve(cfg.member_token, env_token)
+  if token then
+    table.insert(lines, "member_token = " .. member_token.describe(token))
+  end
+  return lines
+end
+
 --- Run SageFs CLI and extract version string, or nil on failure
 ---@param bin string|nil the configured sagefs_path (default "sagefs")
 local function get_cli_version(bin)
@@ -95,16 +118,7 @@ function M.check()
 
   -- ── 3. Plugin configuration ─────────────────────────────────────────────
   local cfg = sagefs.config or {}
-  local config_lines = {
-    "port = " .. tostring(cfg.port or 37749),
-    "dashboard_port = " .. tostring(cfg.dashboard_port or 37750),
-    "auto_connect = " .. tostring(cfg.auto_connect),
-    "check_on_save = " .. tostring(cfg.check_on_save),
-  }
-  if cfg.cell_highlight then
-    table.insert(config_lines, "cell_highlight.style = " .. tostring(cfg.cell_highlight.style or "normal"))
-  end
-  vim.health.ok("Configuration: " .. table.concat(config_lines, ", "))
+  vim.health.ok("Configuration: " .. table.concat(M.config_lines(cfg, vim.env.SAGEFS_MEMBER_TOKEN), ", "))
 
   -- ── 4. Daemon connectivity ──────────────────────────────────────────────
   local port = cfg.port or 37749

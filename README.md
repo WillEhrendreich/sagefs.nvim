@@ -188,6 +188,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
     check_on_save = false,  -- Type-check .fsx files on save (diagnostics via SSE)
     density = "normal",     -- "minimal" | "normal" | "full"
     hint = true,            -- one-time hint of the three first commands on the first F# buffer
+    member_token = nil,     -- a cohort member token from mint_member (below); SAGEFS_MEMBER_TOKEN works too
   },
 }
 ```
@@ -383,6 +384,16 @@ The daemon reads the disk when it is asked and never pushes the answer, so the p
 `:SageFsCohort` opens a scratch buffer with the cohort's members, claims, landing queue, the integration session and, once an integration is configured, the trunk: one `trunk <landingId>: ...` line per landing, in the same words as above (`Program.fs applied, new body has not run yet (via metadata delta)`). There is no REST route for it, so the plugin makes an MCP `tools/call` of `get_cohort_status` ([`mcp_client.lua`](lua/sagefs/mcp_client.lua)). The view refreshes on the cohort events (`SageFsCohortMatrix`, `SageFsClaimChanged`, `SageFsLandingChanged`, `SageFsSaveObserved`, `SageFsCohortChanged`) and on every reload report, because a trunk line turns from applied to patched with no cohort event at all.
 
 A member id in the cohort is `mcp:` followed by that agent's MCP session id, which works as its bearer handle. The daemon prints it in full, so the plugin shows only the first six characters.
+
+### Member tokens
+
+A SageFs daemon can mint a capability token per agent run (`mint_member`, [member tokens](https://github.com/WillEhrendreich/SageFs/blob/master/docs/mcp-tools.md#member-tokens-one-identity-per-agent-run)). A token is its own cohort member (`cap:<hex>`) with a role, a scope and an expiry. The plugin can run as one, for instance as an Observer that only watches the cohort:
+
+```lua
+opts = { member_token = "sfm_..." }
+```
+
+or set `SAGEFS_MEMBER_TOKEN` in the environment before Neovim starts (the same variable `sagefs mcp` reads). The setup option wins when both are set. The plugin sends the token as the `X-SageFs-Member-Token` header on every MCP request it makes ([`mcp_client.lua`](lua/sagefs/mcp_client.lua), [`member_token.lua`](lua/sagefs/member_token.lua)); with none configured it sends no header, and a daemon without tokens sees exactly what it saw before. The token appears in no message, log line or error text the plugin prints: failures are scrubbed, the debug log (`vim.g.sagefs_debug`) prints the header as `(hidden)`, and `:checkhealth sagefs` says `member_token = set (hidden)`. SageFs keeps only a token's hash, so a token that leaks cannot be taken back, only revoked. Put it in an environment variable or a file outside your dotfiles repo.
 
 ### Adding the next field
 
@@ -631,6 +642,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `cell_highlight.lua` | Dynamic eval region visuals: `╭│╰` bracket, 4 styles, eval-state color hints (uses `vim.api`/`vim.uv`) |
 | `treesitter_cells.lua` | Tree-sitter based cell detection for F# (inferred mode; requires `vim.treesitter`) |
 | `health.lua` | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
+| `member_token.lua` | The member capability token: setup option or `SAGEFS_MEMBER_TOKEN`, the header name, and the redaction every printed path uses |
 | `annotations.lua` | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | |
 | `help.lua` | `:SageFsHelp` and the first-run hint; the command list comes from the live command table |

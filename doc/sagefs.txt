@@ -508,6 +508,7 @@ Pass configuration to setup(): >lua
     notify_reload = true,        -- vim.notify when a save needs attention
     density = "normal",          -- "minimal" | "normal" | "full"
     hint = true,                 -- One-time first-run hint (see |sagefs-hint|)
+    member_token = nil,          -- Cohort member token (see |sagefs-member-token|)
     cell_highlight = {
       style = "normal",          -- "off" | "minimal" | "normal" | "full"
       flash_duration_ms = 300,   -- Flash fade duration
@@ -528,6 +529,22 @@ Density presets control information density: ~
   minimal:  Results only, no type hints, no timing
   normal:   Results + timing + type hints for top-level bindings
   full:     Everything - all type hints, shadows, diagnostics
+
+                                                       *sagefs-member-token*
+Member token: ~
+
+A daemon that mints per-run member tokens (the `mint_member` tool) gives
+each token its own cohort member (`cap:<hex>`), role, scope and expiry. To
+run the plugin as one, set `member_token = "sfm_..."` in setup(), or set
+the `SAGEFS_MEMBER_TOKEN` environment variable before Neovim starts. The
+option wins when both are set. The plugin sends the token as the
+`X-SageFs-Member-Token` header on every MCP request it makes (the
+|:SageFsCohort| view). With no token configured it sends no header.
+
+The token is never printed. Failure texts are scrubbed, the debug log
+(`vim.g.sagefs_debug`) shows the header as (hidden), and |:checkhealth|
+says `member_token = set (hidden)`. SageFs keeps only a token's hash, so a
+leaked token cannot be taken back, only revoked.
 
 ==============================================================================
 7. LIVE TESTING                                          *sagefs-testing*

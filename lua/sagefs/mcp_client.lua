@@ -11,6 +11,8 @@
 -- session and reuses it; if the daemon no longer knows it (404), it starts a new
 -- one once and retries.
 
+local member_token = require("sagefs.member_token")
+
 local M = {}
 
 local PROTOCOL_VERSION = "2025-06-18"
@@ -107,18 +109,62 @@ end
 
 -- ─── The client ──────────────────────────────────────────────────────────────
 
----@param opts { port: number, request: fun(opts: table) }
+--- `token` is a member capability token or a function returning one (read on every
+--- request); with none, no token header is sent. `log` receives one line per
+--- request, with the token left out.
+---@param opts { port: number, request: fun(opts: table), token: string|fun():string|nil, log: fun(line: string)|nil }
 function M.new(opts)
-  local request = opts.request
+  local raw_request = opts.request
+  local log = opts.log
   local url = string.format("http://localhost:%d/", opts.port)
   local client = {}
   local session_id = nil
   local next_id = 1
 
+  local function current_token()
+    local t = opts.token
+    if type(t) == "function" then
+      local ok, value = pcall(t)
+      t = ok and value or nil
+    end
+    return member_token.resolve(t, nil)
+  end
+
   local function headers(with_session)
     local h = { ["Accept"] = "application/json, text/event-stream" }
     if with_session and session_id then h["Mcp-Session-Id"] = session_id end
+    local token = current_token()
+    if token then h[member_token.HEADER] = token end
     return h
+  end
+
+  local function describe_headers(h)
+    local names = {}
+    for name in pairs(h) do names[#names + 1] = name end
+    table.sort(names)
+    local parts = {}
+    local safe = member_token.redact_headers(h)
+    for _, name in ipairs(names) do
+      if name ~= "Accept" and name ~= "Mcp-Session-Id" then parts[#parts + 1] = name .. ": " .. safe[name] end
+    end
+    return table.concat(parts, ", ")
+  end
+
+  local function request(o)
+    if log then
+      local what = type(o.body) == "table" and (o.body.method or "") or ""
+      if what == "tools/call" and o.body.params then what = "tools/call " .. tostring(o.body.params.name) end
+      local extra = describe_headers(o.headers or {})
+      log(string.format("MCP %s %s %s%s", o.method, o.url, what, extra ~= "" and (" [" .. extra .. "]") or ""))
+    end
+    raw_request(o)
+  end
+
+  -- A failure text can carry whatever the transport or the daemon echoed; a
+  -- token in it is hidden. A successful reply is left whole: a mint reply holds
+  -- the token on purpose.
+  local function fail(cb, text)
+    cb(false, member_token.redact(text, current_token()))
   end
 
   local function take_id()
@@ -131,19 +177,19 @@ function M.new(opts)
     request({
       method = "POST", url = url, headers = headers(false), body = M.initialize_body(take_id()), timeout = 10,
       callback = function(ok, body, meta)
-        if not ok then cb(false, tostring(body)); return end
+        if not ok then fail(cb, tostring(body)); return end
         local sid = meta and meta.headers and meta.headers["mcp-session-id"]
         if not sid or sid == "" then
           cb(false, "the daemon did not hand out an MCP session")
           return
         end
         local parsed = M.parse_body(body)
-        if not parsed.ok then cb(false, parsed.error); return end
+        if not parsed.ok then fail(cb, parsed.error); return end
         session_id = sid
         request({
           method = "POST", url = url, headers = headers(true), body = M.initialized_body(), timeout = 10,
           callback = function(ok2, body2)
-            if not ok2 then session_id = nil; cb(false, tostring(body2)); return end
+            if not ok2 then session_id = nil; fail(cb, tostring(body2)); return end
             cb(true)
           end,
         })
@@ -161,13 +207,13 @@ function M.new(opts)
             client.call_tool(name, args, cb, true)
             return
           end
-          cb(false, tostring(body))
+          fail(cb, tostring(body))
           return
         end
         local parsed = M.parse_body(body)
-        if not parsed.ok then cb(false, parsed.error); return end
+        if not parsed.ok then fail(cb, parsed.error); return end
         local text = M.tool_text(parsed.result)
-        cb(not M.tool_is_error(parsed.result), text)
+        if M.tool_is_error(parsed.result) then fail(cb, text) else cb(true, text) end
       end,
     })
   end
@@ -189,8 +235,11 @@ function M.new(opts)
     if not session_id then return end
     local sid = session_id
     session_id = nil
+    local close_headers = headers(false)
+    close_headers["Accept"] = nil
+    close_headers["Mcp-Session-Id"] = sid
     request({
-      method = "DELETE", url = url, headers = { ["Mcp-Session-Id"] = sid }, timeout = 3,
+      method = "DELETE", url = url, headers = close_headers, timeout = 3,
       callback = function() end,
     })
   end
@@ -198,10 +247,20 @@ function M.new(opts)
   return client
 end
 
---- The production client: transport.http_json against the daemon's MCP port.
+--- The production client: transport.http_json against the daemon's MCP port. The
+--- token is read on every request (member_token.current by default); the debug
+--- log is off unless `vim.g.sagefs_debug` is set.
 ---@param port number
-function M.connect(port)
-  return M.new({ port = port, request = require("sagefs.transport").http_json })
+---@param token string|fun():string|nil
+function M.connect(port, token)
+  return M.new({
+    port = port,
+    request = require("sagefs.transport").http_json,
+    token = token or member_token.current,
+    log = function(line)
+      if vim.g.sagefs_debug then vim.notify("[SageFs debug] " .. line, vim.log.levels.DEBUG) end
+    end,
+  })
 end
 
 return M

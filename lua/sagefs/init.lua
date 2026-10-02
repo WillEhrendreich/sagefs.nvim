@@ -36,6 +36,12 @@ M.version = require("sagefs.version")
 M.config = {
   port = 37749,
   dashboard_port = 37750,
+  -- A member capability token from the daemon's mint_member tool. The plugin
+  -- sends it as X-SageFs-Member-Token on its MCP requests (the :SageFsCohort
+  -- view), so it runs as that minted member. Unset falls back to the
+  -- SAGEFS_MEMBER_TOKEN environment variable; with neither, no header is sent.
+  -- Never printed: :checkhealth says only that it is set.
+  member_token = nil,
   auto_connect = true,
   check_on_save = false,
   -- The sagefs binary :SageFsStart spawns. A bare name is looked up on PATH;
