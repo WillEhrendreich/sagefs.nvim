@@ -2201,6 +2201,40 @@ describe("bindings_view pane (real buffer)", function()
   end)
 end)
 
+-- ─── Completions route by the active session's directory ─────────────────────
+-- The normalized session field is working_directory. omnifunc read workingDirectory
+-- (the raw wire spelling), found nothing, and always sent Neovim's cwd.
+
+describe("omnifunc working directory", function()
+  local function completion_body(active_session)
+    local sagefs = require("sagefs")
+    local transport = require("sagefs.transport")
+    local original_http_json = transport.http_json
+    local original_session = sagefs.active_session
+    local captured
+    transport.http_json = function(opts) captured = opts end
+    sagefs.active_session = active_session
+    make_buffer({ "let x = List." })
+    vim.api.nvim_win_set_cursor(0, { 1, 12 })
+    local ok, err = pcall(sagefs.omnifunc, 0, "")
+    transport.http_json = original_http_json
+    sagefs.active_session = original_session
+    assert_truthy(ok, "omnifunc raised: " .. tostring(err))
+    assert_truthy(captured, "omnifunc made no completion request")
+    return captured.body
+  end
+
+  it("sends the active session's own directory, not Neovim's cwd", function()
+    local body = completion_body({ id = "s1", working_directory = "/work/other-repo" })
+    assert_eq("/work/other-repo", body.working_directory, "completion request directory")
+  end)
+
+  it("falls back to Neovim's cwd when the session list carried no directory", function()
+    local body = completion_body({ id = "s1", working_directory = "" })
+    assert_eq(vim.fn.getcwd(), body.working_directory, "completion request directory")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
