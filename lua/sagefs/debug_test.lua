@@ -50,6 +50,10 @@ local HOLD_TIMEOUT_S = 30
 -- How long to wait for configurationDone after the adapter says it initialized
 -- before releasing anyway (an adapter that never sends it must not strand the hold).
 local CONFIGURED_GRACE_MS = 1500
+-- How long dap.run gets to put a debug session of ours on the board. An adapter
+-- that cannot start (missing binary) never creates one and fires no event, so
+-- without this check the hold would sit until the two minute backstop.
+M.SESSION_START_GRACE_MS = 5000
 
 -- ─── Pure: adapter discovery ─────────────────────────────────────────────────
 
@@ -304,6 +308,8 @@ local function remove_listeners(dap, key)
       if type(bucket) == "table" then bucket[key] = nil end
     end
   end
+  -- on_session is flat (key -> function), unlike the before/after event buckets
+  if dap.listeners.on_session then dap.listeners.on_session[key] = nil end
 end
 
 local function add_listener(dap, when, event, key, fn)
@@ -451,12 +457,37 @@ local function new_run(deps)
       end)
     end
 
+    -- Our own session closing without a terminate event: the adapter died, or
+    -- the user called dap.close() before it answered initialize.
+    if dap.listeners.on_session then
+      dap.listeners.on_session[key] = function(old_session)
+        if old_session and old_session.closed and mine(old_session) then on_session_end() end
+      end
+    end
+
     local ok, err = pcall(dap.run, config)
     if not ok then
       notify("SageFs debug: could not start the debugger: " .. tostring(err), LEVELS.ERROR)
       debug_ended = true
       release()
+      return
     end
+
+    local function have_session()
+      if mine(dap.session and dap.session() or nil) then return true end
+      if dap.sessions then
+        for _, other in pairs(dap.sessions()) do
+          if mine(other) then return true end
+        end
+      end
+      return false
+    end
+    table.insert(cancels, deps.defer(M.SESSION_START_GRACE_MS, function()
+      if state == "finished" or release_sent or debug_ended or have_session() then return end
+      notify("SageFs debug: the debugger did not start (see :DapShowLog); releasing the test.", LEVELS.WARN)
+      debug_ended = true
+      release()
+    end))
   end
 
   local function on_held(answer)
