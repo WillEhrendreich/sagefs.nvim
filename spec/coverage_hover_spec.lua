@@ -170,6 +170,22 @@ describe("coverage_hover badge", function()
     assert.are.equal(9, calls.set[1].line)
   end)
 
+  it("draws only the active session's badges", function()
+    local set = 0
+    local api = {
+      nvim_buf_get_name = function() return FILE end,
+      nvim_create_namespace = function() return 7 end,
+      nvim_buf_line_count = function() return 60 end,
+      nvim_buf_clear_namespace = function() end,
+      nvim_buf_set_extmark = function() set = set + 1 end,
+    }
+    local state = coverage.apply_coverage_view(coverage.new(), view({ SessionId = "A", Generation = 40 }))
+    ch.render_badges(3, state, { api = api, session_id = "B" })
+    assert.are.equal(0, set, "session A's badges stay off the screen after switching to B")
+    ch.render_badges(3, state, { api = api, session_id = "A" })
+    assert.are.equal(1, set)
+  end)
+
   it("draws nothing when the density turned code lens style marks off", function()
     local calls = { set = 0 }
     local api = {

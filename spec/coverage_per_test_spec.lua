@@ -154,6 +154,52 @@ describe("coverage.apply_coverage_view", function()
     assert.are.equal(1, #coverage.views_for_file(state, "C:/w/Prod.fs"))
   end)
 
+  it("keeps sessions apart: session B at a low generation is not a straggler of session A", function()
+    local state = coverage.new()
+    state = coverage.apply_coverage_view(state, view({ SessionId = "A", Generation = 40, Symbol = "fromA" }))
+    state = coverage.apply_coverage_view(state, view({ SessionId = "B", Generation = 3, Symbol = "fromB" }))
+    local names = {}
+    for _, v in ipairs(coverage.views_for_file(state, "/p/Prod.fs", "B")) do table.insert(names, v.symbol) end
+    assert.are.same({ "fromB" }, names, "B's views are not dropped as stragglers")
+    assert.are.equal(3, coverage.generation_for_file(state, "/p/Prod.fs", "B"))
+  end)
+
+  it("a reader on session B never sees session A's views, and A keeps its own", function()
+    local state = coverage.apply_coverage_view(coverage.new(), view({ SessionId = "A", Generation = 40, Symbol = "fromA" }))
+    assert.are.same({}, coverage.views_for_file(state, "/p/Prod.fs", "B"))
+    assert.is_nil(coverage.generation_for_file(state, "/p/Prod.fs", "B"))
+    local names = {}
+    for _, v in ipairs(coverage.views_for_file(state, "/p/Prod.fs", "A")) do table.insert(names, v.symbol) end
+    assert.are.same({ "fromA" }, names)
+  end)
+
+  it("a generation sweeps only inside its own session", function()
+    local state = coverage.new()
+    state = coverage.apply_coverage_view(state, view({ SessionId = "A", Generation = 4, Symbol = "a1" }))
+    state = coverage.apply_coverage_view(state, view({ SessionId = "B", Generation = 9, Symbol = "b1" }))
+    local names = {}
+    for _, v in ipairs(coverage.views_for_file(state, "/p/Prod.fs", "A")) do table.insert(names, v.symbol) end
+    assert.are.same({ "a1" }, names, "B's newer generation did not sweep A")
+  end)
+
+  it("a view with no session id is read by any session (an older daemon)", function()
+    local state = coverage.apply_coverage_view(coverage.new(), view({ SessionId = false, Symbol = "anon" }))
+    assert.are.equal(1, #coverage.views_for_file(state, "/p/Prod.fs", "B"))
+  end)
+
+  it("matches a daemon path only on whole path components, and only for a relative one", function()
+    local state = coverage.apply_coverage_view(coverage.new(), view({ FilePath = "/a/Util.fs", Symbol = "u" }))
+    assert.are.equal(1, #coverage.views_for_file(state, "/a/Util.fs"))
+    assert.are.equal(0, #coverage.views_for_file(state, "/b/a/Util.fs"), "another project's Util.fs is not this one")
+    assert.are.equal(0, #coverage.views_for_file(state, "/Util.fs"), "a shorter absolute path is not a match either")
+  end)
+
+  it("still finds an absolute buffer by a relative daemon path", function()
+    local state = coverage.apply_coverage_view(coverage.new(), view({ FilePath = "src/Prod.fs" }))
+    assert.are.equal(1, #coverage.views_for_file(state, "/home/w/proj/src/Prod.fs"))
+    assert.are.equal(0, #coverage.views_for_file(state, "/home/w/proj/mysrc/Prod.fs"), "src/ is a whole component, not a suffix of mysrc/")
+  end)
+
   it("bumps the version when something changed", function()
     local state = coverage.new()
     local v0 = state._version

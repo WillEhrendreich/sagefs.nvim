@@ -61,6 +61,19 @@ describe("wire_testing.render", function()
   end)
 end)
 
+describe("wire_testing.render, the badge", function()
+  it("hands the active session to the coverage badge", function()
+    local ch = require("sagefs.coverage_hover")
+    local prev = ch.render_badges
+    local seen
+    ch.render_badges = function(_, _, opts) seen = opts end
+    require("sagefs.wire_testing").render(1, { coverage_state = {}, active_session = { id = "B" }, density_state = {} })
+    ch.render_badges = prev
+    assert.is_truthy(seen)
+    assert.are.equal("B", seen.session_id)
+  end)
+end)
+
 describe("wire_testing command registration", function()
   it("registers :SageFsBindings as the live view and keeps the tracked list as :SageFsBindingList", function()
     local registered = {}
