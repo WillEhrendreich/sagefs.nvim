@@ -138,11 +138,15 @@ local function session_matches(data)
   return testing.session_matches(data, M.active_session)
 end
 
+--- Did we just ask for a session, so its warmup events are the ones to show?
+local function expecting_warmup()
+  return M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
+end
+
 --- Is a lifecycle event for session `sid` about the session this editor uses
 --- (or is waiting on, right after creating one)?
 local function session_is_ours(sid)
-  local expecting = M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
-  return sessions.warmup_event_is_ours({ sessionId = sid ~= "?" and sid or nil }, M.active_session, expecting)
+  return sessions.warmup_event_is_ours({ sessionId = sid ~= "?" and sid or nil }, M.active_session, expecting_warmup())
 end
 
 --- Our session is up: drop the warmup text (the statusline returns early while
@@ -322,8 +326,7 @@ local function build_handlers()
     if not data then return end
     -- Every session's warmup reaches every client of a shared daemon: only
     -- react to the one this editor is waiting on.
-    local expecting = M.warmup_expected_until ~= nil and (vim.uv.hrtime() / 1e6) < M.warmup_expected_until
-    if not sessions.warmup_event_is_ours(data, M.active_session, expecting) then return end
+    if not sessions.warmup_event_is_ours(data, M.active_session, expecting_warmup()) then return end
     local prev_phase = M.warmup_phase
     -- The 0.6 state-shaped progress event has a step but no phase: keep the
     -- phase we know instead of blanking it (which made the next legacy event
