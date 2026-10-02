@@ -75,7 +75,7 @@ end)
 describe("rebuild.started_in_background", function()
   it("is true for the answer the daemon gives while the build runs on", function()
     assert.is_true(R.started_in_background({ success = true,
-      message = "Hard reset initiated — building first; the current worker keeps serving until the new build is ready. Call get_session_status ..." }))
+      message = "Hard reset initiated \226\128\148 building first; the current worker keeps serving until the new build is ready. Call get_session_status ..." }))
   end)
 
   it("is false for a daemon that answered after the work was done, and for nonsense", function()

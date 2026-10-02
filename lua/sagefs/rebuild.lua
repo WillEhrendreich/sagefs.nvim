@@ -1,4 +1,4 @@
--- sagefs/rebuild.lua — what the last rebuild of a session did
+-- sagefs/rebuild.lua: what the last rebuild of a session did
 -- Pure Lua, zero vim dependencies
 --
 -- POST /hard-reset with rebuild=true answers at once ("Hard reset initiated ...") and

@@ -1,4 +1,4 @@
--- sagefs/source_state.lua — is the build this session runs behind the files on disk?
+-- sagefs/source_state.lua: is the build this session runs behind the files on disk?
 -- Pure Lua, zero vim dependencies
 --
 -- The daemon carries one closed state per session on /api/sessions (and in

@@ -1125,7 +1125,8 @@ end)
 -- said nothing for a failed build.
 
 describe(":SageFsHardReset tells the truth about the rebuild", function()
-  local INITIATED = "Hard reset initiated — building first; the current worker keeps serving until the new build is ready."
+  local DASH = "\226\128\148" -- the em dash the daemon writes in its own sentence
+  local INITIATED = "Hard reset initiated " .. DASH .. " building first; the current worker keeps serving until the new build is ready."
 
   --- Run one hard reset against a scripted daemon. `restarts` is what lastRestart says on
   --- each successive session list read (the last one repeats). Returns what was said.
