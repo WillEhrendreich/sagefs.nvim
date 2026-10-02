@@ -20,8 +20,77 @@ local function parse_url(url)
   return host, port, path
 end
 
---- Generic HTTP JSON request via vim.uv TCP (eliminates curl process spawn)
----@param opts { method: string, url: string, body: table|string|nil, timeout: number|nil, callback: fun(ok: boolean, raw: string) }
+--- Build the HTTP/1.1 request text. `headers` are extra request headers (an MCP
+--- client needs Accept and Mcp-Session-Id); a caller header of the same name as a
+--- standard one replaces it. With no extra headers this is byte for byte the
+--- request http_json always sent.
+---@param req { method: string, host: string, port: number, path: string, headers: table<string,string>|nil, body: string|nil }
+---@return string
+function M.build_request(req)
+  local extra = req.headers or {}
+  local extra_lower = {}
+  for name in pairs(extra) do extra_lower[name:lower()] = true end
+  local parts = {
+    req.method .. " " .. req.path .. " HTTP/1.1\r\n",
+    "Host: " .. req.host .. ":" .. req.port .. "\r\n",
+  }
+  local names = {}
+  for name in pairs(extra) do table.insert(names, name) end
+  table.sort(names)
+  for _, name in ipairs(names) do
+    table.insert(parts, name .. ": " .. extra[name] .. "\r\n")
+  end
+  if req.body then
+    if not extra_lower["content-type"] then
+      table.insert(parts, "Content-Type: application/json\r\n")
+    end
+    table.insert(parts, "Content-Length: " .. #req.body .. "\r\n")
+  end
+  table.insert(parts, "Connection: close\r\n")
+  table.insert(parts, "\r\n")
+  if req.body then table.insert(parts, req.body) end
+  return table.concat(parts)
+end
+
+--- Read a raw HTTP response: status, header map (names lower-cased), and the body
+--- with chunked transfer encoding undone. nil when it is not an HTTP response.
+---@param raw string
+---@return { status: integer, headers: table<string,string>, body: string }|nil
+function M.parse_response(raw)
+  if type(raw) ~= "string" or raw == "" then return nil end
+  local body_start = raw:find("\r\n\r\n", 1, true)
+  if not body_start then return nil end
+  local head = raw:sub(1, body_start - 1)
+  local status_line = head:match("^[^\r]*")
+  local status = tonumber(status_line:match("^HTTP/%d+%.?%d* (%d+)"))
+  if not status then return nil end
+  local headers = {}
+  for line in head:gmatch("\r\n([^\r]*)") do
+    local name, value = line:match("^([^:]+):%s*(.-)%s*$")
+    if name then headers[name:lower()] = value end
+  end
+  local body = raw:sub(body_start + 4)
+  if (headers["transfer-encoding"] or ""):lower():find("chunked", 1, true) then
+    local decoded = {}
+    local pos = 1
+    while pos <= #body do
+      local chunk_end = body:find("\r\n", pos, true)
+      if not chunk_end then break end
+      local chunk_size = tonumber(body:sub(pos, chunk_end - 1), 16) or 0
+      if chunk_size == 0 then break end
+      table.insert(decoded, body:sub(chunk_end + 2, chunk_end + 1 + chunk_size))
+      pos = chunk_end + 2 + chunk_size + 2
+    end
+    body = table.concat(decoded)
+  end
+  return { status = status, headers = headers, body = body }
+end
+
+--- Generic HTTP JSON request via vim.uv TCP (eliminates curl process spawn).
+--- `headers` adds request headers. The callback also receives a third argument,
+--- { status = integer, headers = table } (header names lower-cased), once a
+--- response was read; it is nil for a failure before one arrived.
+---@param opts { method: string, url: string, body: table|string|nil, headers: table<string,string>|nil, timeout: number|nil, callback: fun(ok: boolean, raw: string, meta: table|nil) }
 function M.http_json(opts)
   local host, port, path = parse_url(opts.url)
   local body_str = nil
@@ -40,13 +109,13 @@ function M.http_json(opts)
   local timer = vim.uv.new_timer()
   local completed = false
 
-  local function finish(ok, data)
+  local function finish(ok, data, meta)
     if completed then return end
     completed = true
     if timer then pcall(timer.stop, timer); pcall(timer.close, timer) end
     pcall(tcp.read_stop, tcp)
     if not tcp:is_closing() then tcp:close() end
-    vim.schedule(function() opts.callback(ok, data) end)
+    vim.schedule(function() opts.callback(ok, data, meta) end)
   end
 
   if timer then
@@ -58,23 +127,12 @@ function M.http_json(opts)
   tcp:connect(host, port, function(err)
     if err then finish(false, "connect: " .. tostring(err)); return end
 
-    -- Build HTTP/1.1 request
-    local req_parts = {
-      opts.method .. " " .. path .. " HTTP/1.1\r\n",
-      "Host: " .. host .. ":" .. port .. "\r\n",
-    }
-    if body_str then
-      table.insert(req_parts, "Content-Type: application/json\r\n")
-      table.insert(req_parts, "Content-Length: " .. #body_str .. "\r\n")
-      table.insert(req_parts, "Connection: close\r\n")
-      table.insert(req_parts, "\r\n")
-      table.insert(req_parts, body_str)
-    else
-      table.insert(req_parts, "Connection: close\r\n")
-      table.insert(req_parts, "\r\n")
-    end
+    local request_text = M.build_request({
+      method = opts.method, host = host, port = port, path = path,
+      headers = opts.headers, body = body_str,
+    })
 
-    tcp:write(table.concat(req_parts), function(write_err)
+    tcp:write(request_text, function(write_err)
       if write_err then finish(false, "write: " .. tostring(write_err)); return end
 
       local response_parts = {}
@@ -90,28 +148,10 @@ function M.http_json(opts)
             finish(false, "empty response")
             return
           end
-          -- Strip HTTP headers (find \r\n\r\n boundary)
-          local body_start = raw:find("\r\n\r\n")
-          if body_start then
-            local status_line = raw:sub(1, raw:find("\r\n") or 0)
-            local status_code = tonumber(status_line:match("HTTP/%d+%.?%d* (%d+)")) or 0
-            local response_body = raw:sub(body_start + 4)
-            -- Handle chunked transfer encoding
-            if raw:lower():find("transfer%-encoding:%s*chunked") then
-              local decoded = {}
-              local pos = 1
-              while pos <= #response_body do
-                local chunk_end = response_body:find("\r\n", pos)
-                if not chunk_end then break end
-                local chunk_size = tonumber(response_body:sub(pos, chunk_end - 1), 16) or 0
-                if chunk_size == 0 then break end
-                local chunk_data = response_body:sub(chunk_end + 2, chunk_end + 1 + chunk_size)
-                table.insert(decoded, chunk_data)
-                pos = chunk_end + 2 + chunk_size + 2
-              end
-              response_body = table.concat(decoded)
-            end
-            finish(status_code >= 200 and status_code < 300, response_body)
+          local response = M.parse_response(raw)
+          if response then
+            local meta = { status = response.status, headers = response.headers }
+            finish(response.status >= 200 and response.status < 300, response.body, meta)
           else
             finish(false, raw)
           end

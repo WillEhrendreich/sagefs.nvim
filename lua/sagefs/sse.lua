@@ -155,6 +155,11 @@ function M.classify_event(event)
     file_reloaded = "file_reloaded",
     SystemAlarm = "system_alarm",
     system_alarm = "system_alarm",
+    -- Cohort wire rows (one cohort spans every session, so none carries a SessionId)
+    cohort_matrix = "cohort_matrix",
+    claim_changed = "claim_changed",
+    landing_changed = "landing_changed",
+    save_observed = "save_observed",
   }
 
   local action = type_to_action[event.type] or "unknown"
@@ -174,10 +179,15 @@ function M.classify_state_event(data)
   if data.fileReloaded ~= nil then return "file_reloaded" end
   if data.systemAlarm ~= nil then return "system_alarm" end
   if data.hotReloadChanged ~= nil then return "hot_reload_changed" end
+  if data.reloadReported ~= nil then return "reload_reported" end
+  if data.cohortChanged ~= nil then return "cohort_changed" end
   if data.warmupProgress ~= nil then return "warmup_progress" end
   if data.sessionReady ~= nil then return "session_ready" end
   if data.sessionSwitched ~= nil then return "session_switched" end
   if data.outputCount ~= nil then return "model_changed" end
+  -- SessionReload.NoReloadYet is sent without the field: a frame whose only key is
+  -- the sessionId is the daemon clearing that session's reload report.
+  if type(data.sessionId) == "string" and next(data, next(data)) == nil then return "reload_reported" end
   -- sessionProgress and anything unrecognized are keepalive-only: no state to apply.
   return "state_update"
 end
