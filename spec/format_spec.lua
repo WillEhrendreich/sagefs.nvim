@@ -528,3 +528,33 @@ describe("format.format_duration", function()
     assert.is_nil(format.format_duration(0))
   end)
 end)
+
+-- ─── http_failure_text: what to show when the daemon answered with a non-2xx ──
+
+describe("format.http_failure_text", function()
+  it("shows the daemon's message when the reply carries one", function()
+    local raw = '{"error":"short","message":"Session not reachable: No sessions match","success":false}'
+    assert.equals("Session not reachable: No sessions match", format.http_failure_text(raw, { status = 404 }))
+  end)
+
+  it("falls back to the error field, then the result field", function()
+    assert.equals("boom", format.http_failure_text('{"error":"boom"}', { status = 500 }))
+    assert.equals("bad input", format.http_failure_text('{"result":"bad input"}', { status = 400 }))
+  end)
+
+  it("names the status when the body is not JSON or says nothing", function()
+    assert.equals("HTTP 502", format.http_failure_text("<html>bad gateway</html>", { status = 502 }))
+    assert.equals("HTTP 500", format.http_failure_text("{}", { status = 500 }))
+    assert.equals("HTTP 503", format.http_failure_text("", { status = 503 }))
+  end)
+
+  it("keeps the old sentence when no reply arrived at all", function()
+    assert.equals("HTTP request failed", format.http_failure_text("connect: ECONNREFUSED", nil))
+    assert.equals("HTTP request failed", format.http_failure_text("timeout", nil))
+  end)
+
+  it("keeps only the first line of a long message", function()
+    local raw = '{"message":"first line\\nsecond line"}'
+    assert.equals("first line", format.http_failure_text(raw, { status = 404 }))
+  end)
+end)

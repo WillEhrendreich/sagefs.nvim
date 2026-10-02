@@ -887,6 +887,74 @@ describe("a session that is still warming when we list it", function()
   end)
 end)
 
+describe("an eval from a directory outside the routed session's", function()
+  --- A checkout with one F# file as the current buffer, and Neovim's cwd set to its PARENT:
+  --- the session owns the checkout, the editor was started one level above it.
+  local function checkout_buffer_from_parent()
+    local parent = vim.fn.tempname() .. "_parent"
+    local root = parent .. "/proj"
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.fn.writefile({ "<Project />" }, root .. "/App.fsproj")
+    local buf = make_buffer({ "let a = 1;;" })
+    vim.api.nvim_buf_set_name(buf, root .. "/A.fs")
+    vim.cmd("cd " .. vim.fn.fnameescape(parent))
+    return buf, root, parent
+  end
+
+  --- Evaluate through the real routing wrapper against a fake daemon; `reply` answers POST /exec.
+  local function eval_from_parent(reply)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original = transport.http_json
+    local _, root, parent = checkout_buffer_from_parent()
+    local session = { id = "proj0001", name = "proj", status = "Ready", projects = { "App.fsproj" },
+      working_directory = root, eval_count = 0 }
+    sagefs.session_overrides = {}
+    sagefs.active_session = session
+    sagefs.session_list = { session }
+    sagefs.state = model.clear_cells(sagefs.state)
+    local sent
+    transport.http_json = function(opts)
+      if opts.url:find("/exec$") then
+        sent = opts.body
+        vim.schedule(function() reply(opts) end)
+      end
+    end
+    local guarded = sagefs.smart_eval_with_session_check(sagefs.eval_cell)
+    guarded()
+    vim.wait(1500, function() return sagefs.state.cells[1] and sagefs.state.cells[1].status ~= "running" end, 20)
+    transport.http_json = original
+    vim.cmd("cd " .. vim.fn.fnameescape(vim.fn.tempname():match("^(.*)/[^/]*$") or "/tmp"))
+    return sagefs, sent, root, parent
+  end
+
+  it("sends the session's directory, not Neovim's cwd", function()
+    local sagefs, sent, root, parent = eval_from_parent(function(opts)
+      opts.callback(true, vim.json.encode({ success = true, result = "val a: int = 1" }), { status = 200 })
+    end)
+    ok_(sent ~= nil, "the eval was sent")
+    eq(root, sent.working_directory, "working_directory is the routed session's directory")
+    ok_(sent.working_directory ~= parent, "and not the editor's cwd")
+    eq("proj0001", sent.sessionId, "to the routed session")
+    sagefs.state = model.clear_cells(sagefs.state)
+  end)
+
+  it("shows the daemon's message when it refuses the eval", function()
+    local sagefs = eval_from_parent(function(opts)
+      opts.callback(false, vim.json.encode({ success = false, error = "short",
+        message = "Session not reachable: No sessions match workingDirectory" }), { status = 404 })
+    end)
+    local cell = sagefs.state.cells[1]
+    ok_(cell ~= nil, "the cell has a state")
+    eq("error", cell.status, "the cell is in error")
+    ok_(tostring(cell.output):find("No sessions match workingDirectory", 1, true),
+      "the daemon's words reach the cell: " .. tostring(cell.output))
+    ok_(not tostring(cell.output):find("HTTP request failed", 1, true), "not the fixed sentence")
+    sagefs.state = model.clear_cells(sagefs.state)
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
