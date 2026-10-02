@@ -472,6 +472,9 @@ local function build_handlers()
     -- Clear all session-specific state so stale results don't linger
     M.testing_state = testing.clear_session_state and testing.clear_session_state(M.testing_state) or M.testing_state
     M.coverage_state = coverage.clear and coverage.clear(M.coverage_state) or M.coverage_state
+    -- The statusline returns early while a warmup phase is set, so a fault mid-warmup
+    -- (a failed build is the common one) would hide "(Faulted)" behind the warmup text.
+    reset_warmup_text()
     notify(string.format("Session faulted [%s]: %s", sid, reason), vim.log.levels.ERROR)
     fire_user_event("session_faulted", data)
   end
