@@ -668,6 +668,7 @@ describe("the statusline after our session finishes warming", function()
     captured({ { type = "warmup_progress", data = vim.json.encode({ Phase = "finalizing", Step = 4, Total = 4 }) } })
     ok_(sagefs.statusline():find("Ready!", 1, true), "mid-warmup the statusline says so: " .. sagefs.statusline())
     captured({ { type = "warmup_completed", data = vim.json.encode({ session_id = "mine0001", project_count = 1 }) } })
+    vim.wait(150, function() return false end, 10) -- the session list is re-read on the next tick
     transport.http_json = original_http
     transport.connect_sse = original_connect
     vim.notify = original_notify

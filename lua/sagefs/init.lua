@@ -363,6 +363,16 @@ local function build_handlers()
       fire_user_event("warmup_completed", data)
       return
     end
+    -- Our session is up: drop the warmup text (the statusline returns early
+    -- while a phase is set, so "Ready!" stuck forever) and re-read the session
+    -- list, so the session label stops saying "(Starting)".
+    M.warmup_phase = nil
+    M.warmup_step = 0
+    M.warmup_total = 0
+    M.warmup_message = ""
+    M.warmup_progress = 0
+    M.warmup_expected_until = nil
+    vim.schedule(function() M.list_sessions() end)
     local n = data.project_count or data.ProjectCount or 0
     local label = n == 1 and "1 project" or (tostring(n) .. " projects")
     if M.config.notify_warmup_completed ~= false then
