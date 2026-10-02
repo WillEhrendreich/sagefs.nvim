@@ -1119,6 +1119,103 @@ describe("source state on the statusline and in :SageFsStatus", function()
   end)
 end)
 
+-- ─── Hard reset: the daemon answers "initiated" and builds on in the background ──
+-- POST /hard-reset with rebuild=true returns at once; the outcome is lastRestart on
+-- /api/sessions. The plugin said "Hard reset complete (rebuild)" for the first and
+-- said nothing for a failed build.
+
+describe(":SageFsHardReset tells the truth about the rebuild", function()
+  local INITIATED = "Hard reset initiated — building first; the current worker keeps serving until the new build is ready."
+
+  --- Run one hard reset against a scripted daemon. `restarts` is what lastRestart says on
+  --- each successive session list read (the last one repeats). Returns what was said.
+  local function hard_reset(reply_message, restarts)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local config = require("sagefs.config")
+    local saved_poll = config.REBUILD_POLL_MS
+    config.REBUILD_POLL_MS = 30
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local original_notify = vim.notify
+    local said, reads, posts = {}, 0, 0
+    vim.notify = function(msg, level) table.insert(said, { msg = msg, level = level }) end
+    transport.http_json = function(opts)
+      if opts.url:find("/hard%-reset$") then
+        posts = posts + 1
+        opts.callback(true, vim.json.encode({ success = true, message = reply_message }))
+      elseif opts.url:find("/api/sessions$") then
+        reads = reads + 1
+        local restart = restarts[math.min(reads, #restarts)]
+        vim.schedule(function()
+          opts.callback(true, vim.json.encode({ sessions = { {
+            id = "rb000001", status = "Ready", projects = { "App.fsproj" }, workingDirectory = vim.fn.getcwd(),
+            lastRestart = restart,
+          } } }))
+        end)
+      end
+    end
+    sagefs.warmup_phase = nil
+    sagefs.active_session = { id = "rb000001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    local finished = false
+    sagefs.hard_reset(function() finished = true end)
+    vim.wait(2000, function()
+      for _, n in ipairs(said) do
+        if n.msg:find("Rebuild finished", 1, true) or n.msg:find("Rebuild FAILED", 1, true) then return true end
+      end
+      return #restarts == 0 and finished
+    end, 10)
+    vim.wait(60, function() return false end, 10)
+    local line = sagefs.statusline()
+    transport.http_json = original_http
+    vim.notify = original_notify
+    config.REBUILD_POLL_MS = saved_poll
+    return { said = said, reads = reads, posts = posts, statusline = line }
+  end
+
+  local function joined(said)
+    local out = {}
+    for _, n in ipairs(said) do out[#out + 1] = n.msg end
+    return table.concat(out, "\n")
+  end
+
+  it("says the rebuild started (not complete), then that it finished", function()
+    local r = hard_reset(INITIATED, {
+      { outcome = "InProgress", message = "Rebuild in progress" },
+      { outcome = "InProgress", message = "Rebuild in progress" },
+      { outcome = "Succeeded", message = "Last rebuild succeeded at 10:00:00" },
+    })
+    local text = joined(r.said)
+    eq(1, r.posts, "one reset request")
+    ok_(text:find("Hard reset started", 1, true), "it says started: " .. text)
+    ok_(not text:find("Hard reset complete", 1, true), "it does not claim completion: " .. text)
+    ok_(text:find("Rebuild finished", 1, true), "it says when the build is done: " .. text)
+    ok_(not r.statusline:find("rebuild", 1, true), "the statusline is clear again: " .. r.statusline)
+  end)
+
+  it("a failed build is an error with the compiler's words, and the statusline says the old build serves", function()
+    local r = hard_reset(INITIATED, {
+      { outcome = "InProgress", message = "Rebuild in progress" },
+      { outcome = "FailedStillServing",
+        message = "Last rebuild failed at 10:00:00 - still serving the previous build.\nerror FS0039: The value 'x' is not defined" },
+    })
+    local text = joined(r.said)
+    ok_(text:find("Rebuild FAILED", 1, true), text)
+    ok_(text:find("FS0039", 1, true), "the compiler's words reach the user: " .. text)
+    local last = r.said[#r.said]
+    eq(vim.log.levels.ERROR, last.level, "as an error")
+    ok_(r.statusline:find("⚠ rebuild FAILED (old build still serves)", 1, true), r.statusline)
+  end)
+
+  it("a daemon that answers after the work is done is believed, with no polling", function()
+    local r = hard_reset("Hard reset complete. Rebuilt and reloaded.", {})
+    local text = joined(r.said)
+    ok_(text:find("Hard reset complete", 1, true), text)
+    ok_(not text:find("Hard reset started", 1, true), text)
+    eq(0, r.reads, "nothing to wait for")
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
