@@ -79,8 +79,10 @@ describe("reload_state.parse", function()
   it("reads the session-level lastReload object the same way as the SSE one", function()
     local sessions = decode(fx.read("api-sessions.json")).sessions
     local r = R.parse(sessions[1].lastReload)
-    assert.are.equal("NoEffect", r.outcome)
-    assert.are.equal("", r.mechanism)
+    assert.are.equal("NeverEntered", r.outcome)
+    assert.are.equal("metadata-delta", r.mechanism)
+    assert.are.equal(0, r.patched)
+    assert.are.equal(1, r.considered)
   end)
 
   it("returns nil for no report: null, absent, or not a table", function()
@@ -222,8 +224,11 @@ describe("reload_state.display: the truth in words", function()
   end)
 
   it("NoEffect with nothing considered is quiet and says how little reached the app: the real eval-time frame", function()
-    local sessions = decode(fx.read("api-sessions.json")).sessions
-    local x = R.display(R.parse(sessions[1].lastReload))
+    local frame
+    for _, f in ipairs(reload_frames()) do
+      if f.reloadReported.outcome == "NoEffect" then frame = f end
+    end
+    local x = R.display(R.parse(frame.reloadReported))
     assert.are.equal("no effect (0 of 0 changed definitions reached the running app)", x.text)
     assert.are.equal("quiet", x.severity)
     assert.is_false(x.attention)

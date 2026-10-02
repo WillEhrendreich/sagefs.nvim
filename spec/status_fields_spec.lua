@@ -13,7 +13,7 @@ local function raw_sessions() return vim.json.decode(fx.read("api-sessions.json"
 describe("status_fields.parse", function()
   it("reads lastReload and replFreshness from a real /api/sessions entry", function()
     local parsed = status_fields.parse(raw_sessions()[1])
-    assert.are.equal("NoEffect", parsed.last_reload.outcome)
+    assert.are.equal("NeverEntered", parsed.last_reload.outcome)
     assert.are.equal("BehindApp", parsed.repl_freshness.state)
   end)
 
@@ -130,7 +130,7 @@ describe("sessions.parse_sessions_response carries the report fields", function(
     local result = sessions.parse_sessions_response(fx.read("api-sessions.json"))
     assert.is_true(result.ok)
     assert.are.equal("BehindApp", result.sessions[1].repl_freshness.state)
-    assert.are.equal("NoEffect", result.sessions[1].last_reload.outcome)
+    assert.are.equal("NeverEntered", result.sessions[1].last_reload.outcome)
     assert.are.equal("InSync", result.sessions[2].repl_freshness.state)
   end)
 end)
