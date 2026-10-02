@@ -35,7 +35,8 @@ This plugin connects Neovim to the running SageFs daemon, providing:
 - Live test state with gutter signs
 - Code coverage with gutter annotations
 - Session management (multi-project)
-- Hot reload controls
+- Hot reload controls, and what the last save did (see |sagefs-reload-truth|)
+- Debugging a failing test with nvim-dap (see |:SageFsDebugTest|)
 - SSE live updates from the daemon
 
 Architecture: pure Lua modules with zero vim API dependencies (fully
@@ -277,7 +278,7 @@ Analysis ~
     under the cursor. Highlights changed, added, and removed lines.
 
 :SageFsScopeMap                                         *:SageFsScopeMap*
-    Show a binding scope map — which F# bindings are live at each
+    Show a binding scope map - which F# bindings are live at each
     point in the file, which cells defined them, and whether
     they've been shadowed.
 
@@ -503,13 +504,13 @@ Density presets control information density: ~
 
   minimal:  Results only, no type hints, no timing
   normal:   Results + timing + type hints for top-level bindings
-  full:     Everything — all type hints, shadows, diagnostics
+  full:     Everything - all type hints, shadows, diagnostics
 
 ==============================================================================
 7. LIVE TESTING                                          *sagefs-testing*
 
 SageFs provides a three-speed live testing pipeline (timings are design
-goals — the engine's own docs cite 300–800ms typical on the hot path):
+goals - the engine's own docs cite 300–800ms typical on the hot path):
 
 1. Tree-sitter detects tests in ~50ms (even in broken code)
 2. F# Compiler Service builds dependency graph in ~350ms
@@ -834,7 +835,7 @@ Transparency support ~
 
 On transparent terminals (no `Normal` bg), the `full` mode uses
 `underdouble` instead of a background color. The `normal` mode uses
-zero background by design — just sign column characters.
+zero background by design - just sign column characters.
 
 ==============================================================================
 15. USER AUTOCMD EVENTS                                      *sagefs-events*
@@ -867,7 +868,7 @@ Event reference ~
     - `filePath`       Path to the evaluated file
     - `blockStartLine` 1-based line of the cell's start
     - `output`         Result text (stdout/error)
-    - `success`        Boolean — true if eval succeeded
+    - `success`        Boolean - true if eval succeeded
 
     Example: >lua
 
@@ -1032,7 +1033,7 @@ A: Yes. SageFs supports multiple sessions. Use |:SageFsCreateSession|
 
 Q: What's the `;;` for?
 A: `;;` at the end of a line marks a cell boundary. This is standard F#
-   Interactive syntax. Cells are the unit of evaluation — press `<A-CR>`
+   Interactive syntax. Cells are the unit of evaluation - press `<A-CR>`
    to evaluate the cell your cursor is in.
 
 Q: I pressed <A-CR> and nothing happened.
@@ -1047,7 +1048,7 @@ A: The last row says how many lines are left. `<leader>rE` or |:SageFsResult|
 Q: What commands are there?
 A: |:SageFsHelp|, or type `:Sage<Tab>`.
 
-Q: Results are stale after I edit — how do I refresh?
+Q: Results are stale after I edit - how do I refresh?
 A: Press `<A-CR>` again to re-evaluate. Results automatically go stale
    (dimmed) when you edit the cell they belong to.
 

@@ -94,6 +94,10 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 
 | Feature | Description |
 |---------|-------------|
+| **Result placement** | A result is drawn on a line of its cell that is on screen, cut to the window, with a footer that says how to open the rest (`<leader>rE`, `:SageFsResult`). See [Inline Results](#inline-results). |
+| **Slow-eval status** | An eval with no result after 4 seconds says why on its cell: still running, session warming, daemon not reachable, session faulted, no session. See [When nothing seems to happen](#when-nothing-seems-to-happen). |
+| **Session routing** | An eval goes to the session whose working directory holds the file, and the plugin offers to create one for this directory when there is none, even on a daemon that has other people's sessions. See [Which session an eval goes to](#which-session-an-eval-goes-to). |
+| **Help and first-run hint** | `:SageFsHelp` lists every command from the live command table, and a one-time float names the three to learn first. See [Finding your way around](#finding-your-way-around). |
 | **Cell evaluation** | `;;` boundaries define cells. `<Alt-Enter>` evaluates the cell under cursor. |
 | **Eval and advance** | `<Shift-Alt-Enter>` evaluates and jumps to the next cell. |
 | **Visual selection eval** | Select code in visual mode, `<Alt-Enter>` to evaluate. |
@@ -139,7 +143,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
-| **User autocmd events** | Every daemon event fired via `User` autocmds for scripting integration. |
+| **User autocmd events** | The daemon's events, fired as `User` autocmds for scripting integration. |
 | **Combined statusline** | `require("sagefs").statusline()` → session │ testing │ coverage │ daemon │ hot reload │ REPL freshness. The session status follows the daemon's own announcements (`sessionReady`, `sessionFaulted`, session health), and the plugin re-reads the session list on every (re)connect, so `(Starting)` turns into `(Ready)` when the daemon says so. |
 | **Code completion** | Omnifunc-based completions via SageFs completion endpoint. |
 | **Session reset** | Soft reset and hard reset with rebuild. |
@@ -241,7 +245,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<C-r>` | n | Run selected test - telescope picker only |
 | `<C-d>` | n | Show failure narrative floating window - test panel only (not mapped in telescope) |
 | **Browse & explore** | | |
-| `<leader>rb` | n | Bindings |
+| `<leader>rb` | n | Live bindings pane |
 | `<leader>rd` | n | Eval diff |
 | `<leader>rg` | n | Scope map |
 | `<leader>rm` | n | Timeline |

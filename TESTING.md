@@ -130,6 +130,8 @@ parts are real and which are derived by hand from the documented shape (for
 example `file_annotations_covering_synthetic.json` fills in `CoveringTests`,
 which were empty in every payload the daemon sent while I captured).
 
-Running one spec file: busted's CLI here takes no file argument, so point a
-config at it, e.g. `return { default = { pattern = "debug_test_spec", ROOT = {"spec/"}, helper = "spec/helper.lua" } }`
+Running one spec file: with plain `busted` (Linux and macOS) a path works,
+`busted spec/debug_test_spec.lua`, and so does `busted --filter "hint"`. The
+Windows runner `run_busted.lua` takes no file argument, so point a config at
+the spec instead, e.g. `return { default = { pattern = "debug_test_spec", ROOT = {"spec/"}, helper = "spec/helper.lua" } }`
 with `lua run_busted.lua -f that-config.lua`.
