@@ -425,7 +425,11 @@ local function new_run(deps)
     if state == "finished" then return end
     if key then remove_listeners(deps.dap, key) end
     debug_ended = true
-    release() -- no-op when it was released already; frees the hold otherwise
+    -- nvim-dap closes its sessions on ExitPre, just before VimLeavePre, and an
+    -- asynchronous release started there is cut off when Neovim exits. Wait one
+    -- tick: a quit takes the synchronous route (on_exit) first. No-op when the
+    -- hold was released already.
+    table.insert(cancels, deps.defer(0, release))
   end
 
   local function on_exit()
