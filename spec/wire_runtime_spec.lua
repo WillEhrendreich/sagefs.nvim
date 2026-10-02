@@ -280,3 +280,43 @@ describe("wire_runtime.on_session_ready: the worker was replaced", function()
     assert.are.equal(0, h.refreshes)
   end)
 end)
+
+describe("wire_runtime.on_reload_reported with no active session", function()
+  -- A directory with no session of its own sits on a shared daemon, so every other
+  -- session's reload report reaches it. Those are not this editor's to announce.
+  local function no_session_harness()
+    local h = harness({ active = false })
+    h.active = nil
+    return h
+  end
+
+  it("records the report but does not notify, draw a mark or re-read the list", function()
+    local h = no_session_harness()
+    h.rt.on_reload_reported(frame("NeverEntered", { mechanism = "metadata-delta" }))
+    assert.are.equal(0, #h.notes)
+    assert.are.equal(0, #h.shown)
+    assert.are.equal(0, h.refreshes)
+    assert.is_not_nil(h.rt.model(), "the fold still happens")
+  end)
+
+  it("keeps the record, so it shows once a session becomes active", function()
+    local h = no_session_harness()
+    h.rt.on_reload_reported(frame("NeverEntered", { mechanism = "metadata-delta" }))
+    h.active = { id = "adfd6b6b" }
+    local seen = false
+    for _, line in ipairs(h.rt.report_lines()) do
+      if tostring(line.text):find("never ran", 1, true) then seen = true end
+    end
+    assert.is_true(seen, "the report was folded into the model")
+  end)
+
+  it("still notifies for the active session, and stays quiet about another one", function()
+    local h = harness()
+    h.rt.on_reload_reported(frame("NeverEntered", { mechanism = "metadata-delta" }))
+    assert.are.equal(1, #h.notes)
+    local other = frame("NeverEntered", { mechanism = "metadata-delta" })
+    other.sessionId = "other999"
+    h.rt.on_reload_reported(other)
+    assert.are.equal(1, #h.notes)
+  end)
+end)
