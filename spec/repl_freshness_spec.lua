@@ -52,8 +52,8 @@ describe("repl_freshness.segment (statusline)", function()
   end)
 
   it("says BEHIND with the save count when behind", function()
-    assert.are.equal("\u{26A0} REPL BEHIND app (1 save)", F.segment(behind(1, { "A.f" })))
-    assert.are.equal("\u{26A0} REPL BEHIND app (3 saves)", F.segment(behind(3, { "A.f", "B.g" })))
+    assert.are.equal("⚠ REPL BEHIND app (1 save)", F.segment(behind(1, { "A.f" })))
+    assert.are.equal("⚠ REPL BEHIND app (3 saves)", F.segment(behind(3, { "A.f", "B.g" })))
   end)
 
   it("shows an unrecognized state instead of hiding it", function()

@@ -239,7 +239,7 @@ local FADE_QUIET_MS = 8000
 function M.display(report)
   if not report then return nil end
   local d = {
-    severity = "quiet", hl = "SageFsReloadQuiet", icon = "\u{25CB}", attention = false,
+    severity = "quiet", hl = "SageFsReloadQuiet", icon = "○", attention = false,
   }
   if report.phase == M.PHASE.None then
     d.key = "None"
@@ -250,7 +250,7 @@ function M.display(report)
   if report.phase == M.PHASE.Compiling then
     local name = report.file and report.file:match("([^/\\]+)$") or nil
     d.key = "Compiling"
-    d.icon = "\u{2026}"
+    d.icon = "…"
     d.severity, d.hl = "info", "SageFsReloadPending"
     d.text = name and ("compiling " .. name) or "compiling"
     d.short = "compiling"
@@ -272,17 +272,17 @@ function M.display(report)
   end
 
   if outcome == M.OUTCOME.PatchPending then
-    d.icon = "\u{25D0}"
+    d.icon = "◐"
     d.severity, d.hl = "info", "SageFsReloadPending"
     d.text = "applied, new body has not run yet"
     d.short = "applied, not run yet"
   elseif outcome == M.OUTCOME.Patched then
-    d.icon = "\u{25CF}"
+    d.icon = "●"
     d.severity, d.hl, d.fade_ms = "ok", "SageFsReloadOk", FADE_OK_MS
     d.text = "patched (ran)"
     d.short = "patched (ran)"
   elseif outcome == M.OUTCOME.NeverEntered then
-    d.icon = "\u{25CC}"
+    d.icon = "◌"
     d.severity, d.hl, d.notify_level, d.attention = "warn", "SageFsReloadWarn", "warn", true
     if report.considered > 0 then
       d.text = string.format(
@@ -293,28 +293,28 @@ function M.display(report)
     end
     d.short = "applied, never ran"
   elseif outcome == M.OUTCOME.Restarted then
-    d.icon = "\u{21BB}"
+    d.icon = "↻"
     d.severity, d.hl, d.notify_level, d.attention = "warn", "SageFsReloadWarn", "info", true
     d.cause = M.cause(report)
     local why = cause_text(d.cause)
     d.text = why and ("restarted: " .. why) or "restarted"
     d.short = "restarted"
   elseif outcome == M.OUTCOME.RestartRequired then
-    d.icon = "\u{21BB}"
+    d.icon = "↻"
     d.severity, d.hl, d.notify_level, d.attention = "error", "SageFsReloadError", "error", true
     d.cause = M.cause(report)
     local why = cause_text(d.cause)
     d.text = why and ("restart needed: " .. why) or "restart needed"
     d.short = (d.cause and d.cause.case) and ("restart needed: " .. d.cause.case) or "restart needed"
   elseif outcome == M.OUTCOME.CompileFailed then
-    d.icon = "\u{2717}"
+    d.icon = "✗"
     d.severity, d.hl, d.notify_level, d.attention = "error", "SageFsReloadError", "error", true
     d.cause = M.cause(report)
     local base = "did not compile; the app keeps running the last code that did"
     d.text = (d.cause and d.cause.text ~= "") and (base .. ": " .. d.cause.text) or base
     d.short = "compile failed"
   elseif outcome == M.OUTCOME.NoEffect then
-    d.icon = "\u{25CB}"
+    d.icon = "○"
     d.severity, d.hl, d.fade_ms = "quiet", "SageFsReloadQuiet", FADE_QUIET_MS
     if report.reasons[1] then
       d.cause = M.cause(report)
@@ -329,7 +329,7 @@ function M.display(report)
     end
     d.short = "no effect"
   elseif outcome == M.OUTCOME.KeptLiveState then
-    d.icon = "\u{25CF}"
+    d.icon = "●"
     d.severity, d.hl, d.fade_ms = "ok", "SageFsReloadOk", FADE_OK_MS
     local k = report.kept[1]
     if k then
@@ -403,7 +403,7 @@ function M.lines(report, previous)
     end
   end
   if d.remedy then
-    table.insert(lines, { text = "  \u{2192} " .. d.remedy, hl = d.hl })
+    table.insert(lines, { text = "  → " .. d.remedy, hl = d.hl })
   end
   if previous and is_quiet_no_effect(report) then
     local pd = M.display(previous)

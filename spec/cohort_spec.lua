@@ -87,7 +87,7 @@ describe("cohort.parse_status: members, claims, landings and the trunk", functio
   end)
 
   it("reads an integration session that failed to start, with the reason", function()
-    local m = C.parse_status("Cohort ledger head: v1\nConductor: x\nMembers (0):\nClaims (0):\nIntegration head: abc\nLandings: (none)\nIntegration session: FAILED to start \u{2014} the build failed\n")
+    local m = C.parse_status("Cohort ledger head: v1\nConductor: x\nMembers (0):\nClaims (0):\nIntegration head: abc\nLandings: (none)\nIntegration session: FAILED to start — the build failed\n")
     assert.are.equal("Failed", m.integration_session.kind)
     assert.are.equal("the build failed", m.integration_session.reason)
   end)
@@ -191,7 +191,7 @@ end)
 
 describe("cohort.mask_member", function()
   it("keeps the kind and the first six characters of an mcp handle and hides the rest", function()
-    assert.are.equal("mcp:tJj5NF\u{2026}", C.mask_member("mcp:tJj5NFu4OCqmI2WIWkiBFA"))
+    assert.are.equal("mcp:tJj5NF…", C.mask_member("mcp:tJj5NFu4OCqmI2WIWkiBFA"))
   end)
 
   it("leaves a short or non-handle id alone", function()
@@ -211,7 +211,7 @@ describe("cohort.render", function()
     assert.truthy(text:find("trunk l-4: queued behind the landing in flight", 1, true))
     assert.is_nil(text:find("BBBBBBBBBBBBBBBBBBBBBB", 1, true))
     assert.is_nil(text:find("CCCCCCCCCCCCCCCCCCCCCC", 1, true))
-    assert.truthy(text:find("mcp:BBBBBB\u{2026}", 1, true))
+    assert.truthy(text:find("mcp:BBBBBB…", 1, true))
   end)
 
   it("shows members, claims and the landing queue", function()

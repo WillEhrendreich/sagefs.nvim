@@ -26,7 +26,7 @@ local M = {}
 
 -- ─── Small helpers ───────────────────────────────────────────────────────────
 
-local ELLIPSIS = "\u{2026}"
+local ELLIPSIS = "…"
 local EM_DASH = "\226\128\148"
 
 --- Mask the secret part of a member id: `mcp:` and the first six characters.

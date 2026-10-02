@@ -216,7 +216,7 @@ describe("reload_state.display: the truth in words", function()
   it("CompileFailed says the app keeps the last good code", function()
     local x = d({
       state = "finished", outcome = "CompileFailed", patched = 0, considered = 0,
-      message = "Not applied \u{2014} the file did not compile, so the app is still serving the last good code: error FS0001: bad",
+      message = "Not applied — the file did not compile, so the app is still serving the last good code: error FS0001: bad",
     })
     assert.are.equal("did not compile; the app keeps running the last code that did: error FS0001: bad", x.text)
     assert.are.equal("error", x.severity)
@@ -289,9 +289,9 @@ describe("reload_state.statusline", function()
 
   it("shows icon, short truth and the mechanism tag", function()
     local r = R.parse({ state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 1, message = "m" })
-    assert.are.equal("HR \u{25D0} applied, not run yet [delta]", R.statusline(r))
+    assert.are.equal("HR ◐ applied, not run yet [delta]", R.statusline(r))
     local p = R.parse({ state = "finished", outcome = "Patched", mechanism = "detour", patched = 1, considered = 1, message = "m" })
-    assert.are.equal("HR \u{25CF} patched (ran) [detour]", R.statusline(p))
+    assert.are.equal("HR ● patched (ran) [detour]", R.statusline(p))
   end)
 
   it("shows a restart with its cause token and no tag", function()
@@ -299,7 +299,7 @@ describe("reload_state.statusline", function()
       state = "finished", outcome = "RestartRequired", patched = 0, considered = 1, message = "x",
       reasons = { { case = "SignatureChanged", message = "m", suggestedAction = "r" } },
     })
-    assert.are.equal("HR \u{21BB} restart needed: SignatureChanged", R.statusline(r))
+    assert.are.equal("HR ↻ restart needed: SignatureChanged", R.statusline(r))
   end)
 end)
 
@@ -307,14 +307,14 @@ describe("reload_state.lines", function()
   it("lays a pending metadata-delta save out as truth, mechanism and remedy", function()
     local r = R.parse({
       state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 1,
-      message = "Applied 1 of 1 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n\u{2192} Exercise it.",
+      message = "Applied 1 of 1 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n→ Exercise it.",
       suggestedAction = "Exercise it.",
     })
     local lines = R.lines(r)
-    assert.are.equal("\u{25D0} applied, new body has not run yet", lines[1].text)
+    assert.are.equal("◐ applied, new body has not run yet", lines[1].text)
     assert.are.equal("SageFsReloadPending", lines[1].hl)
     assert.are.equal("  via metadata delta", lines[2].text)
-    assert.are.equal("  \u{2192} Exercise it.", lines[3].text)
+    assert.are.equal("  → Exercise it.", lines[3].text)
   end)
 
   it("lists up to three causes and counts the rest", function()
@@ -450,14 +450,14 @@ describe("reload_state fade: a settled harmless verdict leaves the statusline, a
 
   it("Patched fades after fifteen seconds, and only when the caller says what time it is", function()
     local r = observed({ state = "finished", outcome = "Patched", mechanism = "detour", patched = 1, considered = 1, message = "m" }, 1000)
-    assert.are.equal("HR \u{25CF} patched (ran) [detour]", R.statusline(r, 1000 + 14999))
+    assert.are.equal("HR ● patched (ran) [detour]", R.statusline(r, 1000 + 14999))
     assert.are.equal("", R.statusline(r, 1000 + 15001))
-    assert.are.equal("HR \u{25CF} patched (ran) [detour]", R.statusline(r))
+    assert.are.equal("HR ● patched (ran) [detour]", R.statusline(r))
   end)
 
   it("a quiet no-effect fades after eight seconds", function()
     local r = observed({ state = "finished", outcome = "NoEffect", patched = 0, considered = 0, message = "m" }, 0)
-    assert.are.equal("HR \u{25CB} no effect", R.statusline(r, 7999))
+    assert.are.equal("HR ○ no effect", R.statusline(r, 7999))
     assert.are.equal("", R.statusline(r, 8001))
   end)
 

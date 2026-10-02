@@ -39,8 +39,8 @@ describe("status_fields.segments", function()
       reloadReported = { state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 1, message = "m" },
     }, 1000))
     local segs = status_fields.segments(session, { reload_model = model, now_ms = 1500 })
-    assert.are.equal("HR \u{25D0} applied, not run yet [delta]", segs[1])
-    assert.are.equal("\u{26A0} REPL BEHIND app (1 save)", segs[2])
+    assert.are.equal("HR ◐ applied, not run yet [delta]", segs[1])
+    assert.are.equal("⚠ REPL BEHIND app (1 save)", segs[2])
   end)
 
   it("falls back to the polled lastReload when no event has spoken", function()
@@ -48,7 +48,7 @@ describe("status_fields.segments", function()
     session.id = "adfd6b6b"
     session.last_reload = reload_state.parse({ state = "finished", outcome = "RestartRequired", patched = 0, considered = 1, message = "Restart needed: x" })
     local segs = status_fields.segments(session, { reload_model = reload_state.model_new() })
-    assert.are.equal("HR \u{21BB} restart needed", segs[1])
+    assert.are.equal("HR ↻ restart needed", segs[1])
   end)
 
   it("lets a settled, harmless verdict fade out of the statusline instead of sitting there", function()
@@ -59,10 +59,10 @@ describe("status_fields.segments", function()
       reloadReported = { state = "finished", outcome = "Patched", mechanism = "detour", patched = 1, considered = 1, message = "m" },
     }, 1000))
     local fresh = status_fields.segments(session, { reload_model = model, now_ms = 2000 })
-    assert.are.equal("HR \u{25CF} patched (ran) [detour]", fresh[1])
+    assert.are.equal("HR ● patched (ran) [detour]", fresh[1])
     local later = status_fields.segments(session, { reload_model = model, now_ms = 1000 + 15001 })
-    assert.are_not.equal("HR \u{25CF} patched (ran) [detour]", later[1])
-    assert.are.equal("\u{26A0} REPL BEHIND app (1 save)", later[1])
+    assert.are_not.equal("HR ● patched (ran) [detour]", later[1])
+    assert.are.equal("⚠ REPL BEHIND app (1 save)", later[1])
   end)
 
   it("is empty for a quiet in-sync session with no reload", function()
@@ -96,14 +96,14 @@ describe("status_fields.register: a new closed field is one entry", function()
         return { state = v.state }
       end,
       segment = function(value)
-        if value and value.state == "StaleEdited" then return "\u{26A0} source edited since the run" end
+        if value and value.state == "StaleEdited" then return "⚠ source edited since the run" end
         return ""
       end,
     })
     local parsed = status_fields.parse({ id = "x", sourceState = { state = "StaleEdited" } })
     assert.are.equal("StaleEdited", parsed.source_state.state)
     local segs = status_fields.segments(parsed, { reload_model = reload_state.model_new() })
-    assert.are.same({ "\u{26A0} source edited since the run" }, segs)
+    assert.are.same({ "⚠ source edited since the run" }, segs)
   end)
 
   it("sessions.parse_sessions_response carries the new field through without touching sessions.lua", function()

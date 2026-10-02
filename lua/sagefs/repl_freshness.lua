@@ -67,9 +67,9 @@ function M.segment(f)
   end
   if f.state ~= M.STATE.BehindApp then return "" end
   if f.saves_since then
-    return string.format("\u{26A0} REPL BEHIND app (%s)", saves_text(f.saves_since))
+    return string.format("⚠ REPL BEHIND app (%s)", saves_text(f.saves_since))
   end
-  return "\u{26A0} REPL BEHIND app"
+  return "⚠ REPL BEHIND app"
 end
 
 local MAX_NAMED = 3
@@ -113,7 +113,7 @@ function M.lines(f)
   if f.state == M.STATE.InSync then
     return { { text = "REPL in sync with the app", hl = "SageFsReplInSync" } }
   end
-  local lines = { { text = "\u{26A0} " .. M.eval_message(f), hl = "SageFsReplBehind" } }
+  local lines = { { text = "⚠ " .. M.eval_message(f), hl = "SageFsReplBehind" } }
   if f.message and f.message ~= "" then
     table.insert(lines, { text = "  daemon: " .. f.message, hl = "SageFsReplInSync" })
   end
