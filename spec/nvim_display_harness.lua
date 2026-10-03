@@ -1217,6 +1217,78 @@ describe(":SageFsHardReset tells the truth about the rebuild", function()
   end)
 end)
 
+describe("a row whose build disagreed is marked in the gutter", function()
+  local testing = require("sagefs.testing")
+  local render = require("sagefs.render")
+
+  --- Render one PASSED row per provenance into a real buffer and read back the
+  --- sign text and the highlight group the user actually sees on line 1. The
+  --- sign namespace is module-private, so every namespace on the buffer is read.
+  local function rendered_sign(provenance)
+    local buf = make_buffer({ "let answer = 42", "" })
+    -- A fresh name per call: two buffers cannot share one, and each call needs
+    -- its own so render's per-buffer sign cache cannot leak between them.
+    local file = vim.fn.fnamemodify(vim.fn.tempname() .. ".fs", ":p")
+    vim.api.nvim_buf_set_name(buf, file)
+    local state = testing.new()
+    state.tests["t1"] = {
+      displayName = "t1", fullName = "t1", file = file, line = 1,
+      status = "Passed", provenance = provenance,
+    }
+    state._file_index[file] = { t1 = true }
+    render.render_test_signs(buf, state, { files = {} })
+    -- The sign namespace is module-private, so reach it by NAME. (An id from
+    -- nvim_get_namespaces() would do, but that list is empty under `-l`.)
+    local ns = vim.api.nvim_create_namespace("sagefs_tests")
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      local d = m[4] or {}
+      if d.sign_text and m[2] == 0 then
+        -- Neovim pads a sign_text to two cells, so the stored value carries a
+        -- trailing space. The mark is compared on the glyph, not the padding.
+        return (d.sign_text:gsub("%s+$", "")), d.sign_hl_group
+      end
+    end
+    return nil, nil
+  end
+
+  it("marks a BuildDisagrees row, and it is not a plain green row", function()
+    local text, hl = rendered_sign("BuildDisagrees")
+    ok_(text ~= nil, "a sign was drawn at all")
+    ok_(text:find("✓", 1, true), "the row still says the test passed: " .. tostring(text))
+    eq("SageFsTestUnconfirmed", hl, "a row no build agreed with does not read as confirmed green")
+  end)
+
+  it("an Evaluated row is exactly the plain green row it always was", function()
+    local text, hl = rendered_sign("Evaluated")
+    eq("✓", text, "Evaluated is the normal case: no mark on almost every row")
+    eq("SageFsTestPassed", hl, "Evaluated keeps the pass colour")
+  end)
+
+  it("a VerifiedByBuild and a Compiled row are also unmarked", function()
+    local vt, vhl = rendered_sign("VerifiedByBuild")
+    eq("✓", vt, "a build agreed: nothing to mark")
+    eq("SageFsTestPassed", vhl, "a confirmed row keeps the pass colour")
+    local ct, chl = rendered_sign("Compiled")
+    eq("✓", ct, "ran against binaries: nothing to mark")
+    eq("SageFsTestPassed", chl, "and keeps the pass colour")
+  end)
+
+  it("a daemon that sends no provenance is not marked", function()
+    local text, hl = rendered_sign(nil)
+    eq("✓", text, "an older daemon's row looks exactly as it always did")
+    eq("SageFsTestPassed", hl, "absence is not disagreement")
+  end)
+
+  it("the highlight the mark uses is defined once the plugin sets up", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    render.setup_highlights(sagefs.config.highlight)
+    local hl = vim.api.nvim_get_hl(0, { name = "SageFsTestUnconfirmed" })
+    ok_(type(hl) == "table", "the group exists")
+    ok_(hl.link ~= nil or hl.fg ~= nil, "and it resolves to something a user can see")
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

@@ -1,6 +1,9 @@
 # gitignore for sagefs.nvim
 expertPanel/
 
+# Agent worktrees and scratch: a checkout per agent run, never part of the plugin.
+.worktrees/
+
 # Lua build artifacts
 *.luac
 luac.out

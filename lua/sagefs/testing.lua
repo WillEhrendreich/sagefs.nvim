@@ -6,6 +6,78 @@
 -- and validated — invalid statuses are rejected.
 local M = {}
 
+-- ─── Result provenance ───────────────────────────────────────────────────────
+--
+-- Every test status entry the daemon sends carries a Provenance: what code
+-- produced this row's verdict. On the wire it is one of
+--
+--   {"Case":"Compiled"}                            ran against a build's binaries
+--   {"Case":"Evaluated"}                           ran against code the session evaluated
+--   {"Case":"VerifiedByBuild"}                     evaluated, then a real build agreed
+--   {"Case":"BuildDisagrees","Fields":[{"Case":"BuildFailed","Fields":["..."]}]}
+--
+-- (SageFs.Core/Features/LiveTestingTypes.fs, ResultProvenance.)
+--
+-- Evaluated is the NORMAL state of a live session: every keystroke's tests run
+-- against evaluated code until a real build confirms them. Marking that would
+-- mark almost every row and train the eye to ignore the mark. BuildDisagrees is
+-- the one case where the plugin has EVIDENCE that the row did not come from this
+-- build, and where a green row would be actively misleading: the eval said pass,
+-- the compiler said otherwise. So exactly that one earns a mark.
+
+--- The provenance cases the daemon can send, in its own spelling.
+M.PROVENANCE = {
+  Compiled = "Compiled",
+  Evaluated = "Evaluated",
+  VerifiedByBuild = "VerifiedByBuild",
+  BuildDisagrees = "BuildDisagrees",
+}
+
+--- The one provenance that earns a mark, in either spelling of the wire value.
+local MARKED = {
+  BuildDisagrees = true,
+  build_disagrees = true,
+}
+
+--- Does this provenance deserve a mark on its row? True for BuildDisagrees and
+--- nothing else. nil (a daemon that sends no provenance) is never marked: absence
+--- is not disagreement.
+---@param provenance string|nil
+---@return boolean
+function M.marked_provenance(provenance)
+  return type(provenance) == "string" and MARKED[provenance] == true
+end
+
+--- Read one provenance value off an entry, in whichever spelling it arrived.
+---@param entry table
+---@return string|nil case_name, string|nil reason
+local function read_provenance(entry)
+  local raw = entry.provenance or entry.Provenance
+  if raw == nil then return nil, nil end
+  -- A bare string: the wire value ("build_disagrees"), or a case name.
+  if type(raw) == "string" then
+    if raw == "" then return nil, nil end
+    return raw, nil
+  end
+  if type(raw) ~= "table" then return nil, nil end
+  local case = raw.Case or raw.case
+  if type(case) ~= "string" or case == "" then return nil, nil end
+  -- BuildDisagrees carries WHY in Fields: the case name of the disagreement.
+  local fields = raw.Fields or raw.fields
+  local reason
+  if type(fields) == "table" then
+    local first = fields[1]
+    if type(first) == "table" then
+      reason = first.Case or first.case
+    elseif type(first) == "string" then
+      reason = first
+    end
+  end
+  return case, reason
+end
+
+M.read_provenance = read_provenance
+
 -- ─── Valid value sets (make illegal states unrepresentable) ──────────────────
 
 M.VALID_TEST_STATUSES = {
@@ -85,6 +157,10 @@ function M.new()
     generation = 0,      -- current RunGeneration int
     freshness = nil,     -- "Fresh" | "StaleCodeEdited" | "StaleWrongGeneration" | nil
     completion = nil,    -- "Complete" | "Partial" | "Superseded" | nil
+    -- What the last finished run said about the build it ran against (the event's
+    -- own `source`). nil until a run says one, which is what a daemon older than
+    -- that field leaves forever: nil is "not said", never "in sync".
+    run_source = nil,
     _file_index = {},    -- file → { testId → true } (O(1) file lookup, maintained incrementally)
     _version = 0,        -- mutation counter for render skip (FDA short-circuit / Nu ViewVersion)
     failure_narratives = {},  -- testId → {TestId, Summary, TimeSinceLastPass, CausalChanges}
@@ -144,6 +220,11 @@ function M.update_test(state, entry)
     line = entry.origin.Fields[2]
   end
 
+  -- What code produced this row's verdict, in the daemon's own words. nil when
+  -- the daemon sent none, which is every daemon older than the field: absent is
+  -- "not said", never "confirmed" and never "disagreed".
+  local provenance, provenance_reason = read_provenance(entry)
+
   -- Remove old file index entry if file changed
   local old = state.tests[entry.testId]
   if old and old.file and old.file ~= file then
@@ -162,6 +243,10 @@ function M.update_test(state, entry)
     status = entry.status or "Detected",
     -- Why the daemon skipped it ("pending (ptest)", "not focused"); only while Skipped.
     skip_reason = entry.status == "Skipped" and entry.skipReason or nil,
+    -- What code produced this verdict, and (for BuildDisagrees) why the build
+    -- disagreed. Rendered by gutter_sign, next to the status colour.
+    provenance = provenance,
+    provenanceReason = provenance_reason,
     output = nil,
   }
 
@@ -273,12 +358,17 @@ function M.normalize_entry(entry)
       out[k] = v
     end
   end
-  -- Unwrap DU values for fields that should be plain strings
+  -- Unwrap DU values for fields that should be plain strings. `provenance` is
+  -- deliberately NOT in this list: `read_provenance` reads it where a row is
+  -- built, and it needs the Fields that carry WHY the build disagreed.
   for _, f in ipairs({"status", "category", "currentPolicy", "previousStatus"}) do
     if type(out[f]) == "table" then
       out[f] = unwrap_du(out[f])
     end
   end
+  -- The provenance is NOT unwrapped to its case name here: `read_provenance`
+  -- reads it where a row is built, and it keeps the Fields that carry WHY the
+  -- build disagreed. Unwrapping here would throw that away.
   out.skipReason = skip_reason
   return out
 end
@@ -641,27 +731,123 @@ function M.format_summary(summary)
   return string.format("%d tests: %s", summary.total, table.concat(parts, ", "))
 end
 
---- Get gutter sign for a test status
----@param status string
----@return {text: string, hl: string}
-function M.gutter_sign(status)
-  if status == "Passed" then
-    return { text = "✓", hl = "SageFsTestPassed" }
-  elseif status == "Failed" then
-    return { text = "✖", hl = "SageFsTestFailed" }
-  elseif status == "Running" or status == "Queued" then
-    return { text = "⏳", hl = "SageFsTestRunning" }
-  elseif status == "Stale" then
-    return { text = "~", hl = "SageFsTestStale" }
-  elseif status == "PolicyDisabled" then
-    return { text = "⊘", hl = "SageFsTestDisabled" }
-  elseif status == "Skipped" then
-    return { text = "⊘", hl = "SageFsTestSkipped" }
-  elseif status == "Detected" then
-    return { text = "◦", hl = "SageFsTestDetected" }
-  else
-    return { text = " ", hl = "Normal" }
+--- The mark itself, the words for it, and why it is one glyph rather than a word.
+-- A row is one gutter sign wide, so the mark has to be a glyph. The words live on
+-- the row itself (row_mark_text) and in the tooltip (to_diagnostics / the picker
+-- preview), so the sign only has to be loud, not legible.
+local MARK_TEXT = "▲"   -- ▲ the build disagreed with this row
+local MARK_HL = "SageFsTestUnconfirmed"
+
+--- The glyph shown on a row whose provenance is BuildDisagrees, or nil.
+---@param provenance string|nil
+---@return string|nil
+function M.provenance_glyph(provenance)
+  if not M.marked_provenance(provenance) then return nil end
+  return MARK_TEXT
+end
+
+--- One sentence saying why a row is marked, or nil when it is not marked.
+---@param provenance string|nil
+---@param reason string|nil the BuildDisagreement case the daemon sent
+---@return string|nil
+
+--- What the daemon says the build did, per BuildDisagreement case
+--- (SageFs.Core/Features/LiveTestingTypes.fs).
+local DISAGREEMENT_WORDS = {
+  BuildFailed = "the real build failed, so this result is not confirmed",
+  ResultDiffers = "the real build disagreed with the result the session produced",
+  BuildUnanswered = "the real build did not answer, so this result is not confirmed",
+}
+
+function M.provenance_words(provenance, reason)
+  if not M.marked_provenance(provenance) then return nil end
+  local why = DISAGREEMENT_WORDS[reason]
+  if why then return why end
+  -- A daemon whose BuildDisagreement grew a case the plugin has not heard of
+  -- still gets a mark, just not a reason this build can name.
+  return "the real build disagreed with this result, so it is not confirmed"
+end
+
+--- The mark a row carries, if any: a glyph plus the words, or nil for a row
+--- whose verdict this build agrees with (including Evaluated, which is normal).
+---@param test table a row from state.tests
+---@return { glyph: string, hl: string, words: string, reason: string|nil }|nil
+function M.provenance_mark(test)
+  if type(test) ~= "table" then return nil end
+  if not M.marked_provenance(test.provenance) then return nil end
+  return {
+    glyph = MARK_TEXT,
+    hl = MARK_HL,
+    words = M.provenance_words(test.provenance, test.provenanceReason),
+    reason = test.provenanceReason,
+  }
+end
+
+--- The status a row shows WITH its provenance mark folded in, as words. This is
+--- where status and provenance are decided together, so no consumer has to grow a
+--- second, parallel notion of "does this row look trustworthy".
+---@param status string|nil
+---@param provenance string|nil
+---@return { text: string, hl: string, marked: boolean, words: string|nil }
+function M.row_mark(status, provenance)
+  local sign = M.gutter_sign(status)
+  local words = M.provenance_words(provenance)
+  if not words then
+    return { text = sign.text, hl = sign.hl, marked = false }
   end
+  -- The glyph rides in front of the status glyph so it reads as a qualifier on
+  -- it: "▲✓" is a pass that no build confirmed, not a new status of its own.
+  return {
+    text = MARK_TEXT .. sign.text,
+    hl = MARK_HL,
+    marked = true,
+    words = words,
+  }
+end
+
+--- Get gutter sign for a test status
+---
+--- `provenance` is what code produced this row's verdict. Only BuildDisagrees
+--- changes anything: the row keeps saying what the test did and gains a loud
+--- mark, because a green row no build agreed with is the one green that misleads.
+---@param status string
+---@param provenance string|nil
+---@return {text: string, hl: string, status: string|nil, marked: boolean|nil, words: string|nil}
+function M.gutter_sign(status, provenance)
+  local base
+  if status == "Passed" then
+    base = { text = "✓", hl = "SageFsTestPassed" }
+  elseif status == "Failed" then
+    base = { text = "✖", hl = "SageFsTestFailed" }
+  elseif status == "Running" or status == "Queued" then
+    base = { text = "⏳", hl = "SageFsTestRunning" }
+  elseif status == "Stale" then
+    base = { text = "~", hl = "SageFsTestStale" }
+  elseif status == "PolicyDisabled" then
+    base = { text = "⊘", hl = "SageFsTestDisabled" }
+  elseif status == "Skipped" then
+    base = { text = "⊘", hl = "SageFsTestSkipped" }
+  elseif status == "Detected" then
+    base = { text = "◦", hl = "SageFsTestDetected" }
+  else
+    base = { text = " ", hl = "Normal" }
+  end
+  -- `status` travels with the sign so a consumer that renders the row in words
+  -- (the picker preview, a diagnostic) can still say "Passed" on a marked row
+  -- instead of only showing the mark.
+  base.status = status
+  base.marked = false
+  local words = M.provenance_words(provenance)
+  if not words then return base end
+  -- A row whose build disagreed is loud in the build's colour, not the status's:
+  -- the status glyph is still in the text, and `status` is still in the table.
+  return {
+    text = MARK_TEXT .. base.text,
+    hl = MARK_HL,
+    status = status,
+    marked = true,
+    words = words,
+  }
 end
 
 --- Format failure detail for virtual text display
@@ -834,16 +1020,49 @@ function M.handle_test_run_started(state, data)
 end
 
 --- Handle a TestRunCompleted event: update summary
+---
+--- `source` is what THIS run says about the build it ran against: a green test
+--- over a stale build is not a green test, and the daemon that can say so should.
+--- A daemon older than the field sends none, which leaves `run_source` as it was
+--- and leaves `run_source_is_authoritative` false, so the caller keeps asking
+--- the session list exactly as it did before. Absence is never read as "in sync".
+---
+--- A run from an OLDER generation than the one already applied is dropped
+--- whole: its results and its verdict belong to a run the newer one replaced.
+---
 ---@param state table
----@param data table|nil {summary: {total, passed, failed, stale, running}}
+---@param data table|nil {summary: {total, passed, failed, stale, running}, generation: integer?, source: table?}
 ---@return table state
 function M.handle_test_run_completed(state, data)
   if not data then return state end
+  local gen = tonumber(data.Generation or data.generation)
+  if gen and tonumber(state.generation or 0) and gen < tonumber(state.generation) then
+    return state
+  end
+  if gen then state.generation = gen end
   if data.summary then
     state.summary = data.summary
   end
+  -- Only a JSON object with a state string is a verdict. Anything else (absent, a
+  -- bare string, a number) is not one, so what was last known stands.
+  local src = data.source or data.Source
+  if type(src) == "table" and type(src.state) == "string" then
+    state.run_source = src
+  end
   state._version = state._version + 1
   return state
+end
+
+--- Whether the last finished run said which build it ran against.
+--- True means the session list does NOT need re-reading for the source verdict:
+--- the run's own event already carried it. False (a nil source, including
+--- against a daemon older than the field) means the list is still the answer.
+---@param state table
+---@return boolean
+function M.run_source_is_authoritative(state)
+  if type(state) ~= "table" then return false end
+  local src = state.run_source
+  return type(src) == "table" and type(src.state) == "string"
 end
 
 -- ─── New handlers for enriched SageFs events ─────────────────────────────────

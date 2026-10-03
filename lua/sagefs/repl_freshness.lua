@@ -133,8 +133,17 @@ function M.split_banner(text)
   return clean, banner
 end
 
---- A BehindApp state read from a banner line. Only the fact is read: the count and
---- the names stay in the daemon's words, never parsed back out of them.
+--- A BehindApp state read from a banner line. Only the FACT is read off the prose:
+--- the state token, and nothing else.
+---
+--- This is the plugin's fallback for a daemon with no structured `replFreshness`
+--- on /exec, which is the daemon today (SageFs/McpServer.fs:2193 writes only
+--- `{success, result}` and puts this sentence inside `result`). The count and the
+--- declaration names are NOT read back out of the sentence: the sentence is the
+--- daemon's prose, it is already truncated to five names plus a remainder, and
+--- re-parsing it would make a display number depend on a wording change. A daemon
+--- that sends the structured object is read through `M.parse`, which is where the
+--- count and the names come from.
 ---@param banner string|nil
 ---@return table|nil
 function M.from_banner(banner)

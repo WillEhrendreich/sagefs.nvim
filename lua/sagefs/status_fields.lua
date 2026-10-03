@@ -31,10 +31,14 @@ local FIELDS = {
     key = "last_reload",
     parse = reload_state.parse,
     -- An event-fed report beats the polled one: the model is newer than any list.
+    -- `displayable` is what keeps a no-op off the statusline: the daemon records an
+    -- eval's no-effect as the session's lastReload, and both it (from the model)
+    -- and a polled no-op (from the list) would otherwise read as a broken reload.
     segment = function(polled, ctx)
       local sid = ctx.session and ctx.session.id
-      local live = sid and ctx.reload_model and reload_state.current(ctx.reload_model, sid) or nil
-      return reload_state.statusline(live or polled, ctx.now_ms)
+      local model = ctx.reload_model
+      if not sid then return reload_state.statusline(polled, ctx.now_ms) end
+      return reload_state.statusline(reload_state.displayable(model, sid, polled), ctx.now_ms)
     end,
   },
   {

@@ -238,9 +238,11 @@ local SSE_HANDLER_DEFS = {
   { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing", session_scoped = true },
   { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
   { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
-  -- A finished run asks for the session list again: whether the build it ran against is
-  -- behind the files on disk (sourceState) is read when asked, never pushed.
-  { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed", refresh_sessions = true },
+  -- A finished run says which build it ran against when the daemon sends the
+  -- event's own `source`, and then the session list is NOT read again (see
+  -- refresh_unless_run_source). Against a daemon that sends no `source` the list
+  -- is still the only place sourceState comes from, so it is still read.
+  { action = "test_run_completed", fn = "handle_test_run_completed", target = "testing", session_scoped = true, event = "test_run_completed", refresh_unless_run_source = true },
   { action = "run_policy_changed", fn = "handle_run_policy_changed", target = "testing", session_scoped = true },
   { action = "test_locations_detected", fn = "handle_test_locations", target = "testing", session_scoped = true },
   { action = "test_source_locations", fn = "handle_source_locations", target = "testing", session_scoped = true, event = "test_source_locations" },
@@ -333,6 +335,14 @@ local function build_handlers()
       end
       if def.event then fire_user_event(def.event, data) end
       if def.refresh_sessions then refresh_sessions_soon() end
+      if def.refresh_unless_run_source then
+        -- The run's own event says which build it used, so the whole session
+        -- list is not read again. A daemon older than that field says nothing,
+        -- and then the list is still the only answer.
+        if not testing.run_source_is_authoritative(M.testing_state) then
+          refresh_sessions_soon()
+        end
+      end
     end
   end
 

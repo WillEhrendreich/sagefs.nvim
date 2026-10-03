@@ -374,6 +374,24 @@ local function is_quiet_no_effect(report)
     and #report.reasons == 0
 end
 
+--- Whether this report is a no-op that must not take over the display.
+---
+--- The daemon records EVERY terminal event as the session's `lastReload`,
+--- including a `noeffect` produced by an eval the save produced nothing from
+--- (SageFs/DaemonMode.fs:3001 relays each payload straight to
+--- `ReloadObserved`). So an eval sitting behind a patched save replaces "patched
+--- (ran)" with "no effect" and the user reads a working hot reload as broken.
+---
+--- A no-effect with nothing considered and no reason names nothing: there is no
+--- verdict in it to show, so it is kept in the model (the state is real) but it
+--- does not become what is displayed. An older daemon sends the same no-op, so
+--- this guard is the plugin's own and does not wait on a daemon change.
+---@param report table|nil
+---@return boolean
+function M.is_a_no_op(report)
+  return is_quiet_no_effect(report) == true
+end
+
 --- Lines for a panel: the truth, the mechanism, the named causes, the remedy.
 ---@param report table|nil
 ---@param previous table|nil the settled verdict this one replaced, shown under a quiet no-effect
@@ -422,9 +440,11 @@ local function copy_map(t)
   return out
 end
 
---- A fresh model: latest report per session, and the settled verdict each replaced.
+--- A fresh model: latest report per session, the settled verdict each replaced,
+--- and the last no-op per session (kept apart, because a no-op must not be
+--- displayed: see `M.observe`).
 function M.model_new()
-  return { by_session = {}, previous = {}, last_sid = nil }
+  return { by_session = {}, previous = {}, last_sid = nil, last_noop = {} }
 end
 
 local function is_verdict(report)
@@ -435,23 +455,47 @@ end
 
 --- Record a report for a session. `source` is "sse" (an event said it) or "poll"
 --- (a session list said it); `now_ms` stamps when, so a harmless verdict can fade.
+---
+--- A quiet no-effect does NOT take over the display. It is recorded under
+--- `last_noop` so the state is not lost, and the verdict the user is actually
+--- looking at stays put. It is also not pushed into `previous`, because it is not
+--- a verdict: it names nothing, so it cannot be the "last save" a panel shows
+--- under a real one. Without this, an eval behind a patched save reads as a
+--- broken hot reload (see `M.is_a_no_op`).
 function M.observe(model, sid, report, source, now_ms)
-  local out = { by_session = copy_map(model.by_session), previous = copy_map(model.previous), last_sid = sid }
+  local out = { by_session = copy_map(model.by_session), previous = copy_map(model.previous),
+                last_sid = sid, last_noop = copy_map(model.last_noop or {}) }
   local old = model.by_session[sid]
   local stamped = {}
   for k, v in pairs(report) do stamped[k] = v end
   stamped.source = source
   stamped.polled = (source == "poll")
   stamped.seen_ms = now_ms
+  if M.is_a_no_op(stamped) then
+    out.last_noop = copy_map(model.last_noop or {})
+    out.last_noop[sid] = stamped
+    -- Nothing else changes: by_session, previous and last_sid keep what they
+    -- held, so the displayed verdict is exactly what it was. When there was
+    -- never a verdict, the no-op is the only word there is, so it is shown:
+    -- "no hot reload yet" would be a worse answer than the truth.
+    if not model.by_session[sid] then out.by_session[sid] = stamped end
+    return out
+  end
   if is_verdict(old) and old ~= nil then out.previous[sid] = old end
   out.by_session[sid] = stamped
   return out
 end
 
+local function copy_last_noop(model)
+  return copy_map(model.last_noop or {})
+end
+
 local function clear_session(model, sid)
-  local out = { by_session = copy_map(model.by_session), previous = copy_map(model.previous), last_sid = model.last_sid }
+  local out = { by_session = copy_map(model.by_session), previous = copy_map(model.previous), last_sid = model.last_sid,
+                last_noop = copy_last_noop(model) }
   out.by_session[sid] = nil
   out.previous[sid] = nil
+  out.last_noop[sid] = nil
   return out
 end
 
@@ -468,6 +512,31 @@ function M.apply_sse(model, data, now_ms)
     return M.observe(model, sid, report, "sse", now_ms), { changed = true, sid = sid, report = report }
   end
   return clear_session(model, sid), { changed = true, sid = sid, cleared = true }
+end
+
+--- The report a surface should show for a session: the live one, else the last
+--- verdict, and never a no-op. A session list polled right after an eval reports
+--- the daemon's no-op as `lastReload`, so the poll path needs the same guard the
+--- event path has; without it a polled list would undo the fix for the one
+--- surface (the statusline) that re-reads on every eval.
+---@param model table
+---@param sid string|nil
+---@param polled table|nil the session row's own last_reload, when there is one
+---@return table|nil
+function M.displayable(model, sid, polled)
+  if type(model) ~= "table" then return M.is_a_no_op(polled) and nil or polled end
+  if not sid then return polled end
+  local live = model.by_session[sid]
+  local held = (model.last_noop or {})[sid]
+  -- Something real to show: the live verdict, else the verdict it replaced.
+  if live and not M.is_a_no_op(live) then return live end
+  -- A no-op only steps aside when a real verdict is already on the books. A
+  -- session whose saves have all done nothing still shows its no-op: it is the
+  -- only word there is, and "no hot reload yet" would be a worse answer.
+  if model.previous[sid] then return model.previous[sid] end
+  if not polled then return held or live end
+  if M.is_a_no_op(polled) then return nil end
+  return polled
 end
 
 --- Drop one session's report and the verdict it replaced.
@@ -511,7 +580,7 @@ end
 --- Forget every report an event delivered (the connection dropped, so events may
 --- have been missed); the next session list is believed again.
 function M.drop_events(model)
-  local out = { by_session = {}, previous = {}, last_sid = model.last_sid }
+  local out = { by_session = {}, previous = {}, last_sid = model.last_sid, last_noop = {} }
   for sid, report in pairs(model.by_session) do
     if report.source ~= "sse" then
       out.by_session[sid] = report

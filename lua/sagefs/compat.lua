@@ -25,6 +25,44 @@ M.api_range = {
   max_reason = "api 3 is the newest contract this plugin release was tested against",
 }
 
+--- What this plugin release reads off the wire, declared as the question "if a
+--- daemon does not send this, does anything break?" rather than as a version
+--- range. Every entry is a field the plugin ADDS to what the daemon has always
+--- sent, so each one is optional and its absence must degrade to "shows nothing".
+---
+--- The list exists because a wire field that arrives quietly is the one way this
+--- plugin can be wrong without a test noticing: a new daemon adds a field, the
+--- plugin reads it, and against every older daemon the reading is `nil`. Anything
+--- listed here must have a degradation spec that feeds a payload WITHOUT the field
+--- and asserts nothing is claimed. `spec/compat_spec.lua` walks this list, so a
+--- field cannot be added without its degradation being declared.
+---
+--- `daemon` records where the field was verified, so a reader can tell a field
+--- the daemon sends today from one that is only aspirational.
+M.fields = {
+  { name = "lastReload.reasons", daemon = "SessionReload.toWire drops it", used = false,
+    note = "the daemon has ReloadFacts.Reasons but SessionReload.toWire (SageFs.Core/SessionReload.fs:183) does not write it, so the plugin never receives it and shows the cause parsed out of `message` instead" },
+  { name = "lastReload.kept", daemon = "SessionReload.toWire drops it", used = false,
+    note = "KeptStateReport is read off the worker payload (DevReload.fs:324) but SessionReload.toWire does not write it, so the plugin shows the plain KeptLiveState verdict" },
+  { name = "lastReload.declarations", daemon = "SessionReload.toWire drops it", used = false,
+    note = "parsed off the worker payload (SessionReload.fs:158) and not written back out, so the plugin never sees it" },
+  { name = "exec.replFreshness", daemon = "McpServer.fs:2193 /exec writes only {success, result}",
+    used = "banner",
+    note = "the daemon puts the WARNING sentence in `result` and no structured field, so the plugin reads the one it is actually sent" },
+  { name = "test_run_completed.source", daemon = "no such SSE event exists", used = false,
+    note = "the daemon's SSE registry (SseWriter.allSseEventTypes) has no test_run_* event; the per-run source exists only in the run_tests receipt (TestRunReceipt.fs:316), which is a different transport" },
+}
+
+--- The fields this plugin release actually reads, so a caller can name them.
+---@return string[]
+function M.fields_in_use()
+  local out = {}
+  for _, f in ipairs(M.fields) do
+    if f.used then out[#out + 1] = f.name end
+  end
+  return out
+end
+
 local UPDATE_DAEMON = "dotnet tool update --global sagefs"
 
 ---@class sagefs.CompatResult

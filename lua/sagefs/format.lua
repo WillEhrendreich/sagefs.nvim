@@ -17,8 +17,14 @@ local function json_decode(s)
 end
 
 --- Parse the JSON response from POST /exec
+---
+--- `replFreshness` is passed through as the raw decoded object, never
+--- interpreted here: `sagefs.repl_freshness.parse` is the one place that knows the
+--- closed set. It is ABSENT (nil) when the daemon sent none, which is what a
+--- daemon older than the field sends, and absence must never be read as "in
+--- sync" or raised as a problem.
 ---@param json_str string|nil
----@return {ok: boolean, output: string?, error: string?}
+---@return {ok: boolean, output: string?, error: string?, replFreshness: table?, diagnostics: table?}
 function M.parse_exec_response(json_str)
   if not json_str or json_str == "" then
     return { ok = false, error = "empty response" }
@@ -39,6 +45,14 @@ function M.parse_exec_response(json_str)
   -- Pass through structured diagnostics if present (from JSON format)
   if data.diagnostics and type(data.diagnostics) == "table" then
     result.diagnostics = data.diagnostics
+  end
+
+  -- Whether the REPL and live tests run the same build as the app, as the daemon
+  -- answered on this very eval. Only a JSON OBJECT with a `state` string counts:
+  -- anything else (absent, a string, a number) leaves the field absent, so an
+  -- older daemon and a malformed reply degrade the same quiet way.
+  if type(data.replFreshness) == "table" and type(data.replFreshness.state) == "string" then
+    result.replFreshness = data.replFreshness
   end
 
   return result

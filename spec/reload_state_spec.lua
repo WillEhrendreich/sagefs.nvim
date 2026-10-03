@@ -371,19 +371,30 @@ describe("reload_state model fold over the captured save sequence", function()
     assert.are.equal("patched (ran)", R.display(R.current(m, sid)).text)
   end)
 
-  it("ends on NoEffect after the eval, and keeps the save verdict it hid as `previous`", function()
+  it("an eval's no-effect after a patch does NOT become what is displayed", function()
+    -- The daemon records every terminal reload event as the session's lastReload,
+    -- including the no-effect an eval produces (SageFs/DaemonMode.fs:3001 relays
+    -- each payload to ReloadObserved). So after a working patch, this exact
+    -- sequence hands the plugin a no-effect. Showing it says the hot reload
+    -- stopped working, which is the opposite of what happened.
     local m = fold_through(6)
     local cur = R.current(m, "adfd6b6b")
-    assert.are.equal("NoEffect", cur.outcome)
-    assert.are.equal(0, cur.considered)
-    local prev = R.previous(m, "adfd6b6b")
-    assert.are.equal("Patched", prev.outcome)
-    local text = {}
-    for _, l in ipairs(R.lines(cur, prev)) do table.insert(text, l.text) end
-    assert.truthy(table.concat(text, "\n"):find("last save: patched (ran)", 1, true))
+    assert.are.equal("Patched", cur.outcome, "the patch verdict is what the user is still looking at")
+    assert.are.equal("patched (ran)", R.display(cur).text)
+    local noop = m.last_noop and m.last_noop["adfd6b6b"]
+    assert.is_table(noop, "the no-effect is still recorded, just not displayed")
+    assert.are.equal("NoEffect", noop.outcome)
+    assert.are.equal(0, noop.considered)
   end)
 
-  it("walks the whole sequence to NeverEntered without ever showing Patched for it", function()
+  it("the displayed verdict still replaces the one before it, and the no-op never becomes that `previous`", function()
+    local m = fold_through(6)
+    assert.are.equal("PatchPending", R.previous(m, "adfd6b6b").outcome)
+    assert.are_not.equal("NoEffect", R.previous(m, "adfd6b6b").outcome,
+      "a no-op names nothing, so it is not a verdict a panel can show as 'last save'")
+  end)
+
+  it("walks the whole sequence and never shows a no-op in place of a verdict", function()
     local m = R.model_new()
     local seen = {}
     for _, f in ipairs(reload_frames()) do
@@ -391,9 +402,13 @@ describe("reload_state model fold over the captured save sequence", function()
       local cur = R.current(m, "adfd6b6b")
       table.insert(seen, cur.outcome or cur.phase)
     end
+    -- The two NoEffect frames of the capture (frame 6 and frame 15) are the no-effects
+    -- an eval produced behind two real patches. Each is held back, so the sequence
+    -- stays on the verdict that actually describes the save and the slot repeats it.
     assert.are.same({
-      "compiling", "Restarted", "compiling", "PatchPending", "Patched", "NoEffect",
-      "compiling", "PatchPending", "Patched", "compiling", "Restarted", "compiling", "PatchPending", "NeverEntered", "NoEffect",
+      "compiling", "Restarted", "compiling", "PatchPending", "Patched", "Patched",
+      "compiling", "PatchPending", "Patched", "compiling", "Restarted", "compiling",
+      "PatchPending", "NeverEntered", "NeverEntered",
     }, seen)
   end)
 
@@ -445,7 +460,9 @@ end)
 describe("reload_state fade: a settled harmless verdict leaves the statusline, a problem does not", function()
   local function observed(payload, at)
     local m = select(1, R.apply_sse(R.model_new(), { sessionId = "a", reloadReported = payload }, at))
-    return R.current(m, "a")
+    -- What a surface would actually show, which is not `current()` for a no-op:
+    -- a no-op only holds the display back when a verdict replaces it.
+    return R.displayable(m, "a", nil)
   end
 
   it("Patched fades after fifteen seconds, and only when the caller says what time it is", function()
@@ -456,6 +473,8 @@ describe("reload_state fade: a settled harmless verdict leaves the statusline, a
   end)
 
   it("a quiet no-effect fades after eight seconds", function()
+    -- With nothing before it, a no-effect is still what is displayed: there is no
+    -- better word, and it is the truth about this session's only save so far.
     local r = observed({ state = "finished", outcome = "NoEffect", patched = 0, considered = 0, message = "m" }, 0)
     assert.are.equal("HR ○ no effect", R.statusline(r, 7999))
     assert.are.equal("", R.statusline(r, 8001))
@@ -499,6 +518,15 @@ describe("reload_state.forget", function()
     assert.is_nil(R.current(f, "a"))
     assert.is_nil(R.previous(f, "a"))
     assert.are.equal("Patched", R.current(f, "b").outcome)
-    assert.are.equal("NoEffect", R.current(m, "a").outcome)
+    -- The no-effect was held back from the display, so a is still on its Patched.
+    assert.are.equal("Patched", R.current(m, "a").outcome)
+    -- `forget` RETURNS the cleared model; `m` is untouched, because the state is immutable and
+    -- `forget` is a pure fold. Asserting on `m` here asked the ORIGINAL to have lost something,
+    -- which it never does — that is what made this case fail against correct code.
+    assert.is_nil(f.last_noop["a"], "forget drops the no-effect it was holding back")
+    assert.are.equal("Patched", R.current(m, "a").outcome, "and the original model is untouched")
+    -- A different session's held-back state must SURVIVE: forget is about ONE session, and
+    -- dropping state the user can still be shown would lose a real reload report.
+    assert.is_nil(f.last_noop["b"], "session b had no held-back no-effect to keep")
   end)
 end)

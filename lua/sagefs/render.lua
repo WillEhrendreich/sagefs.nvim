@@ -35,6 +35,11 @@ function M.setup_highlights(hl_config)
   vim.api.nvim_set_hl(0, "SageFsTestDetected", { default = true, fg = "#585b70" })
   vim.api.nvim_set_hl(0, "SageFsTestDisabled", { default = true, fg = "#585b70" })
   vim.api.nvim_set_hl(0, "SageFsTestSkipped", { default = true, fg = "#585b70" })
+  -- A row whose provenance says the real build disagreed with it. Deliberately
+  -- NOT the pass colour: a green row no build agreed with is the misleading one,
+  -- so it loses the green and gains this. Linked by default so a colorscheme can
+  -- override it like any other SageFs group.
+  vim.api.nvim_set_hl(0, "SageFsTestUnconfirmed", { link = "DiagnosticWarn", default = true })
   -- Coverage highlights (covered = quiet, uncovered = loud)
   vim.api.nvim_set_hl(0, "SageFsCovered", { default = true, fg = "#587358" })
   vim.api.nvim_set_hl(0, "SageFsUncovered", { default = true, fg = "#f38ba8" })
@@ -364,12 +369,14 @@ function M.render_test_signs(buf, testing_state, annotations_state)
   local by_file = testing.filter_by_file(testing_state, file)
   for _, t in ipairs(by_file) do
     if t.line and t.line > 0 then
-      local sign = testing.gutter_sign(t.status)
+      -- The row's provenance rides along, so a row the real build disagreed with
+      -- is marked here, in the same sign that says what the test did.
+      local sign = testing.gutter_sign(t.status, t.provenance)
       local fresh = _freshness_cache[t.line]
       if fresh == "Stale" then
-        sign = { text = "~", hl = "SageFsTestStale" }
+        sign = { text = "~", hl = "SageFsTestStale", status = t.status, marked = false }
       elseif fresh == "Running" then
-        sign = { text = "⏳", hl = "SageFsTestRunning" }
+        sign = { text = "⏳", hl = "SageFsTestRunning", status = t.status, marked = false }
       end
       desired[t.line - 1] = sign.text .. "|" .. sign.hl
     end

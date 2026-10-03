@@ -158,6 +158,12 @@ function M.new(deps)
   --- Take the daemon's WARNING banner off an eval result, and say the one-line
   --- message (with the remedy) when the REPL is behind. Returns the result without
   --- the banner.
+  ---
+  --- The structured `replFreshness` field wins over the banner. It is the
+  --- daemon's own answer for this exact eval, it carries the save count and the
+  --- declaration names, and the banner is prose that already drops both. A daemon
+  --- that sends no field (the daemon today: McpServer.fs:2193) leaves the banner
+  --- as the only thing said, and it is used exactly as before.
   function rt.on_eval(result)
     result = result or {}
     local session = active()
@@ -173,17 +179,34 @@ function M.new(deps)
         end
       end
     end
-    if banner and session and session.id and not (session.repl_freshness and session.repl_freshness.state == repl_freshness.STATE.BehindApp) then
-      banner_override[session.id] = repl_freshness.from_banner(banner)
+    -- The daemon's own structured answer for this eval, when it sent one.
+    local from_field = repl_freshness.from_structured(result)
+    local f
+    if from_field then
+      f = from_field
+      -- It is the better answer, so the banner must not overwrite it with the
+      -- poorer one, and the session list is told a fresh word was read.
+      if session and session.id then banner_override[session.id] = nil end
+      if deps.on_freshness and session and session.id then
+        local key = tostring(f.state) .. tostring(f.saves_since)
+        if last_freshness_key[session.id] ~= key then
+          last_freshness_key[session.id] = key
+          deps.on_freshness(session.id, f)
+        end
+      end
+    else
+      if banner and session and session.id and not (session.repl_freshness and session.repl_freshness.state == repl_freshness.STATE.BehindApp) then
+        banner_override[session.id] = repl_freshness.from_banner(banner)
+      end
+      f = freshness_of(session)
     end
-    local f = freshness_of(session)
     local say
     say, gate = repl_freshness.gate_should_announce(gate, f, now())
     if say then
       local levels = vim.log and vim.log.levels or { WARN = 2 }
       deps.notify(repl_freshness.eval_message(f), levels.WARN)
     end
-    if banner and deps.redraw then deps.redraw() end
+    if (banner or from_field) and deps.redraw then deps.redraw() end
     return clean_result
   end
 
@@ -203,7 +226,10 @@ function M.new(deps)
     local session = active()
     local sid = session and session.id
     local lines = {}
-    local report = sid and (reload_state.current(model, sid) or session.last_reload) or nil
+    -- `displayable` never returns a no-op: the daemon records an eval's no-effect
+    -- as the session's lastReload (SageFs/DaemonMode.fs:3001), and showing that
+    -- instead of the verdict a real save produced reads as a broken hot reload.
+    local report = sid and reload_state.displayable(model, sid, session and session.last_reload) or nil
     if not report and not sid then report = reload_state.latest(model) end
     if report then
       for _, l in ipairs(reload_state.lines(report, sid and reload_state.previous(model, sid) or nil)) do

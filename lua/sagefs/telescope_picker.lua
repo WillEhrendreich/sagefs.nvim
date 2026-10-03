@@ -29,10 +29,17 @@ M.STATUS_HL = {
 }
 
 --- Format the status prefix bracket label for a test entry.
+--- A row whose provenance says the real build disagreed gets a "!" in the prefix,
+--- because a green row no build agreed with is the one green that misleads.
 ---@param status string
----@return string prefix e.g. "[PASS]", "[FAIL]", "[STALE]"
-function M.format_status_prefix(status)
-  return M.STATUS_PREFIX[status] or "[    ]"
+---@param provenance string|nil
+---@return string prefix e.g. "[PASS]", "[FAIL]", "[!PASS]"
+function M.format_status_prefix(status, provenance)
+  local base = M.STATUS_PREFIX[status] or "[    ]"
+  if require("sagefs.testing").marked_provenance(provenance) then
+    return "!" .. base
+  end
+  return base
 end
 
 -- ─── Telescope guard ──────────────────────────────────────────────────────────
@@ -102,6 +109,13 @@ local function make_test_previewer()
       local lines = {}
       table.insert(lines, "Name:     " .. (test.displayName or "?"))
       table.insert(lines, "Status:   " .. (test.status or "?"))
+      -- What code produced that verdict, and, when the build disagreed, why.
+      -- A user reading "Passed" here needs the row's provenance in the same glance.
+      local testing = require("sagefs.testing")
+      local words = testing.provenance_words(test.provenance, test.provenanceReason)
+      if words then
+        table.insert(lines, "Build:    " .. words)
+      end
       if test.category and test.category ~= "" then
         table.insert(lines, "Category: " .. test.category)
       end
@@ -175,8 +189,13 @@ function M.pick_test(opts)
   })
 
   local function entry_maker(test)
-    local prefix = M.format_status_prefix(test.status)
-    local hl     = M.STATUS_HL[test.status] or "Comment"
+    local prefix = M.format_status_prefix(test.status, test.provenance)
+    -- A marked row is shown in the mark's colour, not the status colour: the
+    -- prefix still reads PASS or FAIL, but it no longer looks confirmed.
+    local hl = M.STATUS_HL[test.status] or "Comment"
+    if require("sagefs.testing").marked_provenance(test.provenance) then
+      hl = "SageFsTestUnconfirmed"
+    end
     return {
       value   = test,
       ordinal = (test.status or "") .. " " .. (test.displayName or "") .. " " .. (test.fullName or ""),
