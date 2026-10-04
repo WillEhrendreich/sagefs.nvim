@@ -49,8 +49,8 @@ M.fields = {
   { name = "exec.replFreshness", daemon = "McpServer.fs:2193 /exec writes only {success, result}",
     used = "banner",
     note = "the daemon puts the WARNING sentence in `result` and no structured field, so the plugin reads the one it is actually sent" },
-  { name = "test_run_completed.source", daemon = "no such SSE event exists", used = false,
-    note = "the daemon's SSE registry (SseWriter.allSseEventTypes) has no test_run_* event; the per-run source exists only in the run_tests receipt (TestRunReceipt.fs:316), which is a different transport" },
+  { name = "test_run_completed.source", daemon = "published on the event", used = "testing",
+    note = "the daemon publishes `test_run_completed` and carries this run's `source` verdict on it (AllPassed, PassedOnStaleSource, PassedWhileRebuilding, PassedOnUnknownSource, SomeFailed, Incomplete). It used to say \"no such SSE event exists\" — the verdict lived only in the run_tests receipt, which is a different transport, so a client watching the stream could never learn WHY a run passed" },
 }
 
 --- The fields this plugin release actually reads, so a caller can name them.
