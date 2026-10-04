@@ -154,3 +154,53 @@ describe("commands.register_commands — run/stop app", function()
     assert.truthy(notifications[1].msg:find("stopped"))
   end)
 end)
+
+describe("commands.register_commands: run/stop app update the session's own app state", function()
+  local commands, registered, plugin, http_calls
+  local prev_create_user_command, prev_create_augroup, prev_create_autocmd
+
+  before_each(function()
+    unload()
+    prev_create_user_command = vim.api.nvim_create_user_command
+    registered = {}
+    vim.api.nvim_create_user_command = function(name, handler, opts) registered[name] = { handler = handler, opts = opts } end
+    prev_create_augroup, prev_create_autocmd = vim.api.nvim_create_augroup, vim.api.nvim_create_autocmd
+    vim.api.nvim_create_augroup = function() return 1 end
+    vim.api.nvim_create_autocmd = function() end
+    http_calls = {}
+    package.loaded["sagefs.transport"] = { http_json = function(opts) table.insert(http_calls, opts) end }
+    commands = require("sagefs.commands")
+    plugin = { active_session = { id = "abc12345", app = { kind = "NotRunning" } } }
+    commands.register_commands(plugin, {
+      base_url = function() return "http://localhost:37749" end,
+      notify = function() end,
+    })
+  end)
+
+  after_each(function()
+    vim.api.nvim_create_user_command = prev_create_user_command
+    vim.api.nvim_create_augroup, vim.api.nvim_create_autocmd = prev_create_augroup, prev_create_autocmd
+    unload()
+  end)
+
+  it("a run's answer is the active session's app state, so the statusline does not wait for a list read", function()
+    registered["SageFsRunApp"].handler({ args = "" })
+    http_calls[1].callback(true, vim.json.encode({ State = "Running", Message = "up", Urls = {} }))
+    assert.equals("Running", plugin.active_session.app.kind)
+  end)
+
+  it("a stop's answer is too", function()
+    plugin.active_session.app = { kind = "Running" }
+    registered["SageFsStopApp"].handler({})
+    http_calls[1].callback(true, vim.json.encode({ State = "NotRunning", Message = "stopped", Urls = {} }))
+    assert.equals("NotRunning", plugin.active_session.app.kind)
+  end)
+
+  it("reads the session list again, because the daemon's row is the authority", function()
+    local reads = 0
+    plugin.list_sessions = function() reads = reads + 1 end
+    registered["SageFsRunApp"].handler({ args = "" })
+    http_calls[1].callback(true, vim.json.encode({ State = "Running", Message = "up", Urls = {} }))
+    assert.equals(1, reads)
+  end)
+end)

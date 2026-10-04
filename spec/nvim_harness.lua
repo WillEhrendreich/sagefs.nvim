@@ -874,6 +874,29 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
+  it("the statusline shows the app the session list says is running, which this editor did not start", function()
+    with_sse(function(sagefs)
+      local s = starting_session("s1")
+      s.status, s.app = "Ready", { kind = "Running", url = "http://localhost:5000" }
+      sagefs.session_list, sagefs.active_session, sagefs.app_run_state = { s }, s, nil
+      assert_contains(sagefs.statusline(), "▶", "a running app")
+      s.app = { kind = "Crashed", reason = "exit code 134" }
+      assert_contains(sagefs.statusline(), "⚠", "a crashed app")
+      s.app = { kind = "NotRunning" }
+      assert_falsy(sagefs.statusline():find("▶", 1, true), "an app that is not running shows no icon")
+    end)
+  end)
+
+  it("the session's own app state wins over an old :SageFsRunApp answer", function()
+    with_sse(function(sagefs)
+      local s = starting_session("s1")
+      s.status, s.app = "Ready", { kind = "NotRunning" }
+      sagefs.session_list, sagefs.active_session, sagefs.app_run_state = { s }, s, { kind = "Running" }
+      assert_falsy(sagefs.statusline():find("▶", 1, true), "the app stopped, whatever this editor was last told")
+      sagefs.app_run_state = nil
+    end)
+  end)
+
   local function session_gets(http_calls)
     local n = 0
     for _, c in ipairs(http_calls) do

@@ -72,7 +72,8 @@ function M.parse_state(data)
   local urls = data.Urls or data.urls
   local url_from_list = (type(urls) == "table") and urls[1] or nil
 
-  local kind = data.State
+  -- `State` is the run-app answer; a session row in /api/sessions says `state`.
+  local kind = data.State or data.state
     or data.case or data.Case or data.kind or data.Kind
     or data.status or data.Status or "Unknown"
   local url = url_from_list

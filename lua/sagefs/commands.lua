@@ -444,6 +444,9 @@ function M.register_commands(plugin, helpers)
         end
         local state = app_run.parse_state(parsed)
         plugin.app_run_state = state
+        -- What the daemon just said is the session's app state until the list says otherwise.
+        if plugin.active_session then plugin.active_session.app = state end
+        if plugin.list_sessions then plugin.list_sessions() end
         local level = app_run.is_failure(state) and vim.log.levels.WARN or vim.log.levels.INFO
         helpers.notify(app_run.format_run_notify(state), level)
       end,
@@ -467,6 +470,8 @@ function M.register_commands(plugin, helpers)
         end
         local state = app_run.parse_state(parsed)
         plugin.app_run_state = state
+        if plugin.active_session then plugin.active_session.app = state end
+        if plugin.list_sessions then plugin.list_sessions() end
         helpers.notify(app_run.format_stop_notify(state))
       end,
     })

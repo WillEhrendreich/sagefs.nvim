@@ -54,6 +54,17 @@ function M.label_for(active_session, event_label)
   return ""
 end
 
+--- The app state to show for the active session: the one its own row in
+--- /api/sessions carries (the daemon's word, whoever started the app and however
+--- it ended), else what this editor's last :SageFsRunApp or :SageFsStopApp got back.
+---@param active_session table|nil
+---@param command_state table|nil
+---@return table|nil
+function M.app_state_for(active_session, command_state)
+  if active_session and type(active_session.app) == "table" then return active_session.app end
+  return command_state
+end
+
 --- A request body that names the session it is for.
 ---
 --- The daemon's session-scoped routes (/reset, /hard-reset, /api/cancel-eval,
@@ -109,6 +120,9 @@ local function normalize_session(raw)
     -- "REPL", "Live Testing" or "Hot Reload", as the daemon words it. nil when an
     -- older daemon sends none: never guessed as REPL.
     workflow_label = type(raw.workflowLabel) == "string" and raw.workflowLabel or nil,
+    -- Whether this session's app is running, as the daemon says it now. nil when an
+    -- older daemon sends none: never guessed as NotRunning.
+    app = type(raw.app) == "table" and require("sagefs.app_run").parse_state(raw.app) or nil,
   }
   -- The closed report fields (lastReload, replFreshness, and whatever the daemon
   -- adds next) are read in one registry, not here.

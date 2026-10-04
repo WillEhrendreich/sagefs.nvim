@@ -1964,7 +1964,7 @@ function M.statusline()
   local timeline_sl = require("sagefs.timeline").format_statusline(M.timeline_stats)
   if timeline_sl ~= "" then table.insert(parts, timeline_sl) end
 
-  local app_sl = require("sagefs.app_run").format_statusline(M.app_run_state)
+  local app_sl = require("sagefs.app_run").format_statusline(sessions.app_state_for(M.active_session, M.app_run_state))
   if app_sl ~= "" then table.insert(parts, app_sl) end
 
   -- What the last save did, and whether the REPL is behind the app

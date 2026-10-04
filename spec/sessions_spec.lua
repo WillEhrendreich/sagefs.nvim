@@ -676,3 +676,40 @@ describe("sagefs.sessions scoping a request to a session", function()
     end)
   end)
 end)
+
+-- Every row of /api/sessions says whether that session's app is running, and the
+-- statusline's app icon used to come only from what THIS editor's :SageFsRunApp
+-- last got back. An app an agent started, or one that crashed, never showed.
+describe("sagefs.sessions app state", function()
+  local sessions = require("sagefs.sessions")
+
+  local function row(app)
+    return vim.json.encode({ sessions = { { id = "abc", status = "Ready", projects = {}, workingDirectory = "", evalCount = 0, avgDurationMs = 0, app = app } } })
+  end
+
+  it("reads the row's app into the session", function()
+    local s = sessions.parse_sessions_response(row({ state = "Running", message = "Hr is running", urls = {} })).sessions[1]
+    assert.equals("Running", s.app.kind)
+  end)
+
+  it("is nil when an older daemon sends no app, not a made-up NotRunning", function()
+    local s = sessions.parse_sessions_response(row(nil)).sessions[1]
+    assert.is_nil(s.app)
+  end)
+
+  describe("app_state_for", function()
+    it("takes the active session's own row over the last command's answer", function()
+      local state = sessions.app_state_for({ app = { kind = "Crashed" } }, { kind = "Running" })
+      assert.equals("Crashed", state.kind)
+    end)
+
+    it("falls back to the command's answer when the row carries no app", function()
+      assert.equals("Running", sessions.app_state_for({ id = "x" }, { kind = "Running" }).kind)
+      assert.equals("Running", sessions.app_state_for(nil, { kind = "Running" }).kind)
+    end)
+
+    it("is nil when neither knows", function()
+      assert.is_nil(sessions.app_state_for(nil, nil))
+    end)
+  end)
+end)

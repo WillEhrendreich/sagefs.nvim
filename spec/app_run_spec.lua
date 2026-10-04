@@ -239,3 +239,25 @@ describe("app_run.format_statusline", function()
     assert.are.equal("⚠", app_run.format_statusline({ kind = "CouldNotStart" }))
   end)
 end)
+
+-- A session row in /api/sessions carries `app` as {state, message, urls} in
+-- camelCase, where the run-app answer is {State, Message, Urls} in PascalCase.
+-- parse_state read only the second, so every session row's app read as Unknown.
+describe("app_run.parse_state on a session row's camelCase app", function()
+  local app_run = require("sagefs.app_run")
+
+  it("reads state, message and urls", function()
+    local s = app_run.parse_state({ state = "Running", message = "Hr is running (no web server)", urls = { "http://localhost:5000" } })
+    assert.equals("Running", s.kind)
+    assert.equals("http://localhost:5000", s.url)
+    assert.equals("Hr is running (no web server)", s.reason)
+  end)
+
+  it("reads a crash as Crashed, not Unknown", function()
+    assert.equals("Crashed", app_run.parse_state({ state = "Crashed", message = "exit code 134", urls = {} }).kind)
+  end)
+
+  it("still reads the PascalCase answer first", function()
+    assert.equals("Running", app_run.parse_state({ State = "Running", state = "NotRunning" }).kind)
+  end)
+end)
