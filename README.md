@@ -727,7 +727,7 @@ nvim --headless -u NONE -l spec/treesitter_cells_spec.lua  # needs the fsharp pa
 
 Busted prints `N successes / N failures / N errors / N pending` and the harness prints `Results: N passed, N failed`. Both exit non-zero on a failure. The plugin targets the Lua that Neovim embeds, LuaJIT (Lua 5.1 semantics): the suite runs under LuaJIT, the release hook runs busted through `luajit`, and the GitHub workflow runs it under Lua 5.1. `TESTING.md` has the Linux commands and the details I tripped over.
 
-The E2E suite uses 4 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`). Each E2E spec copies a sample to a temp directory, starts a SageFs daemon, runs tests, then cleans up.
+The E2E suite uses 5 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`, `samples/HotReloadLoop`). Each E2E spec copies a sample to a temp directory, starts its own SageFs daemon, runs tests, then cleans up. The daemon gets its own `SAGEFS_DATA_DIR` (so a run never reads or writes your `~/.SageFs`), `--no-resume`, and `--owner-pid` of the Neovim running the suite, so it ends with it (`spec/e2e/daemon_launch.lua`, tested by `spec/daemon_launch_spec.lua`). `spec/e2e/e2e_reload_display_spec.lua` follows a real `run_app` app through a pending patch, a confirmed one and one nothing calls, and `spec/e2e/e2e_live_values_spec.lua` drives `:SageFsBindings` (Safe mode, a click, a mode switch) and `:SageFsWorkflow`.
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. E2E tests additionally require `sagefs` and `dotnet` on PATH.
 
