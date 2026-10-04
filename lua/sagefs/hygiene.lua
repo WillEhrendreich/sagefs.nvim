@@ -143,10 +143,38 @@ function M.parse(reply)
   return model, nil
 end
 
--- ─── The words for an absent reply ────────────────────────────────────────────
+-- ─── What a reply that is not a plan means ───────────────────────────────────
 
--- Said whether or not the daemon said anything itself: the plugin reached a
--- daemon and the daemon did not know the tool.
+-- Phrases a daemon uses for a tool it does not have. The 0.6.892 daemon says
+-- "<tool> is not a tool this gate knows"; the others are what an older or a
+-- different MCP server says. Anything else is the daemon answering the tool.
+local MISSING_TOOL = {
+  "is not a tool this gate knows",
+  "unknown tool",
+  "does not have that tool",
+  "no such tool",
+}
+
+--- What a get_workspace_hygiene reply is: a plan, a daemon that has no such
+--- tool, a daemon that has it and refused ("Error: ... is not inside a git
+--- checkout"), or something this view cannot read. Only the second means the
+--- daemon is older than the plugin; the third is the daemon working.
+---@param reply string|nil
+---@return "plan"|"tool_missing"|"refused"|"unreadable"
+function M.classify(reply)
+  if type(reply) ~= "string" or reply:match("^%s*$") then return "unreadable" end
+  if read_plan_id(reply) then return "plan" end
+  local lower = reply:lower()
+  for _, phrase in ipairs(MISSING_TOOL) do
+    if lower:find(phrase, 1, true) then return "tool_missing" end
+  end
+  if reply:match("^%s*Error:") then return "refused" end
+  return "unreadable"
+end
+
+-- ─── The words for a reply that is not a plan ────────────────────────────────
+
+-- Said only for a daemon that does not know the tool.
 local ABSENT_HEAD = "This daemon has no get_workspace_hygiene, so there is no hygiene plan to read."
 local ABSENT_TAIL = "That is expected, not a failure: the plugin is newer than the daemon is. Update the daemon when you want this view."
 
@@ -161,10 +189,21 @@ function M.absent_message(reply)
       if line:match("%S") then table.insert(lines, line) end
     end
   end
-  if #lines == 0 then table.insert(lines, "The daemon answered with nothing this view can read.") end
+  local kind = M.classify(reply)
+  if #lines == 0 then table.insert(lines, "The daemon answered get_workspace_hygiene with nothing this view can read.") end
   table.insert(lines, "")
-  table.insert(lines, ABSENT_HEAD)
-  table.insert(lines, ABSENT_TAIL)
+  if kind == "tool_missing" then
+    table.insert(lines, ABSENT_HEAD)
+    table.insert(lines, ABSENT_TAIL)
+  elseif kind == "refused" then
+    if reply:find("not inside a git checkout", 1, true) then
+      table.insert(lines, "Open Neovim in a git checkout (or :cd into one) and run :SageFsHygiene again.")
+    else
+      table.insert(lines, "The daemon refused the request. Its words are above.")
+    end
+  else
+    table.insert(lines, "This view could not read that as a hygiene plan.")
+  end
   return lines
 end
 
@@ -215,7 +254,15 @@ end
 ---@return string
 function M.summary_line(text)
   local model = M.parse(text)
-  if not model then return "this daemon has no get_workspace_hygiene" end
+  if not model then
+    local kind = M.classify(text)
+    if kind == "tool_missing" then return "this daemon has no get_workspace_hygiene" end
+    if kind == "refused" then
+      local first = text:match("^%s*Error:%s*([^\n]*)") or ""
+      return "the daemon refused: " .. first
+    end
+    return "the daemon sent no readable hygiene plan"
+  end
   if model.safe_count == 0 then return "nothing is safe to reclaim right now" end
   return string.format("%d safe to reclaim (%s)", model.safe_count, model.safe_bytes or "an unknown size")
 end

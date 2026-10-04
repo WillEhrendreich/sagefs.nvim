@@ -176,11 +176,12 @@ describe("hygiene.parse on a reply that is not a plan", function()
     assert.is_nil(H.summary_line(err):find("7f3c1a2b", 1, true))
   end)
 
-  it("a refusal naming the tool is absent too, not a failure", function()
+  it("a refusal naming the tool is not a plan, and is shown as the daemon's refusal", function()
     local model, reply = H.parse("Error: tidy_workspace runs only what get_workspace_hygiene showed you.")
     assert.is_nil(model)
     assert.are.equal("Error: tidy_workspace runs only what get_workspace_hygiene showed you.", reply)
-    assert.truthy(absent_words(reply):find("newer than the daemon", 1, true))
+    assert.truthy(absent_words(reply):find("tidy_workspace runs only what", 1, true))
+    assert.is_nil(absent_words(reply):find("newer than the daemon", 1, true), "a daemon that answers is not an older daemon")
   end)
 
   it("an empty, blank or unrelated reply is absent, not a crash", function()
@@ -286,8 +287,8 @@ describe("hygiene.summary_line", function()
     }, "\n")))
   end)
 
-  it("names the missing tool when the daemon has none", function()
-    assert.are.equal("this daemon has no get_workspace_hygiene", H.summary_line(nil))
+  it("does not claim a missing tool when there was no answer at all", function()
+    assert.are.equal("the daemon sent no readable hygiene plan", H.summary_line(nil))
   end)
 end)
 
@@ -363,5 +364,63 @@ describe("hygiene_view.refresh", function()
     local out = last_window(u)
     assert.is_true(#out > 0)
     assert.truthy(out:find("get_workspace_hygiene", 1, true))
+  end)
+end)
+-- ─── What a real 0.6.892 daemon says when there is no plan ────────────────────
+--
+-- Read off the wire, not guessed:
+--   a tool the daemon does not know   -> ok=false, "<tool> is not a tool this gate knows; ..."
+--   a directory that is not a repo    -> ok=true,  "Error: <dir> is not inside a git checkout, so there is no repository to look at."
+-- The window used to answer BOTH with "This daemon has no get_workspace_hygiene
+-- ... the plugin is newer than the daemon is", which is false for the second:
+-- that daemon has the tool and answered it.
+
+local GATE_UNKNOWN = "get_workspace_hygiene is not a tool this gate knows; it cannot be admitted on anyone's authority. "
+  .. "-> Next: This tool name is not one SageFs registers, so no role can call it."
+local NOT_A_REPO = "Error: /tmp is not inside a git checkout, so there is no repository to look at."
+
+describe("hygiene.classify", function()
+  it("tells a plan from a missing tool from a refusal from something unreadable", function()
+    assert.are.equal("plan", H.classify(PLAN))
+    assert.are.equal("tool_missing", H.classify(GATE_UNKNOWN))
+    assert.are.equal("tool_missing", H.classify(ABSENT))
+    assert.are.equal("tool_missing", H.classify("Error: unknown tool: get_workspace_hygiene"))
+    assert.are.equal("refused", H.classify(NOT_A_REPO))
+    assert.are.equal("unreadable", H.classify(""))
+    assert.are.equal("unreadable", H.classify(nil))
+    assert.are.equal("unreadable", H.classify("no tool here"))
+  end)
+end)
+
+describe("hygiene window for a daemon that has the tool but gave no plan", function()
+  it("shows the daemon's words and does not claim the daemon is older", function()
+    local out = absent_words(NOT_A_REPO)
+    assert.truthy(out:find("is not inside a git checkout", 1, true))
+    assert.is_nil(out:find("newer than the daemon", 1, true))
+    assert.is_nil(out:find("has no get_workspace_hygiene", 1, true))
+  end)
+
+  it("says what to do about a directory that is not a repository", function()
+    local out = absent_words(NOT_A_REPO)
+    assert.truthy(out:find("git checkout", 1, true))
+    assert.truthy(out:find("Open Neovim in", 1, true))
+  end)
+
+  it("a real unknown-tool answer still says the daemon is older", function()
+    local out = absent_words(GATE_UNKNOWN)
+    assert.truthy(out:find("is not a tool this gate knows", 1, true))
+    assert.truthy(out:find("newer than the daemon", 1, true))
+  end)
+
+  it("an empty answer is reported as unreadable, with no claim about the daemon's age", function()
+    local out = absent_words("")
+    assert.truthy(out:find("nothing this view can read", 1, true))
+    assert.is_nil(out:find("newer than the daemon", 1, true))
+  end)
+
+  it("the notification names what happened, not a missing tool", function()
+    assert.are.equal("the daemon refused: /tmp is not inside a git checkout, so there is no repository to look at.",
+      H.summary_line(NOT_A_REPO))
+    assert.are.equal("this daemon has no get_workspace_hygiene", H.summary_line(GATE_UNKNOWN))
   end)
 end)
