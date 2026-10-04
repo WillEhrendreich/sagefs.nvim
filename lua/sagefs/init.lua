@@ -1865,7 +1865,8 @@ function M.enable_live_testing()
     callback = function(ok, raw)
       vim.schedule(function()
         if not ok then
-          notify("Failed to enable live testing", vim.log.levels.ERROR)
+          local decoded, data = util.json_decode(raw)
+          notify("Failed to enable live testing: " .. util.format_server_error(decoded and data or nil, raw), vim.log.levels.ERROR)
           return
         end
         local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil
@@ -1888,7 +1889,8 @@ function M.disable_live_testing()
     callback = function(ok, raw)
       vim.schedule(function()
         if not ok then
-          notify("Failed to disable live testing", vim.log.levels.ERROR)
+          local decoded, data = util.json_decode(raw)
+          notify("Failed to disable live testing: " .. util.format_server_error(decoded and data or nil, raw), vim.log.levels.ERROR)
           return
         end
         local parsed = pcall(vim.json.decode, raw) and vim.json.decode(raw) or nil

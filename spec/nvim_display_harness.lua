@@ -1352,6 +1352,43 @@ describe("requests that act on one session name it", function()
   end)
 end)
 
+describe("a refused live testing switch says why, in the daemon's words", function()
+  local function refused(call)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local original_notify = vim.notify
+    local said = {}
+    vim.notify = function(msg) table.insert(said, msg) end
+    transport.http_json = function(opts)
+      if opts.callback then
+        opts.callback(false, vim.json.encode({
+          error = "Multiple sessions active. Specify sessionId:\nab000001 (/w/a)\nab000002 (/w/b)",
+          errorDetails = { case = "AmbiguousSessions", message = "Multiple sessions active.", suggestedAction = "Name one with sessionId" },
+        }))
+      end
+    end
+    sagefs.active_session = nil
+    call(sagefs)
+    vim.wait(100, function() return said[1] ~= nil end, 10)
+    transport.http_json = original_http
+    vim.notify = original_notify
+    return table.concat(said, "\n")
+  end
+
+  it("enable", function()
+    local text = refused(function(sagefs) sagefs.enable_live_testing() end)
+    ok_(text:find("Multiple sessions active", 1, true), "the daemon's reason is shown: " .. text)
+    ok_(text:find("Name one with sessionId", 1, true), "and what to do: " .. text)
+  end)
+
+  it("disable", function()
+    local text = refused(function(sagefs) sagefs.disable_live_testing() end)
+    ok_(text:find("Multiple sessions active", 1, true), "the daemon's reason is shown: " .. text)
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end
