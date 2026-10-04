@@ -198,3 +198,38 @@ describe("sagefs.compat", function()
     end)
   end)
 end)
+
+-- The list says what this plugin reads off the wire beyond what the daemon has
+-- always sent. A reader trusts `used` and `daemon` to be current, and an entry
+-- that says "the daemon drops it" while the daemon sends it is a false note that
+-- sent someone looking for a bug that was fixed (declarations was one).
+describe("sagefs.compat.fields", function()
+  local compat = require("sagefs.compat")
+
+  it("every entry says where the daemon stands and why, and names are unique", function()
+    local seen = {}
+    for _, f in ipairs(compat.fields) do
+      assert.is_string(f.name)
+      assert.is_string(f.daemon)
+      assert.is_true(#f.note > 0, f.name)
+      assert.is_nil(seen[f.name], "duplicate " .. f.name)
+      seen[f.name] = true
+      assert.is_true(f.used == false or type(f.used) == "string", f.name .. ": used is false or the surface that reads it")
+    end
+  end)
+
+  it("lists the fields this release reads: declarations and the session's workflowLabel", function()
+    local used = {}
+    for _, name in ipairs(compat.fields_in_use()) do used[name] = true end
+    assert.is_true(used["lastReload.declarations"], "a PatchPending names what it applied")
+    assert.is_true(used["sessions[].workflowLabel"], "the statusline's workflow label")
+  end)
+
+  it("does not say the daemon drops declarations, which 0.6.892 writes", function()
+    for _, f in ipairs(compat.fields) do
+      if f.name == "lastReload.declarations" then
+        assert.is_nil(f.daemon:find("drops", 1, true))
+      end
+    end
+  end)
+end)
