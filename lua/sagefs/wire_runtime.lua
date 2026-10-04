@@ -93,6 +93,7 @@ function M.new(deps)
       end
       if display and display.attention and deps.notify_reload ~= false then
         local text = "reload: " .. display.text
+        if display.detail then text = text .. "\n" .. display.detail end
         if last_note[sid] ~= text then
           last_note[sid] = text
           deps.notify(text, level_for(display))

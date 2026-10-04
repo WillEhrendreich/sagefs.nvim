@@ -530,3 +530,63 @@ describe("reload_state.forget", function()
     assert.is_nil(f.last_noop["b"], "session b had no held-back no-effect to keep")
   end)
 end)
+
+-- A save can change several methods and only some of them run. "0 of 3 did"
+-- does not say which. The daemon's NeverEntered message does ("Not confirmed:
+-- the new code for Logic.neverCalled has not run since the save"), and the
+-- PatchPending frame names what it applied in `declarations`. Both are on the
+-- wire of a 0.6.892 daemon (captured from a real run_app session).
+describe("reload_state naming what did not run", function()
+  local NEVER = {
+    state = "finished", outcome = "NeverEntered", mechanism = "metadata-delta", patched = 0, considered = 1, declarations = {},
+    message = "Not confirmed: the new code for Logic.neverCalled has not run since the save, applied by metadata delta (0 of 1 changed method(s) seen running)\n→ Exercise that code path. If the new code still does not run, the running app is not calling the patched method, so restart the app to pick the change up.",
+    suggestedAction = "Exercise that code path. If the new code still does not run, the running app is not calling the patched method, so restart the app to pick the change up.",
+  }
+  local PENDING = {
+    state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 2,
+    declarations = { "Logic.greet", "Logic.helper" },
+    message = "Applied 2 of 2 changed method(s) by metadata delta, not confirmed yet: the new code has not run\n→ Exercise it.",
+    suggestedAction = "Exercise it.",
+  }
+
+  local function joined(lines)
+    local t = {}
+    for _, l in ipairs(lines) do table.insert(t, l.text) end
+    return table.concat(t, "\n")
+  end
+
+  it("NeverEntered keeps the daemon's first line as the detail, in the daemon's words", function()
+    local x = R.display(R.parse(NEVER))
+    assert.are.equal("Not confirmed: the new code for Logic.neverCalled has not run since the save, applied by metadata delta (0 of 1 changed method(s) seen running)", x.detail)
+  end)
+
+  it("the panel shows that detail under the verdict", function()
+    local text = joined(R.lines(R.parse(NEVER)))
+    assert.truthy(text:find("the new code for Logic.neverCalled has not run", 1, true))
+  end)
+
+  it("PatchPending names the definitions it applied, from the structured field", function()
+    local text = joined(R.lines(R.parse(PENDING)))
+    assert.truthy(text:find("patched: Logic.greet, Logic.helper", 1, true))
+  end)
+
+  it("a PatchPending with no declarations adds no line (an older daemon sends none)", function()
+    local bare = { state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 1, message = "m" }
+    assert.is_nil(joined(R.lines(R.parse(bare))):find("patched:", 1, true))
+  end)
+
+  it("counts the names past the fifth instead of listing a hundred", function()
+    local names = {}
+    for i = 1, 8 do names[i] = "M.f" .. i end
+    local many = { state = "finished", outcome = "PatchPending", mechanism = "metadata-delta", patched = 0, considered = 8, declarations = names, message = "m" }
+    local text = joined(R.lines(R.parse(many)))
+    assert.truthy(text:find("M.f5", 1, true))
+    assert.is_nil(text:find("M.f6", 1, true))
+    assert.truthy(text:find("and 3 more", 1, true))
+  end)
+
+  it("a verdict that is not about running code has no such detail", function()
+    local x = R.display(R.parse({ state = "finished", outcome = "Patched", mechanism = "detour", patched = 1, considered = 1, message = "Patched 1 of 1" }))
+    assert.is_nil(x.detail)
+  end)
+end)

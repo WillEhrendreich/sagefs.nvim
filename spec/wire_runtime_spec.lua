@@ -341,3 +341,16 @@ describe("wire_runtime.on_reload_reported with no active session", function()
     assert.are.equal(1, #h.notes)
   end)
 end)
+
+describe("wire_runtime NeverEntered says which code did not run", function()
+  it("puts the daemon's first line in the warning, so the function is named", function()
+    local h = harness()
+    h.rt.on_reload_reported(frame("NeverEntered", {
+      mechanism = "metadata-delta",
+      message = "Not confirmed: the new code for Logic.neverCalled has not run since the save (0 of 1 changed method(s) seen running)\n-> Exercise that code path.",
+    }))
+    assert.are.equal(1, #h.notes)
+    assert.truthy(h.notes[1].msg:find("Logic.neverCalled", 1, true))
+    assert.truthy(h.notes[1].msg:find("applied, but the new body never ran", 1, true), "the short verdict stays")
+  end)
+end)

@@ -230,6 +230,20 @@ local function mechanism_of(report)
   return m, string.format("via unrecognized mechanism '%s'", m), m
 end
 
+local MAX_NAMES = 5
+
+--- "patched: A.f, A.g and 3 more" from the structured `declarations` field of a
+--- PatchPending frame, or nil when the daemon sent none.
+local function declared_names(report)
+  local names = report.declarations
+  if type(names) ~= "table" or #names == 0 then return nil end
+  local shown = {}
+  for i = 1, math.min(MAX_NAMES, #names) do shown[i] = names[i] end
+  local text = "patched: " .. table.concat(shown, ", ")
+  if #names > MAX_NAMES then text = text .. string.format(" and %d more", #names - MAX_NAMES) end
+  return text
+end
+
 local FADE_OK_MS = 15000
 local FADE_QUIET_MS = 8000
 
@@ -276,6 +290,7 @@ function M.display(report)
     d.severity, d.hl = "info", "SageFsReloadPending"
     d.text = "applied, new body has not run yet"
     d.short = "applied, not run yet"
+    d.detail = declared_names(report)
   elseif outcome == M.OUTCOME.Patched then
     d.icon = "●"
     d.severity, d.hl, d.fade_ms = "ok", "SageFsReloadOk", FADE_OK_MS
@@ -292,6 +307,11 @@ function M.display(report)
       d.text = "applied, but the new body never ran: exercise it, or the callee was inlined"
     end
     d.short = "applied, never ran"
+    -- Which code did not run is in the daemon's own first line ("Not confirmed:
+    -- the new code for Logic.neverCalled has not run since the save"); a save
+    -- can change several methods, and the counts alone do not say which.
+    local line = first_line(report.message)
+    if line ~= "" then d.detail = line end
   elseif outcome == M.OUTCOME.Restarted then
     d.icon = "↻"
     d.severity, d.hl, d.notify_level, d.attention = "warn", "SageFsReloadWarn", "info", true
@@ -402,6 +422,9 @@ function M.lines(report, previous)
   local lines = { { text = d.icon .. " " .. d.text, hl = d.hl } }
   if d.mechanism_text then
     table.insert(lines, { text = "  " .. d.mechanism_text, hl = "SageFsReloadQuiet" })
+  end
+  if d.detail then
+    table.insert(lines, { text = "  " .. d.detail, hl = "SageFsReloadQuiet" })
   end
   if report.reasons and #report.reasons > 0 then
     for i = 1, math.min(MAX_CAUSES, #report.reasons) do
