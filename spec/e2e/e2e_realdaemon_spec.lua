@@ -6,12 +6,13 @@
 -- --no-resume so it does NOT pick up stale persisted sessions from other repos.
 --
 -- Background (discovered empirically while writing this suite):
---   * `sagefs --proj <fsproj>` is NOT a supported flag — the CLI ignores it and
---     the daemon instead auto-creates sessions from its CURRENT WORKING
---     DIRECTORY. The shared e2e harness (e2e_harness.start_daemon) passes
---     `--proj`, which is silently ignored, so its daemon binds the DEFAULT port
---     37749 and resumes persisted sessions from disk. That is why the older E2E
---     suites can silently assert against unrelated sessions.
+--   * `sagefs --proj <fsproj>` is NOT a supported flag, and the daemon starts
+--     bare. The shared e2e harness (e2e_harness.start_daemon) used to pass
+--     `--proj`, which was silently ignored, and used the user's own data
+--     directory, so a daemon could resume persisted sessions from disk and the
+--     older E2E suites could assert against unrelated sessions. It now starts
+--     the daemon with --no-resume, its own SAGEFS_DATA_DIR and an owner pid
+--     (daemon_launch.lua).
 --   * `--mcp-port` IS honoured, but `--supervised` spawns a child that writes to
 --     the shared console log, and an already-running daemon can squat the port.
 --   * Hot reload state / live-testing / dashboard live on the MCP port; the

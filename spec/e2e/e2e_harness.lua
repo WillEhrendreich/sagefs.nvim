@@ -246,9 +246,14 @@ function H.start_daemon(project_dir, port)
   local stdout_lines = {}
   local stderr_lines = {}
 
-  local job_id = vim.fn.jobstart({
-    sagefs_bin, "--mcp-port", tostring(port), "--ttl", "4h"
-  }, {
+  -- Its own data directory, so the suite never reads or writes the user's
+  -- ~/.SageFs, and an owner pid so the daemon ends with this Neovim.
+  local launch = require("daemon_launch")
+  local data_dir = vim.fn.tempname() .. "-sagefs-data"
+  vim.fn.mkdir(data_dir, "p")
+
+  local job_id = vim.fn.jobstart(launch.command(sagefs_bin, port, vim.fn.getpid()), {
+    env = launch.environment(data_dir),
     cwd = project_dir,
     on_stdout = function(_, data)
       for _, line in ipairs(data) do
@@ -270,6 +275,7 @@ function H.start_daemon(project_dir, port)
     job_id = job_id,
     port = port,
     project_dir = project_dir,
+    data_dir = data_dir,
     stdout = stdout_lines,
     stderr = stderr_lines,
   }
@@ -352,6 +358,11 @@ function H.stop_daemon(handle)
     active_daemon = nil
   end
 
+  -- Only the directory this harness made for the daemon.
+  if handle.data_dir and handle.data_dir:find("-sagefs-data", 1, true) then
+    pcall(vim.fn.delete, handle.data_dir, "rf")
+  end
+
   io.write("    [harness] Daemon stopped.\n")
 end
 
@@ -416,15 +427,19 @@ function H.run_suite(opts)
     H.wait_for_health(port)
 
     -- Warmup: send a trivial eval to ensure FSI session is fully loaded
-    -- Must check body too — SageFs returns 200 even with "No active session" error
-    local warmup_ok = vim.wait(30000, function()
+    -- Must check body too — SageFs returns 200 even with "No active session" error.
+    -- A suite that creates its own session passes `warmup = false`: the daemon starts
+    -- bare, so there is nothing to warm and this would only wait out its 30 seconds.
+    local warmup_ok = opts.warmup == false or vim.wait(30000, function()
       local r = H.eval("1 + 1;;", port)
       if r.status ~= 200 then return false end
       -- Body must NOT contain "No active session" error
       if r.body and r.body:find("No active session") then return false end
       return true
     end, 1000)
-    if warmup_ok then
+    if opts.warmup == false then
+      io.write("    [harness] Bare daemon: the suite creates its own session.\n")
+    elseif warmup_ok then
       io.write("    [harness] FSI session warmed up.\n")
     else
       io.write("    [harness] Warning: FSI warmup did not succeed within 30s.\n")
