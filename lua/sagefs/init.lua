@@ -1361,7 +1361,7 @@ function M.reset_session(callback)
       notify("Failed to reset session: " .. util.format_server_error(decode_ok and parsed or nil, raw), vim.log.levels.ERROR)
     end
     if callback then callback(ok) end
-  end)
+  end, { timeout = 60 })
 end
 
 local rebuild_follows = {} -- session id -> true while a rebuild is being followed

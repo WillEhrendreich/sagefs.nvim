@@ -1340,6 +1340,14 @@ describe("requests that act on one session name it", function()
     eq("sc000001", c.body.sessionId, "the session")
   end)
 
+  it("a reset is given the time a restart of the session takes, not five seconds", function()
+    -- Seen against a 0.6.892 daemon: POST /reset answers after 8 seconds on a busy machine,
+    -- and a plugin that gave up at 5 said "Failed to reset session: timeout" for a reset that worked.
+    local sent = posted(function(sagefs) sagefs.reset_session() end)
+    local c = find(sent, "/reset")
+    ok_(c.timeout >= 30, "timeout is " .. tostring(c.timeout))
+  end)
+
   it("enabling and disabling live testing say which session", function()
     local sent = posted(function(sagefs)
       sagefs.enable_live_testing()
