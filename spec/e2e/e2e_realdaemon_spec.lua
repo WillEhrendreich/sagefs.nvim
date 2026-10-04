@@ -97,7 +97,9 @@ local function ensure_built(project_dir)
   if #files == 0 then return end
   -- fast no-op check: obj/ Debug dir present
   if vim.fn.isdirectory(project_dir .. sep .. "obj") == 1 then return end
-  vim.fn.system("dotnet build --nologo -v q", { cwd = project_dir })
+  -- vim.fn.system takes stdin as its second argument, not options: the old call
+  -- raised E731 ("Using a Dictionary as a String") and every suite here errored.
+  vim.system({ "dotnet", "build", "--nologo", "-v", "q" }, { cwd = project_dir }):wait()
 end
 
 -- ─── Suite 1: HR-NVIM-E2E (hot reload) — MultiFile sample ───────────────────

@@ -447,6 +447,12 @@ function H.run_suite(opts)
 
     -- Setup plugin
     local sagefs = H.setup_plugin(port)
+    -- The plugin module is shared by every suite in one Neovim. A previous suite's
+    -- active session belongs to a daemon that is gone, and the plugin now names its
+    -- active session on live-testing, reset and cancel requests, so a stale one
+    -- would come back "Session not found".
+    sagefs.active_session = nil
+    sagefs.session_list = {}
 
     -- Run test function
     suite_fn(sagefs, temp, handle)
