@@ -293,6 +293,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsStopApp` | Stop the session's running application |
 | `:SageFsHotReload` | Hot reload file picker |
 | `:SageFsReloadStatus` | What the last save did to the running app, how it got there, and whether the REPL is behind the app |
+| `:SageFsHygiene` | What agents and orchestrators left behind (worktrees, branches, gate checkouts) as the daemon's dry-run plan: what is safe to reclaim and what needs a look. It reads the plan and never reclaims anything (`q` closes, `r` reads again) |
 | `:SageFsCohort` | Members, claims, the landing queue and the trunk lines of the daemon's cohort (`q` closes, `r` refreshes) |
 | `:SageFsMintMember <role> [scope] [minutes]` | Mint a cohort member token (`mint_member`, conductor only) and show it once in a float |
 | `:SageFsRevokeMember <cap:id>` | Revoke a minted member (`revoke_member`, conductor only) |
@@ -353,11 +354,13 @@ For a long time I dropped the daemon's report of what a save did. A patch that h
 | `NoEffect` | no effect (N of M changed definitions reached the running app) |
 | `KeptLiveState` | kept live value, with the binding and the initializer that waits for a reset |
 
+A save can change several methods and only some of them run, so the counts alone do not say which. The panel shows the daemon's own first line for a never-ran patch (`Not confirmed: the new code for Logic.neverCalled has not run since the save ...`) and the warning carries it too. A pending patch lists what it applied (`patched: Logic.greet, Logic.helper`, five names and a count past that) from the report's `declarations`, which the daemon writes on that frame since 0.6.892. A daemon that sends none shows no such line.
+
 A patch is applied first and patched once its new body has been seen running ([how the daemon decides](https://github.com/WillEhrendreich/SageFs/blob/master/docs/hot-reload.md#what-patched-means)), so `PatchPending` is never shown as live. The mechanism comes from the report's `mechanism` field (`detour` or `metadata-delta`) and shows as `[detour]` or `[delta]` in the statusline and `via metadata delta` in the panel. I never read it from the words of the message. A verdict or a mechanism outside the sets I know is shown as unrecognized and not guessed at.
 
 The statusline keeps the things you have to act on (pending, never ran, restarts, compile failures) until the next save replaces them. A patched or kept verdict fades after 15 seconds and a no-effect one after 8. With `notify_reload = true` (the default) a `vim.notify` also fires for a never-ran patch, a restart and a compile failure.
 
-The cause of a restart is the first line of the report's `message`. The daemon's own stream also has closed cause names (`FieldsChanged`, `MetadataDeltaUnavailable` and the rest of [`RudeCause`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/MetadataDelta/RudeCause.fs)), but they sit in the worker's reload payload and not in the session report the plugin reads. `reload_state.parse` already reads `reasons` and `declarations` when a payload has them, so a daemon that adds them to the session report needs no plugin change.
+The cause of a restart is the first line of the report's `message`. The daemon's own stream also has closed cause names (`FieldsChanged`, `MetadataDeltaUnavailable` and the rest of [`RudeCause`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/MetadataDelta/RudeCause.fs)), but they sit in the worker's reload payload and not in the session report the plugin reads. `reload_state.parse` already reads `reasons` when a payload has them, so a daemon that adds them to the session report needs no plugin change.
 
 ### The REPL can be behind the app
 

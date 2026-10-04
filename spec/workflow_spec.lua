@@ -2,7 +2,7 @@
 -- workflow to switch to, the request, the daemon's answer). The wire is read off
 -- a 0.6.892 daemon:
 --   POST /api/sessions/{sid}/workflow {"workflow": "hotreload"}
---   200 {"message":"Hard reset accepted — replacement worker spawning.","sessionId":"9e4357e0","success":true,"workflow":"Hot Reload"}
+--   200 {"message":"Hard reset accepted \u2014 replacement worker spawning.","sessionId":"9e4357e0","success":true,"workflow":"Hot Reload"}
 --   400 {"error":"Error: unknown workflow 'bogus'. Valid values: 'interactive' (REPL), 'livetesting' (Live Testing), 'hotreload' (Hot Reload)","success":false}
 --   400 {"error":"invalid session ID format: 'zzz'","success":false}
 --   404 {"case":"SessionNotFound","fields":{"sessionId":"deadbeef"},"message":"Session 'deadbeef' not found. ...","suggestedAction":"Run list_sessions ..."}

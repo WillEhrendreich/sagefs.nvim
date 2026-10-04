@@ -427,7 +427,7 @@ function H.run_suite(opts)
     H.wait_for_health(port)
 
     -- Warmup: send a trivial eval to ensure FSI session is fully loaded
-    -- Must check body too — SageFs returns 200 even with "No active session" error.
+    -- Must check body too: SageFs returns 200 even with "No active session" error.
     -- A suite that creates its own session passes `warmup = false`: the daemon starts
     -- bare, so there is nothing to warm and this would only wait out its 30 seconds.
     local warmup_ok = opts.warmup == false or vim.wait(30000, function()
