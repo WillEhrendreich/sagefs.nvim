@@ -1,7 +1,10 @@
 -- sagefs/cohort.lua — the cohort and the trunk, read from get_cohort_status
 -- Pure Lua, zero vim dependencies
 --
--- One cohort spans every session and agent on the daemon. `get_cohort_status`
+-- One cohort spans every session and agent in a REPOSITORY, and one daemon holds one
+-- cohort per repository — each with its own conductor seat, so a user with two
+-- repositories open never has them contend. The caller says which by passing
+-- `working_directory`. `get_cohort_status`
 -- answers in text (SageFs.Core/Features/CohortStatusText.fs plus the integration
 -- and Trunk lines of McpCohortIntegration.getCohortStatus):
 --

@@ -647,6 +647,8 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `cell_highlight.lua` | Dynamic eval region visuals: `╭│╰` bracket, 4 styles, eval-state color hints (uses `vim.api`/`vim.uv`) |
 | `treesitter_cells.lua` | Tree-sitter based cell detection for F# (inferred mode; requires `vim.treesitter`) |
 | `health.lua` | Health check module for `:checkhealth sagefs` (uses `vim.health`) |
+| `hygiene.lua` | What agents and orchestrators left behind on this machine: parses the daemon's `get_workspace_hygiene` plan (left-over kinds, sizes, ages, the reason each was left or may be reclaimed, the command that saves one) |
+| `hygiene_view.lua` | `:SageFsHygiene`: the hygiene plan in a window, with a dry-run read first and the reclaim command it names |
 | `member_token.lua` | The member capability token: setup option or `SAGEFS_MEMBER_TOKEN`, the header name, and the redaction every printed path uses |
 | `annotations.lua` | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | |

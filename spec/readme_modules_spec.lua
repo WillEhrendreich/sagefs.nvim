@@ -21,6 +21,10 @@ describe("README module table", function()
   local readme = read("README.md")
 
   it("has a row for every top-level module in lua/sagefs/", function()
+    -- The README's table names each module by FILE (`cohort.lua`), which is what a reader
+    -- greps for, so the match includes the extension. It used to match the bare name, which
+    -- matched nothing at all — every one of the 70+ modules read as missing, and the suite
+    -- reported that rather than the real cause.
     local missing = {}
     for _, name in ipairs(module_files()) do
       if not readme:find("| `" .. name .. "` |", 1, true) then missing[#missing + 1] = name end

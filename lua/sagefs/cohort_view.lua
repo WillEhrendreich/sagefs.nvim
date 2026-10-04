@@ -78,12 +78,27 @@ local function failure_lines(err)
   return lines
 end
 
+--- The arguments for one `get_cohort_status` call.
+---
+--- Pure, and separately testable, because the thing that went wrong here is invisible in the
+--- product: passing `{}` is valid, returns a valid cohort, and shows the wrong repository's
+--- members with nothing on screen to say so. `refresh` is a buffer-and-client affair that a
+--- unit test cannot reach, so the decision it makes is lifted out and pinned here.
+---
+--- An EMPTY STRING, never nil. `working_directory` is optional in the tool, and a nil would
+--- be dropped from the JSON object entirely — the daemon would then read the cohort of the
+--- directory IT started in, silently. An empty string is what the tool's
+--- `DefaultParameterValue("")` turns into "the caller named none", which is honest.
+function M.status_args(cwd)
+  return { working_directory = cwd or "" }
+end
+
 --- Fetch get_cohort_status and show it.
 function M.refresh()
   if fetching then return end
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then return end
   fetching = true
-  get_client().call_tool("get_cohort_status", {}, function(ok, text)
+  get_client().call_tool("get_cohort_status", M.status_args(vim.fn.getcwd()), function(ok, text)
     fetching = false
     if not ok then
       write(failure_lines(text))
