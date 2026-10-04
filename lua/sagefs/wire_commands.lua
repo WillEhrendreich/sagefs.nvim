@@ -41,6 +41,7 @@ function M.register(plugin)
 
   require("sagefs.cohort_view").register(function() return plugin.config.port end)
   require("sagefs.member_view").register(function() return plugin.config.port end)
+  require("sagefs.hygiene_view").register(function() return plugin.config.port end)
 end
 
 return M

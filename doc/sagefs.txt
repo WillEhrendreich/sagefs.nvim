@@ -441,6 +441,16 @@ Analysis ~
     token is refused from the next call, for ever. Conductor only.
     See |sagefs-member-token|.
 
+:SageFsHygiene                                             *:SageFsHygiene*
+    Show what agents and orchestrators left behind on this machine
+    (worktrees, branches, gate checkouts) as the daemon's dry-run plan:
+    what is safe to reclaim, what needs a look, what is in use, and the
+    command that saves each one. It reads the MCP tool
+    `get_workspace_hygiene` and never calls `tidy_workspace`, because
+    reclaiming deletes other people's worktrees and a keystroke in an
+    editor is not that decision. `q` closes the window, `r` reads the plan
+    again. An older daemon's answer is shown in its own words with a note.
+
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
 

@@ -31,6 +31,7 @@
 :SageFsHelp	sagefs.txt	/*:SageFsHelp*
 :SageFsHistory	sagefs.txt	/*:SageFsHistory*
 :SageFsHotReload	sagefs.txt	/*:SageFsHotReload*
+:SageFsHygiene	sagefs.txt	/*:SageFsHygiene*
 :SageFsLoadScript	sagefs.txt	/*:SageFsLoadScript*
 :SageFsMintMember	sagefs.txt	/*:SageFsMintMember*
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
