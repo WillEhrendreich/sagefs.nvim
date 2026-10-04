@@ -312,7 +312,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsDisableTesting` | Disable live testing |
 | `:SageFsDebugTest [name or id]` | Debug a failing test with nvim-dap. No argument: the failing test on this line, or the only failing test in the file |
 | `:SageFsDebugRelease` | Release the test SageFs is holding for the debugger and stop the debug run |
-| `:SageFsWorkflow` | Show the current workflow label (no argument - does not switch workflow; the daemon gained `POST /api/sessions/{id}/workflow` recently, so wiring this command up is now a small follow-up rather than blocked) |
+| `:SageFsWorkflow [name]` | Switch the active session's workflow (`interactive`, `livetesting`, `hotreload`; no name opens a picker). The daemon restarts the same session in place through `POST /api/sessions/{id}/workflow`, so its REPL bindings are not kept |
 | `:SageFsPickTest` | Pick a test to run/jump-to via Telescope |
 | `:SageFsSwitchProject` | Switch the active project for a session |
 | `:SageFsDashboard` | Toggle the floating SageFS dashboard |
@@ -629,6 +629,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |
 | `live_bindings.lua` | Live bindings model: a pure fold over the daemon's `live_bindings` snapshots (SSE profile and click-outcome profile) |
 | `app_run.lua` | Run/stop the session's application: request building, `AppStateView` parsing, notify/statusline formatting |
+| `workflow.lua` | `:SageFsWorkflow`: the three workflows the plugin offers, the switch request, the daemon's answer, completion and the picker items |
 | `annotations.lua` | Coverage annotation formatting, branch coverage signs, CodeLens, inline failures |
 | `density.lua` | Display density presets (minimal/normal/full), layer visibility control |
 | `diff.lua` | Semantic diff between cell evaluation results |

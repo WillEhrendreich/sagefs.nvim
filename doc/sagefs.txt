@@ -259,9 +259,15 @@ Sessions ~
 :SageFsStopApp                                          *:SageFsStopApp*
     Stop the application |:SageFsRunApp| started.
 
-:SageFsWorkflow                                         *:SageFsWorkflow*
-    Show the current workflow label. The workflow is changed with the
-    SageFs MCP tool `switch_workflow` or the TUI, not from the editor.
+:SageFsWorkflow [name]                                  *:SageFsWorkflow*
+    Switch the active session's workflow: `interactive` (REPL),
+    `livetesting` or `hotreload`, completed with <Tab>. With no name it
+    opens a picker that marks the current one. The daemon restarts the same
+    session in place, so the session id stays valid and its REPL bindings
+    are not kept, and the command says so as it sends. The daemon accepts
+    its own aliases too (`repl`, `live`, `test`, ...), and an unknown name
+    comes back in its words with the valid values. The new workflow shows in
+    the statusline when the session is ready again.
 
 :SageFsConfig                                           *:SageFsConfig*
     Create or open .SageFs/config.fsx for the current directory.

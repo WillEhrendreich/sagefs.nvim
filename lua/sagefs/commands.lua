@@ -860,9 +860,52 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Disable live testing" })
 
-  vim.api.nvim_create_user_command("SageFsWorkflow", function()
-    helpers.notify("Current workflow: " .. (plugin.workflow_label or "unknown") .. ". Use the SageFs MCP tool 'switch_workflow' or the TUI to change workflows.", vim.log.levels.INFO)
-  end, { desc = "Show current workflow label" })
+  -- :SageFsWorkflow [name]: switch the active session's workflow. The daemon
+  -- restarts the same session in place (POST /api/sessions/{sid}/workflow).
+  local workflow = require("sagefs.workflow")
+  local function switch_workflow(name)
+    local sid = plugin.active_session and plugin.active_session.id or nil
+    if not sid then
+      helpers.notify("No active session", vim.log.levels.WARN)
+      return
+    end
+    local req = workflow.build_request(sid, name)
+    transport.http_json({
+      method = req.method,
+      url = helpers.base_url() .. req.path,
+      body = req.body,
+      timeout = 30,
+      callback = function(ok, raw)
+        local r = workflow.parse_response(ok, raw)
+        if not r.ok then
+          helpers.notify("Workflow not switched: " .. r.error, vim.log.levels.WARN)
+          return
+        end
+        helpers.notify(workflow.accepted_notice(sid, r), vim.log.levels.INFO)
+        -- The session row carries the workflow label the statusline shows.
+        if plugin.list_sessions then plugin.list_sessions() end
+      end,
+    })
+  end
+
+  vim.api.nvim_create_user_command("SageFsWorkflow", function(opts)
+    local name = (opts.args or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name ~= "" then
+      switch_workflow(name)
+      return
+    end
+    local items = workflow.picker_items(plugin.workflow_label)
+    vim.ui.select(items, {
+      prompt = "Switch this session's workflow",
+      format_item = function(item) return item.text end,
+    }, function(choice)
+      if choice then switch_workflow(choice.token) end
+    end)
+  end, {
+    desc = "Switch the session's workflow (interactive, livetesting, hotreload); no name opens a picker",
+    nargs = "?",
+    complete = function(lead) return workflow.complete(lead) end,
+  })
 
   vim.api.nvim_create_user_command("SageFsCancel", function()
     transport.http_json({

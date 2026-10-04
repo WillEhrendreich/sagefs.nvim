@@ -1894,12 +1894,10 @@ function M.disable_live_testing()
   })
 end
 
-function M.switch_workflow()
-  -- The daemon gained `POST /api/sessions/{id}/workflow` recently (see
-  -- SageFs/McpServer.fs), so this stub is no longer blocked on a missing
-  -- server-side route — wiring it up is a small, separate follow-up. It
-  -- still just points at the MCP tool for now.
-  notify("Use the SageFs MCP tool 'switch_workflow' or the TUI to change workflows", vim.log.levels.INFO)
+--- Switch the active session's workflow: the same as :SageFsWorkflow [name].
+---@param name string|nil interactive, livetesting or hotreload; nil opens a picker
+function M.switch_workflow(name)
+  vim.cmd("SageFsWorkflow " .. (name or ""))
 end
 
 function M.statusline()
@@ -1943,9 +1941,10 @@ function M.statusline()
     end
   end
 
-  -- Workflow label (e.g. [REPL], [Live])
-  if M.workflow_label and M.workflow_label ~= "" then
-    table.insert(parts, "[" .. M.workflow_label .. "]")
+  -- Workflow label ([REPL], [Live Testing], [Hot Reload])
+  local workflow_text = sessions.label_for(M.active_session, M.workflow_label)
+  if workflow_text ~= "" then
+    table.insert(parts, "[" .. workflow_text .. "]")
   end
 
   local test_sl = testing.format_statusline(M.testing_state)

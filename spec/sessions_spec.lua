@@ -584,3 +584,42 @@ describe("sagefs.sessions", function()
     end)
   end)
 end)
+
+-- The daemon sends `workflowLabel` on every row of /api/sessions ("REPL",
+-- "Live Testing", "Hot Reload"). The statusline's [label] used to come only from
+-- a `workflow_switched` event, and 0.6.892 never sends one (nothing in the
+-- daemon constructs it), so a session showed no workflow at all, and a switch
+-- through :SageFsWorkflow left the old label, or none, on screen.
+describe("sagefs.sessions workflow label", function()
+  local sessions = require("sagefs.sessions")
+
+  it("reads workflowLabel off the session list row", function()
+    local json = vim.json.encode({
+      sessions = { { id = "abc", status = "Ready", projects = {}, workingDirectory = "", evalCount = 0, avgDurationMs = 0, workflowLabel = "Hot Reload" } },
+    })
+    assert.equals("Hot Reload", sessions.parse_sessions_response(json).sessions[1].workflow_label)
+  end)
+
+  it("is nil, not an invented REPL, when an older daemon sends none", function()
+    local json = vim.json.encode({
+      sessions = { { id = "abc", status = "Ready", projects = {}, workingDirectory = "", evalCount = 0, avgDurationMs = 0 } },
+    })
+    assert.is_nil(sessions.parse_sessions_response(json).sessions[1].workflow_label)
+  end)
+
+  describe("label_for", function()
+    it("takes the active session's own label over an event's", function()
+      assert.equals("Live Testing", sessions.label_for({ workflow_label = "Live Testing" }, "REPL"))
+    end)
+
+    it("falls back to the event's label when the session row carries none", function()
+      assert.equals("REPL", sessions.label_for({ id = "x" }, "REPL"))
+      assert.equals("REPL", sessions.label_for(nil, "REPL"))
+    end)
+
+    it("is empty when neither says anything", function()
+      assert.equals("", sessions.label_for(nil, nil))
+      assert.equals("", sessions.label_for({ workflow_label = "" }, ""))
+    end)
+  end)
+end)

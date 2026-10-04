@@ -41,6 +41,19 @@ local function derive_name(raw)
   return nil
 end
 
+--- The workflow label to show for the active session: the one its own row in
+--- /api/sessions carries, else the one a `workflow_switched` event announced (the
+--- daemon defines that event and 0.6.892 never sends it), else nothing.
+---@param active_session table|nil
+---@param event_label string|nil
+---@return string
+function M.label_for(active_session, event_label)
+  local own = active_session and active_session.workflow_label
+  if type(own) == "string" and own ~= "" then return own end
+  if type(event_label) == "string" then return event_label end
+  return ""
+end
+
 local function normalize_session(raw)
   -- `health` is passed through as-is (never invented): `nil` means the
   -- server didn't send a verdict, which callers must treat the same as
@@ -64,6 +77,9 @@ local function normalize_session(raw)
     fault_reason = (raw.faultReason ~= vim.NIL) and raw.faultReason or nil,
     health = health,
     loaded_projects = raw.loadedProjects or {},
+    -- "REPL", "Live Testing" or "Hot Reload", as the daemon words it. nil when an
+    -- older daemon sends none: never guessed as REPL.
+    workflow_label = type(raw.workflowLabel) == "string" and raw.workflowLabel or nil,
   }
   -- The closed report fields (lastReload, replFreshness, and whatever the daemon
   -- adds next) are read in one registry, not here.

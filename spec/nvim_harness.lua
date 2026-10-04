@@ -851,6 +851,29 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
+  it("the statusline names the workflow the session list says, with no workflow_switched event", function()
+    with_sse(function(sagefs)
+      local s = starting_session("s1")
+      s.status, s.workflow_label = "Ready", "Hot Reload"
+      sagefs.session_list, sagefs.active_session, sagefs.workflow_label = { s }, s, nil
+      assert_contains(sagefs.statusline(), "[Hot Reload]", "statusline")
+    end)
+  end)
+
+  it("the session's own label wins over an old event's, and an event's label still shows when the row has none", function()
+    with_sse(function(sagefs)
+      local s = starting_session("s1")
+      s.status, s.workflow_label = "Ready", "Live Testing"
+      sagefs.session_list, sagefs.active_session, sagefs.workflow_label = { s }, s, "REPL"
+      local sl = sagefs.statusline()
+      assert_contains(sl, "[Live Testing]", "the row's label")
+      assert_falsy(sl:find("[REPL]", 1, true), "not the stale event label")
+      s.workflow_label = nil
+      assert_contains(sagefs.statusline(), "[REPL]", "the event's label when the row has none")
+      sagefs.workflow_label = nil
+    end)
+  end)
+
   local function session_gets(http_calls)
     local n = 0
     for _, c in ipairs(http_calls) do
