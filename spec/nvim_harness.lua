@@ -2199,6 +2199,33 @@ describe("bindings_view pane (real buffer)", function()
     assert_eq(nil, pane.ctl.view.notice, "notice is forgotten")
     bv.close()
   end)
+
+  it("a redraw that adds lines above the cursor keeps the cursor on the same row", function()
+    local bv = require("sagefs.bindings_view")
+    local lb = require("sagefs.live_bindings")
+    local f = assert(io.open(plugin_root .. "/spec/fixtures/wire/live_bindings_safe.json", "rb"))
+    local snapshot = vim.json.decode(f:read("*a"))
+    f:close()
+    local plugin = { active_session = { id = "57bbdfd8" }, live_bindings_state = lb.new() }
+    lb.apply_snapshot(plugin.live_bindings_state, snapshot)
+    local pane = bv.open(plugin, { base_url = function() return "http://127.0.0.1:1" end, notify = function() end })
+    bv.redraw()
+    local buf = vim.api.nvim_get_current_buf()
+    local target
+    for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+      if l:find("[<CR> run]", 1, true) then target = { line = i, text = l } break end
+    end
+    assert_truthy(target, "the fixture has a row that offers a click")
+    vim.api.nvim_win_set_cursor(0, { target.line, 0 })
+    -- a click goes out: two lines appear above the tree
+    pane.ctl.view.pending = { binding = "box", path = { "x" } }
+    pane.ctl.view.containment = "ran under a syscall filter; guarded: stack and loops checked in 1 method"
+    bv.redraw()
+    local now = vim.api.nvim_win_get_cursor(0)[1]
+    local line = vim.api.nvim_buf_get_lines(buf, now - 1, now, false)[1]
+    assert_eq(target.text, line, "the cursor is still on the row it was on")
+    bv.close()
+  end)
 end)
 
 -- ─── Completions route by the active session's directory ─────────────────────

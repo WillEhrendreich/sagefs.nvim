@@ -242,3 +242,115 @@ describe("bindings_view refresh", function()
     assert.are.equal("Safe", env.ctl.view.mode)
   end)
 end)
+
+-- A click runs the user's getter on the daemon, under a deadline. A getter that
+-- spins takes about ten seconds to answer (seen against 0.6.892), and until the
+-- answer arrives the pane used to look exactly as it did before the click.
+describe("bindings_view a click in flight", function()
+  -- A fake HTTP layer that holds the callback until the test lets it answer.
+  local function make_held(overrides)
+    local env = { calls = {}, notes = {}, changes = 0, waiting = {}, sid = "57bbdfd8" }
+    local deps = {
+      base_url = function() return "http://localhost:37749" end,
+      session_id = function() return env.sid end,
+      notify = function(msg, level) table.insert(env.notes, { msg = msg, level = level }) end,
+      on_change = function() env.changes = env.changes + 1 end,
+      confirm = function(_, cb) cb(true) end,
+      http = function(opts)
+        table.insert(env.calls, opts)
+        table.insert(env.waiting, opts.callback)
+      end,
+    }
+    for k, v in pairs(overrides or {}) do deps[k] = v end
+    env.ctl = bv.new_controller(deps)
+    return env
+  end
+
+  it("marks the row as running as soon as the click is sent, and redraws", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    assert.are.same({ binding = "box", path = { "RunsCode" } }, env.ctl.view.pending)
+    assert.is_true(env.changes >= 1, "the pane redraws so the user sees the click went out")
+  end)
+
+  it("clears the running mark when the answer arrives", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    env.waiting[1](true, fixture_text("click_runscode_response.json"))
+    assert.is_nil(env.ctl.view.pending)
+  end)
+
+  it("clears the running mark when the request fails", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    env.waiting[1](false, "timeout")
+    assert.is_nil(env.ctl.view.pending)
+    assert.is_truthy(env.ctl.view.notice:find("timeout", 1, true))
+  end)
+
+  it("does not send a second click while one is running", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    env.ctl.click(CLICK_ROW)
+    assert.are.equal(1, #env.calls)
+    assert.is_truthy(env.notes[1].msg:find("running", 1, true))
+  end)
+
+  it("takes the next click once the first has answered", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    env.waiting[1](true, fixture_text("click_runscode_response.json"))
+    env.ctl.click(CLICK_ROW)
+    assert.are.equal(2, #env.calls)
+  end)
+
+  it("drops an answer that comes back after the active session changed", function()
+    local env = make_held()
+    env.ctl.click(CLICK_ROW)
+    env.sid = "aaaaaaaa"
+    env.waiting[1](true, fixture_text("click_runscode_response.json"))
+    assert.are.equal("", env.ctl.view.containment, "session A's containment line must not show on session B")
+    assert.is_nil(env.ctl.view.pending)
+  end)
+end)
+
+-- The same rule for the other two routes: an answer is about the session it was
+-- asked of, and a slow answer must not put session A's mode on session B's pane.
+describe("bindings_view a late mode answer", function()
+  local function make_held()
+    local env = { calls = {}, waiting = {}, sid = "A" }
+    env.ctl = bv.new_controller({
+      base_url = function() return "http://localhost:37749" end,
+      session_id = function() return env.sid end,
+      notify = function() end,
+      on_change = function() end,
+      confirm = function(_, cb) cb(true) end,
+      http = function(opts) table.insert(env.calls, opts); table.insert(env.waiting, opts.callback) end,
+    })
+    return env
+  end
+
+  it("a mode switch answered after the session changed is not shown on the new session", function()
+    local env = make_held()
+    env.ctl.set_mode("Off")
+    env.sid = "B"
+    env.waiting[1](true, vim.json.encode({ success = true, mode = "Off", notEvaluated = 0 }))
+    assert.is_nil(env.ctl.view.mode)
+  end)
+
+  it("a mode read answered after the session changed is not shown on the new session", function()
+    local env = make_held()
+    env.ctl.read_mode()
+    env.sid = "B"
+    env.waiting[1](true, vim.json.encode({ success = true, mode = "Off", notEvaluated = 0, containment = "line from A" }))
+    assert.is_nil(env.ctl.view.mode)
+    assert.are.equal("", env.ctl.view.containment)
+  end)
+
+  it("a mode answer for the session still active is applied", function()
+    local env = make_held()
+    env.ctl.set_mode("Off")
+    env.waiting[1](true, vim.json.encode({ success = true, mode = "Off", notEvaluated = 0 }))
+    assert.are.equal("Off", env.ctl.view.mode)
+  end)
+end)

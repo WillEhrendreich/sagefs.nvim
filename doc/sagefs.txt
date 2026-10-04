@@ -659,7 +659,12 @@ words:
   thread with a 5 second deadline and, on Linux x86-64, under a syscall
   filter (no network, no file writes, no new processes). The line under the
   header says what protected the run, as the daemon wrote it. It does not
-  stop a spin, a stack overflow or an in-memory effect.
+  stop a spin, a stack overflow or an in-memory effect. While the getter
+  runs the pane says "running <binding>.<member>" under the header, a second
+  <CR> waits for the first to answer (a getter that spins takes about ten
+  seconds), and the cursor stays on its row when the lines above it change.
+  A long containment line is split at its own semicolons, one piece per
+  line.
 - A getter you ran that timed out, threw or could not be contained shows
   "unknown" and the reason.
 - A lazy sequence is never enumerated for you.

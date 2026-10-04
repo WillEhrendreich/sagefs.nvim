@@ -60,6 +60,18 @@ function M.new_controller(deps)
     return sid
   end
 
+  -- An answer is about the session the request went to. If the active session
+  -- moved while it was out, sync() has dropped this view's state and the answer
+  -- must not be put on the new session's pane.
+  local function answer_is_for(sid)
+    sync()
+    if deps.session_id and deps.session_id() ~= sid then
+      changed()
+      return false
+    end
+    return true
+  end
+
   local function send(req, timeout, callback)
     deps.http({
       method = req.method,
@@ -85,8 +97,17 @@ function M.new_controller(deps)
     end
     local sid = sid_or_warn()
     if not sid then return end
+    if view.pending then
+      deps.notify(string.format("Still running %s. Wait for it to answer.",
+        lb.row_name(view.pending.binding, view.pending.path)), LEVELS.INFO)
+      return
+    end
     local req = lb.build_click_request(sid, row.binding, row.path)
+    view.pending = { binding = row.binding, path = row.path }
+    changed()
     send(req, CLICK_TIMEOUT_S, function(ok, raw)
+      if not answer_is_for(sid) then return end
+      view.pending = nil
       local r = lb.parse_click_response(ok, raw)
       if not r.ok then
         view.notice = "Click failed: " .. r.error
@@ -106,6 +127,7 @@ function M.new_controller(deps)
     if not sid then return end
     local function go()
       send(lb.build_mode_request(sid, mode), MODE_TIMEOUT_S, function(ok, raw)
+        if not answer_is_for(sid) then return end
         local r = lb.parse_mode_response(ok, raw)
         if r.ok then
           view.mode = r.mode
@@ -133,6 +155,7 @@ function M.new_controller(deps)
     local sid = sid_or_warn()
     if not sid then return end
     send(lb.build_read_mode_request(sid), MODE_TIMEOUT_S, function(ok, raw)
+      if not answer_is_for(sid) then return end
       local r = lb.parse_mode_response(ok, raw)
       if r.ok then
         view.mode = r.mode
@@ -154,6 +177,7 @@ function M.new_controller(deps)
       local sid = sid_or_warn()
       if not sid then return end
       send(lb.build_mode_request(sid, read.mode), MODE_TIMEOUT_S, function(ok, raw)
+        if not answer_is_for(sid) then return end
         local r = lb.parse_mode_response(ok, raw)
         if r.ok then
           view.mode = r.mode
@@ -201,10 +225,13 @@ function M.redraw()
   lb.sync_view(view, sid)
   local snapshot = lb.get(plugin.live_bindings_state, sid)
   local rendered = lb.render(snapshot, view)
-  pane.rows = rendered.rows
 
   local win = pane.win and vim.api.nvim_win_is_valid(pane.win) and pane.win or nil
   local cursor = win and vim.api.nvim_win_get_cursor(win) or nil
+  -- Which row the cursor is on, by key: a click puts lines above the tree, and a
+  -- cursor kept by line number would slide onto the row above and run that one.
+  local row_here = cursor and pane.rows and pane.rows[cursor[1]] or nil
+  pane.rows = rendered.rows
 
   vim.bo[pane.buf].modifiable = true
   vim.api.nvim_buf_set_lines(pane.buf, 0, -1, false, rendered.lines)
@@ -221,7 +248,8 @@ function M.redraw()
 
   if win and cursor then
     local last = vim.api.nvim_buf_line_count(pane.buf)
-    pcall(vim.api.nvim_win_set_cursor, win, { math.min(cursor[1], last), cursor[2] })
+    local lnum = row_here and lb.line_of_key(rendered.rows, row_here.key) or cursor[1]
+    pcall(vim.api.nvim_win_set_cursor, win, { math.min(lnum, last), cursor[2] })
   end
 end
 

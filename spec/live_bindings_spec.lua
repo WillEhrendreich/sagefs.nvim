@@ -572,3 +572,96 @@ describe("live_bindings.render", function()
     assert.is_truthy(text_of(r):find("<error>", 1, true))
   end)
 end)
+
+describe("live_bindings.render a click in flight", function()
+  local function render_with(view_fn)
+    local snap = lb.get(lb.apply_snapshot(lb.new(), fixture("live_bindings_safe.json")), "57bbdfd8")
+    local view = lb.new_view("57bbdfd8")
+    view_fn(view)
+    return lb.render(snap, view)
+  end
+
+  it("says which getter is running, under the header", function()
+    local r = render_with(function(v) v.pending = { binding = "box", path = { "RunsCode" } } end)
+    local text = table.concat(r.lines, "\n")
+    assert.is_truthy(text:find("running box.RunsCode", 1, true))
+  end)
+
+  it("says nothing about a click when none is in flight", function()
+    local r = render_with(function() end)
+    assert.is_nil(table.concat(r.lines, "\n"):find("running", 1, true))
+  end)
+
+  it("is cleared when the session changes", function()
+    local view = lb.new_view("A")
+    view.pending = { binding = "box", path = { "X" } }
+    lb.sync_view(view, "B")
+    assert.is_nil(view.pending)
+  end)
+end)
+
+describe("live_bindings.render a long containment line", function()
+  local LONG = "ran under a syscall filter (no network, no file writes, no new processes); "
+    .. "guarded: stack and loops checked in 1 method; "
+    .. "not guarded: 2 x code in FSharp.Core, which SageFs does not own; "
+    .. "1 x code in System.Private.CoreLib, which SageFs does not own"
+
+  local function render_with(containment)
+    local snap = lb.get(lb.apply_snapshot(lb.new(), fixture("live_bindings_clicked_runscode.json")), "57bbdfd8")
+    local view = lb.new_view("57bbdfd8")
+    view.containment = containment
+    return lb.render(snap, view)
+  end
+
+  it("is split at its own semicolons so no line is wider than a pane can show", function()
+    local r = render_with(LONG)
+    local widest = 0
+    for _, l in ipairs(r.lines) do
+      if l:find("syscall filter", 1, true) or l:find("guarded", 1, true) or l:find("FSharp.Core", 1, true)
+        or l:find("CoreLib", 1, true) then
+        widest = math.max(widest, #l)
+      end
+    end
+    assert.is_true(widest > 0)
+    assert.is_true(widest <= 90, "widest containment line is " .. widest)
+  end)
+
+  it("loses no word: the lines joined with the daemon's separator are the daemon's line", function()
+    local r = render_with(LONG)
+    local parts = {}
+    for _, l in ipairs(r.lines) do
+      if l:find("syscall filter", 1, true) or l:find("guarded", 1, true) or l:find("FSharp.Core", 1, true)
+        or l:find("CoreLib", 1, true) then
+        table.insert(parts, l)
+      end
+    end
+    assert.are.equal(LONG, table.concat(parts, "; "))
+  end)
+
+  it("highlights every piece of it as containment", function()
+    local r = render_with(LONG)
+    local n = 0
+    for _, h in ipairs(r.highlights) do
+      if h.group == "SageFsBindingsContainment" then n = n + 1 end
+    end
+    assert.are.equal(4, n)
+  end)
+
+  it("keeps a short line as one line", function()
+    local r = render_with("not run: nope is not in the session any more")
+    assert.are.equal("not run: nope is not in the session any more", r.lines[2])
+  end)
+end)
+
+describe("live_bindings.line_of_key", function()
+  it("finds the line a row key is on, so a redraw can keep the cursor on the same row", function()
+    local rows = { [5] = { key = "box" }, [6] = { key = "box\31RunsCode" }, [7] = { key = "box\31Boom" } }
+    assert.are.equal(6, lb.line_of_key(rows, "box\31RunsCode"))
+    assert.are.equal(5, lb.line_of_key(rows, "box"))
+  end)
+
+  it("is nil for a key that is not drawn any more, or no key", function()
+    assert.is_nil(lb.line_of_key({ [5] = { key = "box" } }, "gone"))
+    assert.is_nil(lb.line_of_key({ [5] = { key = "box" } }, nil))
+  end)
+end)

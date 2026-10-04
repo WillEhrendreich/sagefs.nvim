@@ -288,6 +288,7 @@ function M.new_view(session_id)
     mode = nil,
     containment = "",
     notice = nil,
+    pending = nil, -- { binding, path } while a click is out; the daemon answers within about ten seconds
     expanded = {},
     _effective = {},
   }
@@ -303,6 +304,7 @@ function M.sync_view(view, session_id)
     view.mode = nil
     view.containment = ""
     view.notice = nil
+    view.pending = nil
     view.expanded = {}
     view._effective = {}
   end
@@ -322,6 +324,45 @@ local function key_of(binding_name, path)
   return binding_name .. SEP .. table.concat(path, SEP)
 end
 
+--- The containment line as one piece per clause. Splitting is a display choice
+--- only: every word stays, and `table.concat(pieces, "; ")` is the input.
+---@param line string
+---@return string[]
+function M.split_containment(line)
+  local pieces, start = {}, 1
+  while true do
+    local i, j = line:find("; ", start, true)
+    if not i then
+      table.insert(pieces, line:sub(start))
+      break
+    end
+    table.insert(pieces, line:sub(start, i - 1))
+    start = j + 1
+  end
+  return pieces
+end
+
+--- The line a row key is drawn on, or nil when it is not drawn any more. A
+--- redraw uses it to keep the cursor on the row it was on when lines appear or
+--- go above the tree (a click's running line, a containment line).
+---@param rows table<number, table>
+---@param key string|nil
+---@return number|nil
+function M.line_of_key(rows, key)
+  if key == nil then return nil end
+  local best
+  for lnum, row in pairs(rows or {}) do
+    if row.key == key and (best == nil or lnum < best) then best = lnum end
+  end
+  return best
+end
+
+--- `binding.Member.Member`, the way a person names a row.
+function M.row_name(binding_name, path)
+  if #path == 0 then return binding_name end
+  return binding_name .. "." .. table.concat(path, ".")
+end
+
 --- Draw one snapshot as buffer lines.
 ---@param snapshot table|nil
 ---@param view table
@@ -338,8 +379,18 @@ function M.render(snapshot, view)
   local held = snapshot and M.not_evaluated_count(snapshot) or 0
   add(string.format("Live bindings  session %s  mode %s  %d not evaluated",
     tostring(view.session_id or "?"), view.mode or "?", held), "SageFsBindingsHeader")
+  -- The daemon's containment line can run past 250 characters (what ran under
+  -- the filter, what the guards covered, what they did not). Split at its own
+  -- "; " so a narrow pane shows all of it; the pieces joined with "; " are the
+  -- daemon's line.
   if view.containment and view.containment ~= "" then
-    add(view.containment, "SageFsBindingsContainment")
+    for _, piece in ipairs(M.split_containment(view.containment)) do
+      add(piece, "SageFsBindingsContainment")
+    end
+  end
+  if view.pending then
+    add(string.format("running %s: the daemon runs this getter under a deadline", M.row_name(view.pending.binding, view.pending.path)),
+      "SageFsBindingsNotice")
   end
   if view.notice and view.notice ~= "" then
     add(view.notice, "SageFsBindingsNotice")
