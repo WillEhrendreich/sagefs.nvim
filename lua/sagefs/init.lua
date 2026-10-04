@@ -1346,8 +1346,14 @@ function M.stop_session(session_id, callback)
   end, { timeout = 30 })
 end
 
+--- The active session's id, for a request the daemon refuses to guess a target for
+--- once several sessions exist (see sessions.scope_body).
+local function active_session_id()
+  return M.active_session and M.active_session.id or nil
+end
+
 function M.reset_session(callback)
-  session_http("POST", "/reset", {}, function(ok, raw)
+  session_http("POST", "/reset", sessions.scope_body({}, active_session_id()), function(ok, raw)
     if ok then
       notify("Session reset")
     else
@@ -1392,7 +1398,7 @@ end
 function M.hard_reset(callback)
   local sid = M.active_session and M.active_session.id or nil
   local before = M.active_session and M.active_session.last_restart or nil
-  session_http("POST", "/hard-reset", { rebuild = true }, function(ok, raw)
+  session_http("POST", "/hard-reset", sessions.scope_body({ rebuild = true }, sid), function(ok, raw)
     if ok then
       -- The daemon answers "initiated" and builds on in the background: the build has
       -- not finished, and may still fail. Its outcome is lastRestart on the session list.
@@ -1854,6 +1860,7 @@ function M.enable_live_testing()
   transport.http_json({
     method = "POST",
     url = base_url() .. "/api/live-testing/enable",
+    body = sessions.scope_body(nil, M.active_session and M.active_session.id or nil),
     timeout = 5,
     callback = function(ok, raw)
       vim.schedule(function()
@@ -1876,6 +1883,7 @@ function M.disable_live_testing()
   transport.http_json({
     method = "POST",
     url = base_url() .. "/api/live-testing/disable",
+    body = sessions.scope_body(nil, M.active_session and M.active_session.id or nil),
     timeout = 5,
     callback = function(ok, raw)
       vim.schedule(function()

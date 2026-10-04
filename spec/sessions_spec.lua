@@ -623,3 +623,56 @@ describe("sagefs.sessions workflow label", function()
     end)
   end)
 end)
+
+-- Since 2026-10-02 the daemon refuses a session-scoped route that names no
+-- session when more than one exists ("Multiple sessions active. Specify
+-- sessionId", AmbiguousSessions): /reset, /hard-reset, /api/cancel-eval,
+-- /api/live-testing/enable|disable|run|policy, and the GET routes
+-- /api/live-testing/status|test-trace|file-annotations take ?session=. With one
+-- session it infers it, which is why none of this showed in a single-session test.
+describe("sagefs.sessions scoping a request to a session", function()
+  local sessions = require("sagefs.sessions")
+
+  describe("scope_body", function()
+    it("adds the session id under the name the daemon reads", function()
+      assert.same({ rebuild = true, sessionId = "abc12345" }, sessions.scope_body({ rebuild = true }, "abc12345"))
+    end)
+
+    it("makes a body of its own when there was none", function()
+      assert.same({ sessionId = "abc12345" }, sessions.scope_body(nil, "abc12345"))
+    end)
+
+    it("leaves the caller's table alone", function()
+      local original = { category = "Unit" }
+      sessions.scope_body(original, "abc12345")
+      assert.same({ category = "Unit" }, original)
+    end)
+
+    it("adds nothing when there is no session, so a single-session daemon still infers it", function()
+      assert.same({ rebuild = true }, sessions.scope_body({ rebuild = true }, nil))
+      assert.same({ rebuild = true }, sessions.scope_body({ rebuild = true }, ""))
+      assert.is_nil(sessions.scope_body(nil, nil))
+    end)
+  end)
+
+  describe("scope_url", function()
+    it("adds ?session= to a url with no query", function()
+      assert.equals("http://localhost:37749/api/live-testing/test-trace?session=abc12345",
+        sessions.scope_url("http://localhost:37749/api/live-testing/test-trace", "abc12345"))
+    end)
+
+    it("adds &session= to a url that has one", function()
+      assert.equals("http://localhost:37749/api/live-testing/status?file=a.fs&session=abc12345",
+        sessions.scope_url("http://localhost:37749/api/live-testing/status?file=a.fs", "abc12345"))
+    end)
+
+    it("escapes what is not safe in a query", function()
+      assert.equals("http://h/x?session=a%26b", sessions.scope_url("http://h/x", "a&b"))
+    end)
+
+    it("changes nothing with no session", function()
+      assert.equals("http://h/x", sessions.scope_url("http://h/x", nil))
+      assert.equals("http://h/x", sessions.scope_url("http://h/x", ""))
+    end)
+  end)
+end)

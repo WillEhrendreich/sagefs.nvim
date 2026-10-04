@@ -1346,17 +1346,20 @@ function M.format_policy_options(category, current_policy)
 end
 
 --- Build a run_tests MCP request
----@param opts {pattern?: string, category?: string}
+---@param opts {pattern?: string, category?: string, session_id?: string}
 ---@return table|nil request, string|nil error
 function M.build_run_request(opts)
   opts = opts or {}
   if opts.category and opts.category ~= "" and not M.is_valid_category(opts.category) then
     return nil, "invalid category: " .. tostring(opts.category)
   end
-  return {
+  local req = {
     pattern = opts.pattern or "",
     category = opts.category or "",
-  }, nil
+  }
+  -- The daemon refuses a run that names no session once there are several.
+  if type(opts.session_id) == "string" and opts.session_id ~= "" then req.sessionId = opts.session_id end
+  return req, nil
 end
 
 --- Format test trace data for display

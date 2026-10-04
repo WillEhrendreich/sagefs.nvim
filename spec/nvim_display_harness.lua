@@ -1289,6 +1289,69 @@ describe("a row whose build disagreed is marked in the gutter", function()
   end)
 end)
 
+-- ─── Calls that act on one session name it ────────────────────────────────────
+-- The daemon refuses /reset, /hard-reset and /api/live-testing/enable|disable with
+-- AmbiguousSessions when several sessions exist and the request names none (seen
+-- against a 0.6.892 daemon with two sessions). One session: it infers it, so a test
+-- with one session never saw it. The plugin names the active session.
+
+describe("requests that act on one session name it", function()
+  local function posted(call)
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local transport = require("sagefs.transport")
+    local original_http = transport.http_json
+    local original_notify = vim.notify
+    local sent = {}
+    vim.notify = function() end
+    transport.http_json = function(opts)
+      table.insert(sent, opts)
+      if opts.callback and opts.method == "POST" then
+        opts.callback(true, vim.json.encode({ success = true, message = "ok" }))
+      end
+    end
+    sagefs.active_session = { id = "sc000001", name = "App", status = "Ready", projects = { "App.fsproj" }, working_directory = vim.fn.getcwd() }
+    call(sagefs)
+    vim.wait(100, function() return false end, 10)
+    transport.http_json = original_http
+    vim.notify = original_notify
+    sagefs.active_session = nil
+    return sent
+  end
+
+  local function find(sent, suffix)
+    for _, c in ipairs(sent) do
+      if c.url:find(suffix, 1, true) and c.method == "POST" then return c end
+    end
+  end
+
+  it("a hard reset says which session to rebuild", function()
+    local sent = posted(function(sagefs) sagefs.hard_reset() end)
+    local c = find(sent, "/hard-reset")
+    ok_(c, "a hard-reset request went out")
+    eq("sc000001", c.body.sessionId, "the session")
+    eq(true, c.body.rebuild, "and it still asks for a rebuild")
+  end)
+
+  it("a reset says which session to reset", function()
+    local sent = posted(function(sagefs) sagefs.reset_session() end)
+    local c = find(sent, "/reset")
+    ok_(c, "a reset request went out")
+    eq("sc000001", c.body.sessionId, "the session")
+  end)
+
+  it("enabling and disabling live testing say which session", function()
+    local sent = posted(function(sagefs)
+      sagefs.enable_live_testing()
+      sagefs.disable_live_testing()
+    end)
+    local on, off = find(sent, "/api/live-testing/enable"), find(sent, "/api/live-testing/disable")
+    ok_(on and off, "both requests went out")
+    eq("sc000001", on.body.sessionId, "enable names the session")
+    eq("sc000001", off.body.sessionId, "disable names the session")
+  end)
+end)
+
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))
 for _, e in ipairs(errors) do io.write("  ✖ " .. e.label .. "\n    " .. e.err .. "\n") end
 if failed > 0 then vim.cmd("cquit 1") else vim.cmd("qa!") end

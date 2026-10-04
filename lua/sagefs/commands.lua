@@ -113,8 +113,16 @@ end
 --- Register all :SageFs* user commands
 ---@param plugin table  The sagefs plugin module (init.lua's M)
 ---@param helpers table  { clear_and_render: fun(), start_sse: fun(), stop_sse: fun(), notify: fun(msg, level) }
+--- The id of the session the plugin is acting in, or nil. The daemon's
+--- session-scoped routes need it once more than one session exists (see
+--- sessions.scope_body).
+local function active_session_id(plugin)
+  return plugin.active_session and plugin.active_session.id or nil
+end
+
 function M.register_commands(plugin, helpers)
   M.register_simple_commands(plugin, helpers)
+  local sessions = require("sagefs.sessions")
 
   local hotreload = require("sagefs.hotreload")
   local model = require("sagefs.model")
@@ -385,6 +393,7 @@ function M.register_commands(plugin, helpers)
   vim.api.nvim_create_user_command("SageFsRunTests", function(opts)
     local req = testing.build_run_request({
       pattern = opts.args ~= "" and opts.args or nil,
+      session_id = active_session_id(plugin),
     })
     transport.http_json({
       method = "POST",
@@ -480,7 +489,7 @@ function M.register_commands(plugin, helpers)
         transport.http_json({
           method = "POST",
           url = helpers.base_url() .. "/api/live-testing/policy",
-          body = { category = category, policy = policy },
+          body = sessions.scope_body({ category = category, policy = policy }, active_session_id(plugin)),
           timeout = 5,
           callback = function(ok, raw)
             if ok then helpers.notify(category .. " → " .. policy)
@@ -775,7 +784,7 @@ function M.register_commands(plugin, helpers)
       -- produced an always-empty, always-disabled trace regardless of the
       -- real live-testing state. Legacy routing from before this endpoint
       -- existed.
-      url = helpers.base_url() .. "/api/live-testing/test-trace",
+      url = sessions.scope_url(helpers.base_url() .. "/api/live-testing/test-trace", active_session_id(plugin)),
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
@@ -808,7 +817,11 @@ function M.register_commands(plugin, helpers)
     transport.http_json({
       method = "POST",
       url = helpers.base_url() .. "/exec",
-      body = { code = string.format('#load @"%s";;', path) },
+      -- Into the session the plugin is in, not whichever the daemon last switched to.
+      body = sessions.scope_body({
+        code = string.format('#load @"%s";;', path),
+        working_directory = plugin.active_session and plugin.active_session.working_directory or nil,
+      }, active_session_id(plugin)),
       timeout = 30,
       callback = function(ok, raw)
         if ok then
@@ -824,6 +837,7 @@ function M.register_commands(plugin, helpers)
     transport.http_json({
       method = "POST",
       url = helpers.base_url() .. "/api/live-testing/enable",
+      body = sessions.scope_body(nil, active_session_id(plugin)),
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
@@ -844,6 +858,7 @@ function M.register_commands(plugin, helpers)
     transport.http_json({
       method = "POST",
       url = helpers.base_url() .. "/api/live-testing/disable",
+      body = sessions.scope_body(nil, active_session_id(plugin)),
       timeout = 5,
       callback = function(ok, raw)
         if not ok then
@@ -911,7 +926,7 @@ function M.register_commands(plugin, helpers)
     transport.http_json({
       method = "POST",
       url = helpers.base_url() .. "/api/cancel-eval",
-      body = { working_directory = vim.fn.getcwd() },
+      body = sessions.scope_body({ working_directory = vim.fn.getcwd() }, active_session_id(plugin)),
       timeout = 5,
       callback = function(ok, raw)
         if ok then helpers.notify("Eval cancelled")
@@ -1575,7 +1590,10 @@ function M.register_keymaps(plugin, helpers, bufnr)
   km("n", "<leader>tf", function()
     vim.ui.input({ prompt = "Filter tests (pattern): " }, function(pattern)
       if pattern == nil then return end  -- cancelled
-      local req = testing.build_run_request({ pattern = pattern ~= "" and pattern or nil })
+      local req = testing.build_run_request({
+        pattern = pattern ~= "" and pattern or nil,
+        session_id = active_session_id(plugin),
+      })
       transport.http_json({
         method = "POST",
         url = helpers.base_url() .. "/api/live-testing/run",
@@ -1598,7 +1616,7 @@ function M.register_keymaps(plugin, helpers, bufnr)
     end)
   end, "SageFs: filter tests by name pattern")
   km("n", "<leader>tF", function()
-    local req = testing.build_run_request({})
+    local req = testing.build_run_request({ session_id = active_session_id(plugin) })
     transport.http_json({
       method = "POST",
       url = helpers.base_url() .. "/api/live-testing/run",

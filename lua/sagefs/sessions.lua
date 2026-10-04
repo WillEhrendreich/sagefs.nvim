@@ -54,6 +54,35 @@ function M.label_for(active_session, event_label)
   return ""
 end
 
+--- A request body that names the session it is for.
+---
+--- The daemon's session-scoped routes (/reset, /hard-reset, /api/cancel-eval,
+--- /api/live-testing/enable|disable|run|policy) refuse a request that names none
+--- once more than one session exists (AmbiguousSessions); with exactly one they
+--- infer it. So a session id is added when the plugin has one and nothing is
+--- invented when it has not. The caller's table is not changed.
+---@param body table|nil
+---@param session_id string|nil
+---@return table|nil
+function M.scope_body(body, session_id)
+  if type(session_id) ~= "string" or session_id == "" then return body end
+  local out = {}
+  for k, v in pairs(body or {}) do out[k] = v end
+  out.sessionId = session_id
+  return out
+end
+
+--- The same for the daemon's GET routes (/api/live-testing/status, test-trace,
+--- file-annotations), which read the id from `?session=`.
+---@param url string
+---@param session_id string|nil
+---@return string
+function M.scope_url(url, session_id)
+  if type(session_id) ~= "string" or session_id == "" then return url end
+  local escaped = session_id:gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end)
+  return url .. (url:find("?", 1, true) and "&" or "?") .. "session=" .. escaped
+end
+
 local function normalize_session(raw)
   -- `health` is passed through as-is (never invented): `nil` means the
   -- server didn't send a verdict, which callers must treat the same as

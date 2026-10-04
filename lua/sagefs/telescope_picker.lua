@@ -67,8 +67,10 @@ local function run_tests_by_pattern(pattern, port)
   local transport   = require("sagefs.transport")
   local testing_mod = require("sagefs.testing")
   local util        = require("sagefs.util")
+  local active = require("sagefs").active_session
   local req = testing_mod.build_run_request({
     pattern = (pattern and pattern ~= "") and pattern or nil,
+    session_id = active and active.id or nil,
   })
   transport.http_json({
     method  = "POST",
