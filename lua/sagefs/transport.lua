@@ -200,6 +200,10 @@ function M.connect_sse(url, opts)
       {
         on_stdout = function(_, data)
           if not data then return end
+          -- Neovim ends a job's stdout with {""}: no bytes, just EOF. With the
+          -- daemon down, curl exits at once and that is all we ever get, so it
+          -- must not count as a connection.
+          if #data == 1 and data[1] == "" then return end
           if not handle._connected then
             handle._connected = true
             handle._attempt = 0

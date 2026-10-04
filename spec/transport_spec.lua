@@ -211,3 +211,75 @@ describe("transport.connect_sse when curl cannot be spawned", function()
     assert.is_false(handle.active())
   end)
 end)
+
+-- Neovim hands on_stdout a final {""} when a job's stdout closes. With the
+-- daemon down, curl exits at once with nothing written, and that EOF used to be
+-- read as the first bytes of a stream: "connected", then "disconnected", about
+-- once a second for as long as the daemon stayed down.
+describe("transport.connect_sse with nothing listening", function()
+  local original_jobstart, original_defer_fn, original_timer_start, original_timer_stop
+  local transport, fake
+
+  before_each(function()
+    unload_transport()
+    fake = { next_job_id = 51, jobs = {}, deferred = {} }
+    original_jobstart, original_defer_fn = vim.fn.jobstart, vim.defer_fn
+    original_timer_start, original_timer_stop = vim.fn.timer_start, vim.fn.timer_stop
+    vim.fn.jobstart = function(cmd, opts)
+      local id = fake.next_job_id
+      fake.next_job_id = id + 1
+      fake.jobs[id] = { cmd = cmd, opts = opts }
+      return id
+    end
+    vim.fn.timer_start = function() return 1 end
+    vim.fn.timer_stop = function() end
+    vim.defer_fn = function(fn, delay) table.insert(fake.deferred, { fn = fn, delay = delay }) end
+    transport = require("sagefs.transport")
+  end)
+
+  after_each(function()
+    unload_transport()
+    vim.fn.jobstart, vim.defer_fn = original_jobstart, original_defer_fn
+    vim.fn.timer_start, vim.fn.timer_stop = original_timer_start, original_timer_stop
+  end)
+
+  it("does not call a stdout EOF a connection", function()
+    local connects, disconnects = 0, 0
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      on_connect = function() connects = connects + 1 end,
+      on_disconnect = function() disconnects = disconnects + 1 end,
+      auto_reconnect = true,
+    })
+    handle.start()
+    fake.jobs[51].opts.on_stdout(51, { "" })
+    fake.jobs[51].opts.on_exit(51, 7)
+    assert.are.equal(0, connects, "no byte arrived, so nothing connected")
+    assert.are.equal(0, disconnects, "a connection that never was cannot drop")
+  end)
+
+  it("keeps retrying after an EOF with no bytes", function()
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      auto_reconnect = true,
+    })
+    handle.start()
+    fake.jobs[51].opts.on_stdout(51, { "" })
+    fake.jobs[51].opts.on_exit(51, 7)
+    assert.are.equal(1, #fake.deferred, "one reconnect is scheduled")
+    fake.deferred[1].fn()
+    assert.is_not_nil(fake.jobs[52], "the retry started a new curl")
+  end)
+
+  it("still calls a real first chunk a connection", function()
+    local connects = 0
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      on_connect = function() connects = connects + 1 end,
+      auto_reconnect = true,
+    })
+    handle.start()
+    fake.jobs[51].opts.on_stdout(51, { "retry: 3000", "", "" })
+    assert.are.equal(1, connects)
+  end)
+end)
