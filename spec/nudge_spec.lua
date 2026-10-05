@@ -94,6 +94,29 @@ describe("nudge.parse_reply", function()
     local reply = nudge.parse_reply(true, '{"hello":1}')
     assert.are.equal("Failed", reply.outcome)
   end)
+
+  -- Found against a real daemon: every tool's text can end with what the daemon
+  -- saw since the caller's last call (McpTools withEcho), so the reply is the
+  -- JSON object and then lines that are not JSON.
+  it("reads the reply when the daemon adds its event echo after the JSON", function()
+    local body = vim.json.encode({ outcome = "Written", address = "M.x", before = "1", after = "2", notes = {} })
+      .. "\n\n📡 SageFs events since last call:\n  • ✓ warmup complete\n  • state: output=10 diags=0"
+    local reply = nudge.parse_reply(true, body)
+    assert.are.equal("Written", reply.outcome)
+    assert.are.equal("2", reply.after)
+  end)
+
+  it("finds the end of the object by its braces, not by the first line, so braces in text do not confuse it", function()
+    local body = '{"outcome":"Unchanged","address":"M.x","text":"} { \\" \\\\","notes":[]}\n  • {not json}'
+    local reply = nudge.parse_reply(true, body)
+    assert.are.equal("Unchanged", reply.outcome)
+    assert.are.equal('} { " \\', reply.text)
+  end)
+
+  it("an object that never closes is not a reply", function()
+    local reply = nudge.parse_reply(true, '{"outcome":"Written","address":"M.x"')
+    assert.are.equal("Failed", reply.outcome)
+  end)
 end)
 
 describe("nudge.describe", function()
