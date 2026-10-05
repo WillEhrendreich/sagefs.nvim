@@ -597,25 +597,26 @@ describe("debug_test.start, the happy path", function()
   end)
 
   -- Found against a real daemon: netcoredbg answers configurationDone when it has attached
-  -- to the FSI host, and that took longer than the old 1.5 s. The grace ran out first, the
-  -- release reached the host with no debugger in it, and the daemon answered "released but
-  -- no debugger was attached". The grace is for an adapter that never answers at all.
-  it("gives a slow attach time to answer configurationDone before it gives up waiting for it", function()
+  -- to the FSI host, and that took longer than the old 1.5 s, so a release on a timer went
+  -- out with no debugger in the host. A 15 s plugin-side grace outwaited that. The daemon
+  -- now holds a release for a debugger that is mid-attach (Timeouts.debugAttachGrace), so
+  -- the plugin has nothing to outwait: the release goes out on configurationDone, and no
+  -- timer of the plugin's own stands in for it.
+  it("arms no timer when the adapter initializes: the release goes out on configurationDone", function()
+    local before = #env.timers
     env.dap.fire("after", "event_initialized")
-    local grace
-    for _, timer in ipairs(env.timers) do
-      if timer.ms == dt.CONFIGURED_GRACE_MS then grace = timer end
-    end
-    assert.is_truthy(grace, "the grace timer is armed after initialized")
-    assert.is_true(dt.CONFIGURED_GRACE_MS >= 10000, "at least ten seconds: a slow attach is not a missing configurationDone")
+    assert.are.equal(before, #env.timers, "initialized starts no grace timer")
+    assert.is_nil(dt.CONFIGURED_GRACE_MS, "and there is no grace to configure")
+    assert.are.equal(0, env.continues())
+    env.dap.fire("after", "configurationDone")
+    assert.are.equal(3, env.continues(), "configurationDone is what released it")
   end)
 
-  it("releases after the grace period if the adapter never answers configurationDone", function()
+  it("an adapter that never answers configurationDone is released by the hold window's own watchdog", function()
     env.dap.fire("after", "event_initialized")
     assert.are.equal(0, env.continues())
-    env.fire_timers()
-    -- Three requests for one release (see above). fire_timers() also fires the
-    -- hold window watchdog and the start check, which must not release again.
+    env.fire_timers(100000)
+    -- Three requests for one release (see above).
     assert.are.equal(3, env.continues())
   end)
 
