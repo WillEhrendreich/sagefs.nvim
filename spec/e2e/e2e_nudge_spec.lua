@@ -55,7 +55,7 @@ end
 H.run_suite({
   name = "Nudge a value (real daemon)",
   sample = "Minimal",
-  port = 47792,
+  port = 47795, -- the dashboard is the next port up, so suites that run side by side must be two apart
   warmup = false,
   fn = function(sagefs, temp, handle)
     local port = handle.port
