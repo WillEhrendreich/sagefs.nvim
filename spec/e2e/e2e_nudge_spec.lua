@@ -419,6 +419,61 @@ H.run_suite({
         client.close()
         vim.cmd("silent! edit!")
       end)
+
+      H.it("two sessions in one directory: the directory alone is refused, and the plugin's call names its session and lands", function()
+        local first = sagefs.active_session.id
+        -- the daemon refuses an exact duplicate (same projects, same directory), so the
+        -- second is a bare session in the same directory: no projects, same working directory
+        local resp = H.http_post("/api/sessions/create", vim.json.encode({
+          workingDirectory = temp.project,
+        }), port)
+        io.write("      second create: " .. tostring(resp.status) .. " " .. tostring(resp.body):sub(1, 200) .. "\n")
+        local second
+        H.assert_truthy(H.wait_for(function()
+          local decoded = json_decode(H.http_get("/api/sessions", port).body)
+          local ready = 0
+          for _, s in ipairs(decoded and decoded.sessions or {}) do
+            if s.status == "Ready" then
+              ready = ready + 1
+              if s.id ~= first then second = s.id end
+            end
+          end
+          return ready >= 2
+        end, 120000, 1500), "a second session in the same directory reached Ready")
+
+        -- what an older plugin sent: the directory alone
+        local client = require("sagefs.mcp_client").connect(port)
+        local bare
+        client.call_tool("nudge_value", { action = "inspect", file = library, working_directory = temp.project },
+          function(ok, text) bare = require("sagefs.nudge").parse_reply(ok, text) end)
+        H.assert_truthy(H.wait_for(function() return bare end, 30000, 50), "the bare call answered")
+        io.write("      bare: " .. vim.inspect(bare):sub(1, 400) .. "\n")
+        H.assert_eq("Refused", bare.outcome, "the directory alone is ambiguous now")
+        local shown = require("sagefs.nudge").describe(bare)
+        io.write("      shown: " .. shown .. "\n")
+
+        -- the plugin names the session it is on: the project's session lands...
+        sagefs.active_session = { id = first, working_directory = temp.project }
+        notes = {}
+        put_cursor("let drag = ", 12)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.drag"), "the nudge landed with the project's session: " .. vim.inspect(notes))
+        H.assert_falsy(said("Multiple sessions"), "and was not refused as ambiguous: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return not vim.bo[buf].modified end, 5000, 50), "the buffer is reloaded")
+
+        -- ...and the other one is the session the daemon acted for when the plugin names it: it
+        -- loaded no projects, so the file is not its own (a refusal about THAT session, not an ambiguity)
+        sagefs.active_session = { id = second, working_directory = temp.project }
+        notes = {}
+        put_cursor("let drag = ", 12)
+        vim.cmd("SageFsNudge up")
+        local not_owned = wait_said("NotOwned")
+        if not not_owned then dump() end
+        H.assert_truthy(not_owned, "the bare session was the one asked: " .. vim.inspect(notes))
+        H.assert_falsy(said("Multiple sessions"), "and the directory was not ambiguous to the daemon")
+        sagefs.active_session = { id = first, working_directory = temp.project }
+        client.close()
+      end)
     end)
 
     vim.notify = real_notify
