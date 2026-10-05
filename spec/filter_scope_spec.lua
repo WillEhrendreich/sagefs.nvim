@@ -319,6 +319,30 @@ end)
 -- ─── format_scoped_panel_entries ─────────────────────────────────────────────
 
 describe("testing.format_scoped_panel_entries", function()
+  -- Found against a real daemon, pressing D on a row of the test panel: the rows carried
+  -- text, file and line and nothing that names the test, so every key that acts on the
+  -- row under the cursor (<C-d> for the narrative, D to debug) found no test id and did
+  -- nothing.
+  it("every test row carries the id, name and status of the test it shows", function()
+    local s = build_test_state()
+    local entries = testing.format_scoped_panel_entries(s, { kind = "all" })
+    local rows = 0
+    for i = 4, #entries do
+      local entry = entries[i]
+      rows = rows + 1
+      assert.is_not_nil(entry.testId, "the row names its test: " .. entry.text)
+      assert.is_not_nil(entry.displayName, "and its name")
+      assert.is_not_nil(entry.status, "and its status")
+      assert.are.equal(s.tests[entry.testId].displayName, entry.displayName)
+    end
+    assert.is_true(rows > 0, "there were test rows")
+  end)
+
+  it("the header, hint and separator rows name no test", function()
+    local entries = testing.format_scoped_panel_entries(build_test_state(), { kind = "all" })
+    for i = 1, 3 do assert.is_nil(entries[i].testId) end
+  end)
+
   it("header shows scope kind and target for file scope", function()
     local s = build_test_state()
     local scope = { kind = "file", path = "C:\\SageFs\\EditorTests.fs" }
