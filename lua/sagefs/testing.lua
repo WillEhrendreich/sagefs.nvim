@@ -1684,6 +1684,10 @@ function M.format_scoped_panel_entries(state, scope, annotations_state)
     local icon = STATUS_ICON[t.status] or "?"
     table.insert(entries, {
       text = string.format("%s %s%s", icon, t.displayName or t.testId, skip_suffix(t.status, t.skip_reason)),
+      -- What a key on the row (<C-d>, D) needs to know which test it is on.
+      testId = t.testId,
+      displayName = t.displayName,
+      status = t.status,
       file = t.file,
       line = t.line,
     })
