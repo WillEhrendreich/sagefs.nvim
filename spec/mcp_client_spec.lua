@@ -62,6 +62,30 @@ describe("mcp_client.parse_body", function()
     assert.are.equal("hi", mcp.tool_text(r.result))
   end)
 
+  -- The daemon's "SageFs events since last call" echo is its OWN content block
+  -- after the answer (docs/mcp-tools.md "Reading a tool reply"), so the answer is
+  -- the first text block and a later block is the daemon talking.
+  it("the answer is the FIRST text block, and the event echo block after it is not part of it", function()
+    local answer = '{"outcome":"Inspected","items":[]}'
+    local body = vim.json.encode({
+      jsonrpc = "2.0", id = 8,
+      result = { content = {
+        { type = "text", text = answer },
+        { type = "text", text = "📡 SageFs events since last call:\n  • ✓ warmup complete" },
+      } },
+    })
+    local r = mcp.parse_body(body)
+    assert.is_true(r.ok)
+    assert.are.equal(answer, mcp.tool_text(r.result))
+    assert.is_true((pcall(vim.json.decode, mcp.tool_text(r.result))), "the answer decodes as JSON on its own")
+  end)
+
+  it("a result with no text block has an empty answer", function()
+    assert.are.equal("", mcp.tool_text({ content = { { type = "image", data = "x" } } }))
+    assert.are.equal("", mcp.tool_text({}))
+    assert.are.equal("", mcp.tool_text(nil))
+  end)
+
   it("reads a json-rpc error as a failure with its message", function()
     local r = mcp.parse_body('event: message\ndata: {"error":{"code":-32602,"message":"Unknown tool"},"id":4,"jsonrpc":"2.0"}\n\n')
     assert.is_false(r.ok)
@@ -126,6 +150,22 @@ describe("mcp_client client: initialize once, reuse the session, recover when it
     assert.are.equal("initialize", calls[1].body.method)
     assert.are.equal("notifications/initialized", calls[2].body.method)
     assert.are.equal("tools/call", calls[3].body.method)
+  end)
+
+  it("a call whose reply carries the event echo as a second block hands the caller only the answer", function()
+    local TWO_BLOCKS = { ok = true, meta = { status = 200, headers = {} }, body = vim.json.encode({
+      jsonrpc = "2.0", id = 2,
+      result = { content = {
+        { type = "text", text = '{"outcome":"Written"}' },
+        { type = "text", text = "📡 SageFs events since last call:\n  • ✓ warmup complete" },
+      } },
+    }) }
+    local request = scripted({ INIT, ACK, TWO_BLOCKS })
+    local client = mcp.new({ port = 37749, request = request })
+    local got
+    client.call_tool("nudge_value", {}, function(ok, text) got = { ok = ok, text = text } end)
+    assert.is_true(got.ok)
+    assert.are.equal('{"outcome":"Written"}', got.text)
   end)
 
   it("reuses the session for the next call: one request, not three", function()
