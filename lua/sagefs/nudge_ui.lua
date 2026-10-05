@@ -15,6 +15,10 @@
 -- this file. Every call names the session by its working directory. Nothing polls:
 -- one command is two calls (inspect, then set), and a bump is a keypress.
 --
+-- One flow runs at a time per buffer and the rest wait in order (new_gate): a
+-- second command that started before the first one's reload would see the buffer
+-- change under it, and a key held down starts many.
+--
 -- The daemon's own words for a refusal (its rule and next action) are shown as
 -- they came. Only what the editor can know is added here.
 
@@ -32,16 +36,30 @@ local function format_item(item)
   return string.format("%s  =  %s", item.address, (item.text:gsub("\n", " ")))
 end
 
---- Run one :SageFsNudge command.
+--- Run one :SageFsNudge command. `on_done` is called exactly once, when the flow is
+--- over: written, refused, failed, cancelled or turned away.
 ---@param deps table { buffer, working_directory, call, notify, select, input, reload }
 ---@param cmd table from nudge.parse_command
 ---@param count number|nil
-function M.execute(deps, cmd, count)
+---@param on_done function|nil
+function M.execute(deps, cmd, count, on_done)
   count = (count and count > 0) and count or 1
+  local over = false
+  local function done()
+    if over then return end
+    over = true
+    if on_done then on_done() end
+  end
+  --- Say something and end.
+  local function stop(text, level)
+    deps.notify(text, level)
+    done()
+  end
+
   local buf = deps.buffer()
   local refusal = nudge.unsaved_refusal(buf)
   if refusal then
-    deps.notify(refusal, LEVELS.WARN)
+    stop(refusal, LEVELS.WARN)
     return
   end
   local working_directory = deps.working_directory()
@@ -56,14 +74,14 @@ function M.execute(deps, cmd, count)
     local text, level = nudge.describe(reply)
     deps.notify(text, level)
     if WROTE_THE_FILE[reply.outcome] then deps.reload() end
+    done()
   end
 
   --- True while the buffer is the one the picture of it was taken from. A reply that
   --- arrives after the user typed describes a buffer that is gone.
   local function unchanged()
-    local now = deps.buffer()
-    if now.tick == buf.tick then return true end
-    deps.notify("SageFs nudge: the buffer changed while the daemon was answering, so nothing was written. Run it again.", LEVELS.WARN)
+    if deps.buffer().tick == buf.tick then return true end
+    stop("SageFs nudge: the buffer changed while the daemon was answering, so nothing was written. Run it again.", LEVELS.WARN)
     return false
   end
 
@@ -98,14 +116,17 @@ function M.execute(deps, cmd, count)
         prompt = field == "expression" and ("Expression for " .. item.address .. ": ") or ("Value for " .. item.address .. ": "),
         default = item.text,
       }, function(typed)
-        if typed == nil or typed == "" then return end
+        if typed == nil or typed == "" then
+          done()
+          return
+        end
         send_set(item, field, typed)
       end)
     end
 
     local function choose(list, prompt, k)
       deps.select(list, { prompt = prompt, format_item = format_item }, function(choice)
-        if choice then k(choice) end
+        if choice then k(choice) else done() end
       end)
     end
 
@@ -115,7 +136,7 @@ function M.execute(deps, cmd, count)
         text = text .. string.format(" (The daemon listed %d of %d values in this file, so this one may be past its limit.)",
           reply.shown or #items, reply.total or #items)
       end
-      deps.notify(text, LEVELS.WARN)
+      stop(text, LEVELS.WARN)
     end
 
     --- The value the cursor means: found, chosen from the ties, or (when `offer_all`)
@@ -139,7 +160,7 @@ function M.execute(deps, cmd, count)
       resolve({ knob_only = true }, false, function(item)
         local literal, why = nudge.bump(item, cmd.action == "up" and 1 or -1, count, cmd.step)
         if not literal then
-          deps.notify("SageFs nudge: " .. why, LEVELS.WARN)
+          stop("SageFs nudge: " .. why, LEVELS.WARN)
           return
         end
         send_set(item, "literal", literal)
@@ -148,13 +169,65 @@ function M.execute(deps, cmd, count)
       resolve({}, true, function(item) set_item(item, cmd.value, false) end)
     elseif cmd.action == "expr" then
       resolve({}, true, function(item) set_item(item, cmd.value, true) end)
+    else
+      stop("SageFs nudge: nothing to do for '" .. tostring(cmd.action) .. "'.", LEVELS.WARN)
     end
   end)
+end
+
+-- ─── One flow at a time ──────────────────────────────────────────────────────
+
+--- A gate that runs one flow at a time per key and holds the rest, in order.
+--- `start(done)` is the flow; it must call done() when it is over (a second call
+--- is ignored). A flow that raises is reported and does not wedge the key.
+---@param limit number|nil how many may wait behind the running one (default 20)
+---@return table gate { submit = fun(key, start): boolean }
+function M.new_gate(limit)
+  limit = limit or 20
+  local running, waiting = {}, {}
+  local gate = {}
+
+  local function launch(key, start)
+    running[key] = true
+    local finished = false
+    local function done()
+      if finished then return end
+      finished = true
+      running[key] = nil
+      local queue = waiting[key]
+      local nextstart = queue and table.remove(queue, 1)
+      if nextstart then launch(key, nextstart) end
+    end
+    local ok, err = pcall(start, done)
+    if not ok then
+      vim.notify("SageFs nudge failed: " .. tostring(err), LEVELS.ERROR)
+      done()
+    end
+  end
+
+  --- @return boolean accepted false when the queue behind the running flow is full
+  function gate.submit(key, start)
+    if not running[key] then
+      launch(key, start)
+      return true
+    end
+    local queue = waiting[key]
+    if not queue then
+      queue = {}
+      waiting[key] = queue
+    end
+    if #queue >= limit then return false end
+    queue[#queue + 1] = start
+    return true
+  end
+
+  return gate
 end
 
 -- ─── Real dependencies ───────────────────────────────────────────────────────
 
 local client = nil
+local gate = M.new_gate()
 
 local function get_client(plugin)
   if not client then client = require("sagefs.mcp_client").connect(plugin.config.port) end
@@ -177,8 +250,7 @@ local function reload_buffer(buf, notify)
 end
 
 --- Deps backed by Neovim, for the buffer the command ran in.
-local function real_deps(plugin, helpers)
-  local buf = vim.api.nvim_get_current_buf()
+local function real_deps(plugin, buf)
   local notify = function(msg, level) vim.notify(msg, level or LEVELS.INFO) end
   return {
     buffer = function()
@@ -205,9 +277,25 @@ local function real_deps(plugin, helpers)
   }
 end
 
---- Run one parsed command in the current buffer.
+--- Run one parsed command in the current buffer. It waits its turn behind a
+--- command still running in the same buffer.
 function M.run(plugin, helpers, cmd, count)
-  M.execute(real_deps(plugin, helpers), cmd, count)
+  local buf = vim.api.nvim_get_current_buf()
+  -- The cursor is where it is when the command is typed, not when its turn comes.
+  local at = vim.api.nvim_win_get_cursor(0)
+  local accepted = gate.submit(buf, function(done)
+    local deps = real_deps(plugin, buf)
+    local win_buffer = deps.buffer
+    deps.buffer = function()
+      local snapshot = win_buffer()
+      snapshot.row, snapshot.col = math.min(at[1], #snapshot.lines), at[2]
+      return snapshot
+    end
+    M.execute(deps, cmd, count, done)
+  end)
+  if not accepted then
+    vim.notify("SageFs nudge: too many nudges are waiting on the daemon; this one was dropped.", LEVELS.WARN)
+  end
 end
 
 -- ─── Registration ────────────────────────────────────────────────────────────
