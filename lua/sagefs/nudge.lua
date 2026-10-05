@@ -82,7 +82,7 @@ function M.parse_command(text)
     return { action = word }
   end
   return {
-    error = string.format("SageFs nudge: '%s' is not something :SageFsNudge does. Use one of: %s.",
+    error = string.format("'%s' is not something :SageFsNudge does. Use one of: %s.",
       word, table.concat(M.ACTIONS, ", ")),
   }
 end

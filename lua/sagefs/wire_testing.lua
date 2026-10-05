@@ -10,6 +10,7 @@ local M = {}
 function M.register_commands(plugin, helpers)
   require("sagefs.debug_test_ui").register_commands(plugin, helpers)
   require("sagefs.coverage_hover").register_commands(plugin, helpers)
+  require("sagefs.nudge_ui").register(plugin, helpers)
 
   vim.api.nvim_create_user_command("SageFsBindings", function()
     require("sagefs.bindings_view").open(plugin, helpers)
@@ -20,6 +21,7 @@ end
 function M.register_keymaps(plugin, helpers, bufnr)
   require("sagefs.debug_test_ui").register_keymaps(plugin, helpers, bufnr)
   require("sagefs.coverage_hover").register_keymaps(plugin, helpers, bufnr)
+  require("sagefs.nudge_ui").register_keymaps(plugin, helpers, bufnr)
 end
 
 --- Draw whatever these features put in a buffer. Called from the render paths.

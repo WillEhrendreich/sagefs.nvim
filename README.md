@@ -665,7 +665,9 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `bindings_view.lua` | `:SageFsBindings`: the live bindings tree in a split, with click-to-run on a getter and the Safe/Everything/Off mode switch (uses `vim.api`) |
 | `coverage_hover.lua` | Which tests cover the line under the cursor (float, jump to a test) and the per-symbol coverage badge; the decisions are pure, the window code is not |
 | `debug_test.lua` | Debug a failing test through nvim-dap: hold the test on the daemon, attach, release; the lifecycle that never leaks a hold |
-| `debug_test_ui.lua` | `:SageFsDebugTest`, the quiet "debug" hint on a failing-test line, and the keymap |
+| `debug_test_ui.lua` | `:SageFsDebugTest`, the quiet "debug" hint on a failing-test line, the keymap, and `D` on a test panel row |
+| `nudge.lua` | Nudging a value, the pure side: the request, the reply, which listed value the cursor is on, what a bump of a literal comes to, and the words for each outcome |
+| `nudge_ui.lua` | `:SageFsNudge` and the `<leader>rk` maps: inspect, find the value under the cursor, set it with the hash inspect gave, show the reply, reload the buffer the daemon wrote |
 | `init.lua` | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | Extmarks, test/coverage gutter signs, floating windows |

@@ -99,7 +99,7 @@ describe("nudge_ui.execute: bump", function()
   end)
 
   it("an explicit step is used", function()
-    local h = harness({ row = 6, col = 12, replies = { { body = inspected() }, written("Game.Tuning.tuning/{Cap}", "12", "22") } })
+    local h = harness({ row = 6, col = 10, replies = { { body = inspected() }, written("Game.Tuning.tuning/{Cap}", "12", "22") } })
     ui.execute(h.deps, { action = "up", step = "10" }, 1)
     assert.are.equal("22", h.calls[2].literal)
   end)
@@ -178,7 +178,8 @@ describe("nudge_ui.execute: refusals and failures", function()
   end)
 
   it("a buffer that changed while the daemon was answering is not written to from a stale picture of it", function()
-    local h = harness({ replies = { function() h.tick = 2; return { body = inspected() } end } })
+    local h
+    h = harness({ replies = { function() h.tick = 2; return { body = inspected() } end } })
     ui.execute(h.deps, { action = "up" }, 1)
     assert.are.equal(1, #h.calls, "no write went out")
     assert.is_truthy(h.notes[#h.notes].msg:find("changed", 1, true))
