@@ -24,12 +24,20 @@ local LIBRARY = table.concat({
   "    Cap = 12 }",
   "",
   "let speed = 1.0",
+  "let drag = 1.0",
   "let enabled = true",
+  "let mask = 0x1F",
+  "",
+  "[<Measure>] type m",
+  "let reach = 12.5<m>",
+  "",
+  "type Mode = Easy | Hard",
+  "let mode = Hard",
+  "",
+  "let pair = (5, 5)",
   "let add x y = x + y",
   "",
 }, "\n")
-
-local FSPROJ_NOTE = "the Minimal sample's only source file"
 
 local function json_decode(s)
   local ok, v = pcall(vim.json.decode, s)
@@ -173,13 +181,96 @@ H.run_suite({
         H.assert_truthy(H.wait_for(function() return disk_has("let enabled = false") end, 5000, 50), "on disk")
       end)
 
-      H.it("a number the same text as another is told apart by where the cursor is", function()
-        -- `speed = 1.0` and nothing else says 1.0, so write one: the second binding below shares the text
+      H.it("two values with the same text are told apart by where the cursor is", function()
+        -- speed and drag are both 1.0; the cursor is on drag's
+        notes = {}
+        put_cursor("let drag = 1.0", 13)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.drag"), "it was drag that moved: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return disk_has("let drag = 1.1") end, 5000, 50), "drag is 1.1 on disk")
+        H.assert_truthy(disk_has("let speed = 1.0"), "speed was not touched")
         notes = {}
         put_cursor("let speed = 1.0", 13)
         vim.cmd("SageFsNudge up")
-        H.assert_truthy(wait_said("1.1"), "speed went up")
+        H.assert_truthy(wait_said("Library.speed"), "and now speed")
         H.assert_truthy(H.wait_for(function() return disk_has("let speed = 1.1") end, 5000, 50), "on disk")
+        H.assert_truthy(disk_has("let drag = 1.1"), "drag stayed where it was put")
+      end)
+
+      H.it("hex goes up as the number it is and stays hex; a unit of measure is kept", function()
+        notes = {}
+        put_cursor("0x1F", 2)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.mask"), "mask moved")
+        H.assert_truthy(H.wait_for(function() return disk_has("let mask = 0x20") end, 5000, 50),
+          "0x1F + 1 is 0x20, written in hex: " .. (line_with("let mask") or "?"))
+        notes = {}
+        put_cursor("12.5<m>", 1)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.reach"), "reach moved")
+        H.assert_truthy(H.wait_for(function() return disk_has("let reach = 12.6<m>") end, 5000, 50),
+          "the unit survived: " .. (line_with("let reach") or "?"))
+      end)
+
+      H.it("five bumps typed without waiting land as five steps, in order, none refused", function()
+        notes = {}
+        put_cursor("12.6<m>", 1)
+        for _ = 1, 5 do vim.cmd("SageFsNudge up") end
+        H.assert_truthy(H.wait_for(function() return disk_has("let reach = 13.1<m>") end, 60000, 50),
+          "12.6 + 5 steps is 13.1: " .. (line_with("let reach") or "?"))
+        H.assert_truthy(H.wait_for(function() return line_with("let reach") == "let reach = 13.1<m>" end, 5000, 50), "and the buffer has it")
+        H.assert_falsy(said("changed while"), "no flow was refused for the buffer changing under it: " .. vim.inspect(notes))
+        H.assert_falsy(said("refused"), "and the daemon refused none")
+      end)
+
+      H.it("a union case is set by name", function()
+        notes = {}
+        put_cursor("= Hard", 3)
+        vim.cmd("SageFsNudge set Easy")
+        H.assert_truthy(wait_said("Library.mode"), "mode moved: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return disk_has("let mode = Easy") end, 5000, 50), "on disk")
+        notes = {}
+        put_cursor("= Easy", 3)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("SageFsNudge set"), "a case is not bumped, and the message says what to do instead")
+        H.assert_falsy(disk_has("let mode = Hard"), "and nothing was written")
+      end)
+
+      H.it("two values nothing can tell apart are offered, and the one picked moves", function()
+        notes = {}
+        local offered
+        local real_select = vim.ui.select
+        vim.ui.select = function(items, opts, cb)
+          offered = items
+          cb(items[2])
+        end
+        put_cursor("(5, 5)", 4) -- on the second 5
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(H.wait_for(function() return offered end, 30000, 50), "the picker was shown")
+        H.assert_eq(2, #offered, "both are offered")
+        H.assert_truthy(H.wait_for(function() return disk_has("let pair = (5, 6)") end, 5000, 50),
+          "the picked one moved: " .. (line_with("let pair") or "?"))
+        vim.ui.select = real_select
+      end)
+
+      H.it("list shows the values of the file, and the one picked is set to what is typed", function()
+        notes = {}
+        local shown
+        local real_select, real_input = vim.ui.select, vim.ui.input
+        vim.ui.select = function(items, opts, cb)
+          shown = items
+          for _, it in ipairs(items) do
+            if it.address == "Library.tuning/{Cap}" then cb(it) return end
+          end
+          cb(nil)
+        end
+        vim.ui.input = function(opts, cb) cb("77") end
+        vim.cmd("SageFsNudge list")
+        local landed = H.wait_for(function() return disk_has("Cap = 77") end, 30000, 50)
+        vim.ui.select, vim.ui.input = real_select, real_input
+        if not landed then dump() end
+        H.assert_truthy(landed, "Cap is 77 on disk: " .. (line_with("Cap =") or "?"))
+        H.assert_truthy(shown and #shown >= 8, "every value of the file was offered")
       end)
 
       H.it("expr replaces the value with an expression, and says it was not type-checked", function()
