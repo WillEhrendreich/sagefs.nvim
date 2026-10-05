@@ -27,6 +27,21 @@
 --                              reason, so it is not something to stage on the dev daemon to
 --                              photograph; every character here comes from those two format
 --                              strings.
+--   reload-callers-pending.json    the `callers` object of a reload report, Pending,
+--                                 with sites reached both by the compiler and by name,
+--                                 and two notChecked entries. Written from
+--                                 CallerState.toJson (the field names: state, message,
+--                                 suggestedAction, pending[], notChecked[], and inside a
+--                                 pending entry declaration/cause/file/sites[] with
+--                                 file/line/caller/evidence plus nameOnlyReason/nameOnlyDetail
+--                                 when the evidence is MatchedByName) using the values
+--                                 SageFs.Tests/CallerWireTests.fs pins, so the wire is
+--                                 the daemon's own writer rather than a photograph.
+--                                 A pending callers state needs a running app whose
+--                                 method is re-signed while another file calls it, which
+--                                 is a whole hot-reload scenario to stage for one object.
+--   reload-callers-not-checked.json  the NotChecked shape: one unresolved declaration
+--                                 and a reason, with nothing pending. Same source.
 --   exec-behind-app.json       POST /exec body from a BehindApp session
 local M = {}
 

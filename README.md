@@ -657,7 +657,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `placement.lua` | Where a cell's result is drawn: a pure function from the cell, the window and the result to a visible anchor line and the rows that fit |
 | `pending.lua` | Why nothing is happening: classifies a slow eval (still running, session warming, daemon unreachable, faulted, no session) into one short line |
 | `closed_set.lua` | Closed sets of named wire tokens with a membership test; a token outside the set shows as "unrecognized", never guessed |
-| `reload_state.lua` | Hot reload report parsing, the one display function (statusline, virtual text, `:SageFsReloadStatus`, dashboard), and the per-session fold |
+| `reload_state.lua` | Hot reload report parsing, the one display function (statusline, virtual text, `:SageFsReloadStatus`, dashboard), the `callers` section (which files a re-sign left on the old method, and how sure each match is), and the per-session fold |
 | `repl_freshness.lua` | `InSync` / `BehindApp`, the statusline segment, the eval message, the WARNING banner, the announcement gate |
 | `rebuild.lua` | `lastRestart`: the statusline segment, the "started in the background" answer, and the rule for following a rebuild until it ends |
 | `source_state.lua` | `InSync` / `Stale` / `Rebuilding` / `Unknown`, the statusline segment, the panel lines, the `:SageFsStatus` line |

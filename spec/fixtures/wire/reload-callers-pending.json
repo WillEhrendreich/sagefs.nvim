@@ -1,0 +1,42 @@
+{
+  "outcome": "PatchPending",
+  "patched": 1,
+  "considered": 1,
+  "message": "a caller in another file is still on the old method, so the save cannot say all is well",
+  "suggestedAction": "Save Pages.fs",
+  "callers": {
+    "state": "CallersPending",
+    "message": "a caller in another file is still on the old method, so the save cannot say all is well",
+    "suggestedAction": "Save Pages.fs",
+    "pending": [
+      {
+        "declaration": "Shop.Tags.stamp",
+        "cause": "ReSigned",
+        "file": "/p/Tags.fs",
+        "sites": [
+          { "file": "/p/Pages.fs", "line": 12, "caller": "Shop.Pages.render", "evidence": "ResolvedByCompiler" },
+          { "file": "/p/Pages.fs", "line": 40, "caller": "", "evidence": "MatchedByName", "nameOnlyReason": "NoProjectOptions" },
+          { "file": "/p/Shop.fs", "line": 7, "caller": "", "evidence": "MatchedByName", "nameOnlyReason": "CompilerFailed", "nameOnlyDetail": "the check timed out" }
+        ]
+      }
+    ],
+    "notChecked": [
+      {
+        "declaration": "Shop.Pages.( + )",
+        "cause": "Removed",
+        "file": "/p/Pages.fs",
+        "why": "NotSearchableByName",
+        "whySubject": "( + )",
+        "whyDetail": ""
+      },
+      {
+        "declaration": "Shop.Pages.render",
+        "cause": "ReSigned",
+        "file": "/p/Pages.fs",
+        "why": "ProjectNotLoaded",
+        "whySubject": "",
+        "whyDetail": ""
+      }
+    ]
+  }
+}

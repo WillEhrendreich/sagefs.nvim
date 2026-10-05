@@ -1,0 +1,23 @@
+{
+  "outcome": "Patched",
+  "patched": 1,
+  "considered": 1,
+  "message": "patched (ran)",
+  "suggestedAction": "",
+  "callers": {
+    "state": "CallersNotChecked",
+    "message": "the callers could not be listed",
+    "suggestedAction": "load the project",
+    "pending": [],
+    "notChecked": [
+      {
+        "declaration": "Shop.Pages.render",
+        "cause": "ReSigned",
+        "file": "/p/Pages.fs",
+        "why": "ProjectNotLoaded",
+        "whySubject": "",
+        "whyDetail": ""
+      }
+    ]
+  }
+}

@@ -45,6 +45,14 @@ M.PHASE = closed_set.define("ReloadPhase", {
   { "Finished", "finished" },
 })
 
+--- SageFs.Core/Features/CallerState.fs CallersState, one token per case. A token
+--- outside this set is read as KNOWN-unrecognised rather than guessed at: an
+--- unknown state is a newer daemon, and guessing which of the four it meant would
+--- put a caller's file in the wrong place.
+M.CALLER_STATES = closed_set.define("CallersState", {
+  "CallersCurrent", "CallersPending", "CallersNotChecked", "CallersNotReported",
+})
+
 --- Highlight group -> the standard group it links to. Applied by the UI layer
 --- (and the dashboard's highlight table), defined here so display names them once.
 M.HL = {
@@ -117,6 +125,100 @@ local function parse_kept(v)
   return out
 end
 
+--- One call site left on the old method. `resolved_by_compiler` is the honest
+--- answer to "how sure are we": a site the compiler tied to the re-signed
+--- declaration is a fact, and one matched only because the NAMES agree is a
+--- guess the daemon labels as such. Drawing both as "a caller" claims a certainty
+--- the second one does not have.
+local function parse_site(v)
+  if type(v) ~= "table" then return nil end
+  local by_compiler = text_or(v.evidence, "") == "ResolvedByCompiler"
+  return {
+    file = text_or(v.file, ""),
+    line = count_or_zero(v.line),
+    caller = text_or(v.caller, ""),
+    evidence = text_or(v.evidence, ""),
+    resolved_by_compiler = by_compiler,
+    name_only_reason = text_or(v.nameOnlyReason, nil),
+    name_only_detail = text_or(v.nameOnlyDetail, nil),
+  }
+end
+
+--- A declaration whose signature changed and whose callers are still on the old
+--- method. Built only from a non-empty site list, so a pending entry with no
+--- caller cannot exist (the daemon refuses to write one, and the plugin refuses to
+--- show one).
+local function parse_pending_entry(v)
+  if type(v) ~= "table" then return nil end
+  local sites = {}
+  if type(v.sites) == "table" then
+    for _, s in ipairs(v.sites) do
+      local site = parse_site(s)
+      if site then table.insert(sites, site) end
+    end
+  end
+  if #sites == 0 then return nil end
+  return {
+    declaration = text_or(v.declaration, ""),
+    cause = text_or(v.cause, ""),
+    file = text_or(v.file, ""),
+    sites = sites,
+  }
+end
+
+--- A declaration nobody could list callers for, with the reason. `why_subject` and
+--- `why_detail` carry whatever the reason is ABOUT (an operator's name, a
+--- compiler error), so the reason can be read in words rather than decoded from a
+--- token.
+local function parse_unchecked_entry(v)
+  if type(v) ~= "table" then return nil end
+  return {
+    declaration = text_or(v.declaration, ""),
+    cause = text_or(v.cause, ""),
+    file = text_or(v.file, ""),
+    why = text_or(v.why, ""),
+    why_subject = text_or(v.whySubject, ""),
+    why_detail = text_or(v.whyDetail, ""),
+  }
+end
+
+--- The `callers` object of a reload report (CallerState.toJson on the daemon side).
+---
+--- A payload with NO `callers` field is `CallersNotReported`, never `CallersCurrent`:
+--- that is a worker predating the field, which has said nothing, and reading silence
+--- as "all callers are current" claims a check nobody ran. The daemon pins the same
+--- distinction in SageFs.Tests/CallerWireTests.
+local function parse_callers(v)
+  local out = {
+    state = "CallersNotReported",
+    known = false,
+    message = nil,
+    suggested_action = "",
+    pending = {},
+    not_checked = {},
+  }
+  if type(v) ~= "table" then return out end
+  local state = text_or(v.state, "")
+  if state == "" then return out end
+  out.state = state
+  out.known = M.CALLER_STATES.has(state)
+  out.message = text_or(v.message, nil)
+  out.suggested_action = text_or(v.suggestedAction, "")
+  if type(v.pending) == "table" then
+    for _, p in ipairs(v.pending) do
+      local entry = parse_pending_entry(p)
+      if entry then table.insert(out.pending, entry) end
+    end
+  end
+  if type(v.notChecked) == "table" then
+    for _, u in ipairs(v.notChecked) do
+      local entry = parse_unchecked_entry(u)
+      if entry then table.insert(out.not_checked, entry) end
+    end
+  end
+  return out
+end
+
 --- Read a reload report from any of its three wire shapes.
 --- Returns nil when there is no report (null, absent, not an object, or an object
 --- that is neither a compiling frame nor a finished verdict).
@@ -126,7 +228,10 @@ function M.parse(payload)
   if type(payload) ~= "table" then return nil end
   local cue = payload.type
   if cue == "none" then
-    return { phase = M.PHASE.None, known = true, declarations = {}, reasons = {}, kept = {}, patched = 0, considered = 0 }
+    return {
+      phase = M.PHASE.None, known = true, declarations = {}, reasons = {}, kept = {},
+      patched = 0, considered = 0, callers = parse_callers(nil),
+    }
   end
   local phase
   local outcome = payload.outcome
@@ -152,6 +257,9 @@ function M.parse(payload)
     reasons = parse_reasons(payload.reasons),
     kept = parse_kept(payload.kept),
     file = text_or(payload.file, nil),
+    -- `callers` rides the reloadReported object AND lastReload on a session report,
+    -- both written by CallerState.toJson. A payload without it is NotReported.
+    callers = parse_callers(payload.callers),
   }
 end
 
@@ -443,6 +551,18 @@ function M.lines(report, previous)
       })
     end
   end
+  -- The callers section rides with the panel, between the causes and the remedy:
+  -- "these files are still on the old method" is the reason a patched save is not
+  -- yet done.
+  --
+  -- The callers' OWN `suggestedAction` is NOT printed here: `d.remedy` below is the
+  -- remedy the panel already prints, and CallerState.remedy leads with the callers'
+  -- when they are pending (the outcome's own words stay in the message). Printing
+  -- both put "→ Save Pages.fs" on the panel twice, which is what the first version
+  -- of this did.
+  for _, l in ipairs(M.callers_lines(report)) do
+    table.insert(lines, { text = l, hl = "SageFsReloadQuiet" })
+  end
   if d.remedy then
     table.insert(lines, { text = "  → " .. d.remedy, hl = d.hl })
   end
@@ -453,6 +573,69 @@ function M.lines(report, previous)
     end
   end
   return lines
+end
+
+-- ─── The callers section: what a save left behind in other files ─────────────
+
+--- How a site reads, in one line: where it is, and how sure the check is. The
+--- certainty is part of the line and not a decoration: a site the compiler tied to
+--- the re-signed declaration and one matched only because the names agree are both
+--- "a caller", and only one of them is a fact.
+local function site_text(s)
+  local where = string.format("%s:%d", s.file, s.line)
+  if s.caller ~= "" then
+    where = where .. "  in " .. s.caller
+  else
+    where = where .. "  (outside any declaration)"
+  end
+  if s.resolved_by_compiler then return where end
+  local why = s.name_only_reason or "MatchedByName"
+  if s.name_only_detail and s.name_only_detail ~= "" then
+    why = why .. " (" .. first_line(s.name_only_detail) .. ")"
+  end
+  return where .. "  matched by name, not by the compiler: " .. why
+end
+
+--- The lines for the callers section, or none at all.
+---
+--- NO LINES for `CallersCurrent` and none for `CallersNotReported`: in the first
+--- nothing was left behind, and in the second nobody said. An empty section headed
+--- "callers" would read as "no callers", which is the one claim the second state
+--- cannot support.
+---
+--- The WORDS are the daemon's (`message`, `suggestedAction`); what is added here is
+--- the list of files and lines, because a sentence naming one file cannot list six.
+---
+--- The callers' `suggestedAction` is read into the model and NOT printed here. The
+--- panel prints ONE remedy (`M.lines`'s `d.remedy`), and `CallerState.remedy` already
+--- leads with the callers' action when they are pending, so printing it here too put
+--- "→ Save Pages.fs" on the panel twice.
+---@param report table|nil
+---@return string[] lines
+function M.callers_lines(report)
+  if type(report) ~= "table" then return {} end
+  local c = report.callers
+  if type(c) ~= "table" then return {} end
+  if c.state == "CallersCurrent" or c.state == "CallersNotReported" then return {} end
+  if #c.pending == 0 and #c.not_checked == 0 then return {} end
+
+  local out = {}
+  if c.message and c.message ~= "" then
+    table.insert(out, "  callers: " .. first_line(c.message))
+  end
+  for _, p in ipairs(c.pending) do
+    table.insert(out, string.format("    %s (%s, in %s)", p.declaration, p.cause, p.file))
+    for _, s in ipairs(p.sites) do
+      table.insert(out, "      " .. site_text(s))
+    end
+  end
+  for _, u in ipairs(c.not_checked) do
+    local why = u.why
+    if u.why_subject and u.why_subject ~= "" then why = why .. ": " .. u.why_subject end
+    if u.why_detail and u.why_detail ~= "" then why = why .. " (" .. first_line(u.why_detail) .. ")" end
+    table.insert(out, string.format("    not checked: %s (%s) — %s", u.declaration, u.cause, why))
+  end
+  return out
 end
 
 -- ─── Model: the latest report per session ────────────────────────────────────
