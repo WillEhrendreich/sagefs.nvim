@@ -25,7 +25,7 @@ M.ACTIONS = { "up", "down", "set", "expr", "undo", "redo", "list" }
 
 -- ─── The request ─────────────────────────────────────────────────────────────
 
-local ARG_FIELDS = { "action", "file", "address", "seen", "literal", "expression", "working_directory" }
+local ARG_FIELDS = { "action", "file", "address", "seen", "literal", "expression", "working_directory", "session_id" }
 
 --- The tool's arguments: its own parameter names, with what is empty left out.
 ---@param opts table
@@ -40,8 +40,9 @@ function M.build_args(opts)
 end
 
 --- The directory that names the session: the active session's own, and the
---- editor's only when the session list carried none. (nudge_value takes a
---- working_directory, not a session id.)
+--- editor's only when the session list carried none. The session's id goes with
+--- it (`session_id`), because the directory alone is refused as ambiguous when
+--- several sessions share one.
 ---@param session table|nil
 ---@param cwd string
 function M.working_directory(session, cwd)

@@ -12,7 +12,8 @@
 --   show the reply, and reload the buffer when the file was written
 --
 -- undo and redo skip the first steps: they step through what the tool wrote to
--- this file. Every call names the session by its working directory. Nothing polls:
+-- this file. Every call names the session by its working directory and its id (the
+-- directory alone is refused as ambiguous when sessions share one). Nothing polls:
 -- one command is two calls (inspect, then set), and a bump is a keypress.
 --
 -- One flow runs at a time per buffer and the rest wait in order (new_gate): a
@@ -38,7 +39,7 @@ end
 
 --- Run one :SageFsNudge command. `on_done` is called exactly once, when the flow is
 --- over: written, refused, failed, cancelled or turned away.
----@param deps table { buffer, working_directory, call, notify, select, input, reload }
+---@param deps table { buffer, working_directory, session_id, call, notify, select, input, reload }
 ---@param cmd table from nudge.parse_command
 ---@param count number|nil
 ---@param on_done function|nil
@@ -63,10 +64,12 @@ function M.execute(deps, cmd, count, on_done)
     return
   end
   local working_directory = deps.working_directory()
+  local session_id = deps.session_id()
 
   local function args(extra)
     extra.file = buf.name
     extra.working_directory = working_directory
+    extra.session_id = session_id
     return nudge.build_args(extra)
   end
 
@@ -265,6 +268,7 @@ local function real_deps(plugin, buf)
       }
     end,
     working_directory = function() return nudge.working_directory(plugin.active_session, vim.fn.getcwd()) end,
+    session_id = function() return plugin.active_session and plugin.active_session.id end,
     call = function(call_args, cb)
       get_client(plugin).call_tool(nudge.TOOL, call_args, function(ok, text)
         vim.schedule(function() cb(nudge.parse_reply(ok, text)) end)
