@@ -294,6 +294,95 @@ describe("nudge_ui.execute: the session is named on every call", function()
   end)
 end)
 
+-- Found against a real daemon: a command that started while the previous one's
+-- buffer reload was still to come saw the buffer change under it and was refused.
+-- A key held down does the same. One flow runs at a time per buffer, the rest wait
+-- in order, and every flow says when it is over.
+describe("nudge_ui.execute: every flow says when it is over", function()
+  local function ends(label, opts, cmd, count)
+    it(label, function()
+      local h = harness(opts)
+      local over = 0
+      ui.execute(h.deps, cmd, count or 1, function() over = over + 1 end)
+      assert.are.equal(1, over, "on_done is called exactly once")
+    end)
+  end
+
+  ends("a bump that writes", { replies = { { body = inspected() }, written("Game.Tuning.tuning/{JumpVelocity}", "12.5", "12.6") } }, { action = "up" })
+  ends("an unsaved buffer", { modified = true }, { action = "up" })
+  ends("an undo", { replies = { { body = vim.json.encode({ outcome = "Undone", address = "M.x", before = "1", after = "2", notes = {} }) } } }, { action = "undo" })
+  ends("a refused inspect", { replies = { { body = vim.json.encode({ outcome = "Refused", refusal = "NotOwned", rule = "r", nextAction = "n" }) } } }, { action = "up" })
+  ends("a refused write", { replies = { { body = inspected() }, { body = vim.json.encode({ outcome = "Refused", refusal = "SourceMoved", rule = "r", nextAction = "n" }) } } }, { action = "up" })
+  ends("nothing under the cursor", { row = 3, col = 2, replies = { { body = inspected() } } }, { action = "up" })
+  ends("a value that is not a number", { row = 7, col = 13, replies = { { body = inspected() } } }, { action = "up" })
+  ends("a cancelled prompt", { typed = nil, replies = { { body = inspected() } } }, { action = "set" })
+  ends("a cancelled picker", { row = 3, col = 2, replies = { { body = inspected() } } }, { action = "set" })
+  ends("a failed call", { replies = { { ok = false, body = "no" } } }, { action = "up" })
+
+  it("a buffer that changed while the daemon answered", function()
+    local h
+    h = harness({ replies = { function() h.tick = 2; return { body = inspected() } end } })
+    local over = 0
+    ui.execute(h.deps, { action = "up" }, 1, function() over = over + 1 end)
+    assert.are.equal(1, over)
+  end)
+end)
+
+describe("nudge_ui.new_gate", function()
+  it("starts the first flow at once and holds the second until the first is over", function()
+    local gate = ui.new_gate()
+    local log, finish_first = {}, nil
+    gate.submit("buf1", function(done) table.insert(log, "first"); finish_first = done end)
+    gate.submit("buf1", function(done) table.insert(log, "second"); done() end)
+    assert.are.same({ "first" }, log)
+    finish_first()
+    assert.are.same({ "first", "second" }, log)
+  end)
+
+  it("keeps the order of what waited, and a flow that is over twice does not start two", function()
+    local gate = ui.new_gate()
+    local log, dones = {}, {}
+    for i = 1, 4 do
+      gate.submit("b", function(done) table.insert(log, i); dones[i] = done end)
+    end
+    assert.are.same({ 1 }, log)
+    dones[1](); dones[1]()
+    assert.are.same({ 1, 2 }, log, "a second done() is ignored")
+    dones[2]()
+    dones[3]()
+    assert.are.same({ 1, 2, 3, 4 }, log)
+  end)
+
+  it("different buffers do not wait for each other", function()
+    local gate = ui.new_gate()
+    local log = {}
+    gate.submit("a", function() table.insert(log, "a") end)
+    gate.submit("b", function() table.insert(log, "b") end)
+    assert.are.same({ "a", "b" }, log)
+  end)
+
+  it("a flow that raises does not wedge the buffer: the next one still runs", function()
+    local gate = ui.new_gate()
+    local log = {}
+    gate.submit("a", function() error("boom") end)
+    gate.submit("a", function(done) table.insert(log, "next"); done() end)
+    assert.are.same({ "next" }, log)
+  end)
+
+  it("a long queue is bounded, and what is turned away is said", function()
+    local gate = ui.new_gate(2)
+    local results = {}
+    for i = 1, 5 do
+      results[i] = gate.submit("a", function() end)
+    end
+    assert.is_true(results[1], "the running one")
+    assert.is_true(results[2])
+    assert.is_true(results[3])
+    assert.is_false(results[4], "past the bound it is refused")
+    assert.is_false(results[5])
+  end)
+end)
+
 describe("nudge_ui registration", function()
   it("registers :SageFsNudge with a count and sub-command completion", function()
     local registered = {}
