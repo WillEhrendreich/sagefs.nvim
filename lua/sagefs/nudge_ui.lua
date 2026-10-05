@@ -6,8 +6,8 @@
 -- and writes the file. So the flow is:
 --
 --   refuse a buffer with unsaved edits   (the daemon writes the file on disk)
---   inspect the file                     (every value: address, text, hash)
---   find the value under the cursor      (sagefs.nudge.locate; ties are offered)
+--   inspect the file                     (every value: address, text, hash, range, typed value)
+--   find the value under the cursor      (sagefs.nudge.locate, by range; a value inside another is offered)
 --   set it with the hash inspect gave    (a stale one is refused by the daemon)
 --   show the reply, and reload the buffer when the file was written
 --

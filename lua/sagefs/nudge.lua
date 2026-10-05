@@ -226,23 +226,39 @@ function M.read_literal(text)
   return { kind = "other" }
 end
 
---- The literal text that goes up or down from `item.text` by `count` steps, or
---- nil and the reason. The text is plain decimal: the daemon reads it as the kind
---- the literal already is and writes it back in the author's own style (hex stays
---- hex, a unit of measure and a suffix stay).
----@param item { text: string }
+--- The literal text that goes up or down from the item's value by `count` steps, or
+--- nil and the reason. The number is the daemon's typed `item.value`; `item.text` is
+--- read only for how it is written (its decimals). The text is plain decimal: the
+--- daemon reads it as the kind the literal already is and writes it back in the
+--- author's own style (hex stays hex, a unit of measure and a suffix stay).
+---@param item { text: string, valueKind: string|nil, value: any }
 ---@param direction number 1 or -1
 ---@param count number|nil
 ---@param step_text string|nil
 ---@return string|nil literal, string|nil reason
 function M.bump(item, direction, count, step_text)
   count = (count and count > 0) and count or 1
-  local lit = M.read_literal(item.text)
-  if lit.kind == "bool" then return tostring(not lit.value) end
-  if lit.kind == "other" then
+  local kind = item.valueKind
+  if kind == "Boolean" then
+    if type(item.value) == "boolean" then return tostring(not item.value) end
+    return nil, "the daemon gave no bool for the value here, so it cannot be toggled. "
+      .. "Use :SageFsNudge set (or expr) to give it a value."
+  end
+  if kind ~= "Integer" and kind ~= "Real" then
     return nil, "the value here is not a number or a bool, so it cannot be bumped. "
       .. "Use :SageFsNudge set (or expr) to give it a value."
   end
+  if type(item.value) ~= "number" then
+    return nil, "the daemon gave no number for the value here (a real past what a double holds), so it cannot be bumped. "
+      .. "Use :SageFsNudge set (or expr) to give it a value."
+  end
+  local style = M.read_literal(item.text)
+  if style.kind ~= "int" and style.kind ~= "real" then
+    return nil, "the value here is written in a form a bump cannot keep (an exponent, say). "
+      .. "Use :SageFsNudge set (or expr) to give it a value."
+  end
+  local is_int = kind == "Integer"
+  local decimals = (not is_int and style.decimals) or 0
 
   local step, step_decimals
   if step_text and step_text ~= "" then
@@ -253,15 +269,15 @@ function M.bump(item, direction, count, step_text)
     end
     step = given.value
     step_decimals = given.decimals or 0
-  elseif lit.kind == "real" and lit.decimals > 0 then
-    step = 10 ^ -lit.decimals
-    step_decimals = lit.decimals
+  elseif not is_int and decimals > 0 then
+    step = 10 ^ -decimals
+    step_decimals = decimals
   else
     step, step_decimals = 1, 0
   end
 
-  local value = lit.value + direction * step * count
-  if lit.kind == "int" then
+  local value = item.value + direction * step * count
+  if is_int then
     if step_decimals > 0 then
       return nil, "an integer literal takes a whole step. Give a whole number, or set a real value with :SageFsNudge set."
     end
@@ -269,7 +285,7 @@ function M.bump(item, direction, count, step_text)
     if formatted == "-0" then formatted = "0" end
     return formatted
   end
-  local places = math.max(lit.decimals, step_decimals)
+  local places = math.max(decimals, step_decimals)
   local formatted = string.format("%." .. places .. "f", value)
   if formatted:match("^%-0%.?0*$") then formatted = formatted:sub(2) end
   return formatted
@@ -277,89 +293,56 @@ end
 
 -- ─── Which listed value is under the cursor ──────────────────────────────────
 --
--- inspect lists each value's address, its text and its hash, and no line or
--- column. So the cursor is matched to the text on its own line, and two values
--- with the same text are told apart by what the file says around them: the
--- binding the cursor is inside, and the record field written just before it. When
--- that still leaves more than one, they are offered; none is guessed.
+-- inspect lists each value's range: `line` from 1, `column` from 0, `endLine` and
+-- `endColumn` (exclusive), the columns counted in characters (the parser's own:
+-- UTF-16 code units), not bytes. The cursor is a row and a byte column, so its
+-- column is converted to the same count and then compared with each range. No
+-- text is matched and nothing is guessed from the binding or the field name around
+-- a value: two values with the same text are two ranges.
 
-local MODIFIERS = { "rec", "inline", "mutable", "private", "internal", "public", "static", "lazy" }
-
---- The name a declaration line declares, or nil for a line that declares nothing
---- this can read (a tuple pattern, a line that is not a declaration).
-local function declared_name(line)
-  local is_member = false
-  local rest = line:match("^%s*let%s+(.*)$") or line:match("^%s*and%s+(.*)$") or line:match("^%s*val%s+(.*)$")
-  if not rest then
-    rest = line:match("^%s*static%s+member%s+(.*)$") or line:match("^%s*member%s+(.*)$")
-      or line:match("^%s*override%s+(.*)$") or line:match("^%s*default%s+(.*)$")
-    is_member = rest ~= nil
+--- The number of characters before a 0-based byte column of `line`, counted the way
+--- the parser counts them: UTF-16 code units, so a character past the Basic
+--- Multilingual Plane (an emoji, four bytes of UTF-8) is two. A byte column in the
+--- middle of a character is that character's own column, and one past the end of
+--- the line is the line's length.
+---@param line string
+---@param byte_col number 0-based
+---@return number
+function M.char_column(line, byte_col)
+  local limit = math.min(byte_col, #line)
+  -- back up from a continuation byte (10xxxxxx) to the byte that starts its character
+  while limit > 0 do
+    local b = line:byte(limit + 1)
+    if b and b >= 0x80 and b < 0xC0 then limit = limit - 1 else break end
   end
-  if not rest then return nil end
-  local changed = true
-  while changed do
-    changed = false
-    for _, word in ipairs(MODIFIERS) do
-      local stripped, n = rest:gsub("^" .. word .. "%s+", "", 1)
-      if n > 0 then rest = stripped; changed = true end
-    end
+  local columns = 0
+  for i = 1, limit do
+    local b = line:byte(i)
+    if b < 0x80 then columns = columns + 1
+    elseif b >= 0xF0 then columns = columns + 2
+    elseif b >= 0xC0 then columns = columns + 1 end
   end
-  if is_member then rest = rest:gsub("^[%w_]+%.", "", 1) end
-  return rest:match("^([%w_']+)")
+  return columns
 end
 
-local function indent_of(line)
-  return #(line:match("^(%s*)"))
+local function positioned(item)
+  return type(item.line) == "number" and type(item.column) == "number"
+    and type(item.endLine) == "number" and type(item.endColumn) == "number"
 end
 
---- Where the declaration of `name` that contains `row` starts: "inside" when the
---- cursor's line belongs to its body, "outside" when a declaration of `name` is
---- above but the cursor is past its end, "unknown" when no line declares it.
-local function binding_state(lines, row, name)
-  for i = row, 1, -1 do
-    if declared_name(lines[i] or "") == name then
-      local base = indent_of(lines[i])
-      for j = i + 1, row do
-        local line = lines[j] or ""
-        if line:find("%S") and indent_of(line) <= base then return "outside" end
-      end
-      return "inside", i
-    end
-  end
-  return "unknown"
+--- True when (row, col) is in the item's range: from its start up to, not
+--- including, its end.
+local function holds(item, row, col)
+  if row < item.line or row > item.endLine then return false end
+  if row == item.line and col < item.column then return false end
+  if row == item.endLine and col >= item.endColumn then return false end
+  return true
 end
 
-local function binding_of(address)
-  local head = address:match("^([^/]*)") or address
-  return head:match("([^%.]+)$") or head
-end
-
-local function last_field_of(address)
-  local field
-  for step in address:gmatch("/([^/]+)") do
-    local name = step:match("^{(.*)}$")
-    if name then field = name end
-  end
-  return field
-end
-
-local function escape(s) return (s:gsub("%p", "%%%0")) end
-
---- Every place `text` stands as its own token in `line`: { s, e } (1-based, inclusive).
-local function spans_of(line, text)
-  local spans = {}
-  local init = 1
-  while true do
-    local s, e = line:find(text, init, true)
-    if not s then break end
-    local before = s > 1 and line:sub(s - 1, s - 1) or ""
-    local after = line:sub(e + 1, e + 1)
-    local after2 = line:sub(e + 1, e + 2)
-    local edge_ok = not before:find("[%w_%.]") and not after:find("[%w_]") and not after2:find("^%.%d")
-    if edge_ok then spans[#spans + 1] = { s = s, e = e } end
-    init = s + 1
-  end
-  return spans
+--- How big a range is, so a value inside another is told from the one around it:
+--- lines first, then columns on a single line.
+local function extent(item)
+  return (item.endLine - item.line) * 100000 + (item.endColumn - item.column)
 end
 
 --- Which listed value the cursor is on.
@@ -371,56 +354,35 @@ end
 ---@return table { kind = "one", item } | { kind = "many", items } | { kind = "none", reason }
 function M.locate(items, lines, row, col, opts)
   opts = opts or {}
-  local line = lines[row] or ""
-  local cursor = col + 1
+  local at = M.char_column(lines[row] or "", col)
 
+  local any_positioned = false
   local hits = {}
   for index, item in ipairs(items) do
-    local usable = type(item.text) == "string" and item.text ~= "" and not item.text:find("\n", 1, true)
-    if usable and (not opts.knob_only or item.kind == "Knob") then
-      for _, span in ipairs(spans_of(line, item.text)) do
-        if span.s <= cursor and cursor <= span.e then
-          hits[#hits + 1] = { item = item, span = span, order = index }
-          break
-        end
+    if positioned(item) then
+      any_positioned = true
+      if (not opts.knob_only or item.kind == "Knob") and holds(item, row, at) then
+        hits[#hits + 1] = { item = item, order = index }
       end
     end
+  end
+  if #items > 0 and not any_positioned then
+    return { kind = "none", reason = "the daemon listed these values without their positions, so it may be older than this plugin. "
+      .. "Update SageFs, or pick the value from :SageFsNudge list." }
   end
   if #hits == 0 then
     return { kind = "none", reason = "no value the daemon lists for this file is under the cursor. Put the cursor on the value itself." }
   end
 
-  -- Which binding the cursor is inside.
-  local inside, unknown = {}, {}
-  for _, hit in ipairs(hits) do
-    local state = binding_state(lines, row, binding_of(hit.item.address))
-    if state == "inside" then inside[#inside + 1] = hit
-    elseif state == "unknown" then unknown[#unknown + 1] = hit end
-  end
-  local pool = #inside > 0 and inside or unknown
-  if #pool == 0 then
-    return { kind = "none", reason = "the value under the cursor is in a binding the daemon does not list for this file, "
-      .. "so it is not one it can nudge." }
-  end
-
-  -- The record field written just before the value.
-  local named = {}
-  for _, hit in ipairs(pool) do
-    local field = last_field_of(hit.item.address)
-    if field then
-      local before = line:sub(1, hit.span.s - 1)
-      if before:find("%f[%w_']" .. escape(field) .. "%s*=%s*$") then named[#named + 1] = hit end
-    end
-  end
-  if #named > 0 then pool = named end
-
-  table.sort(pool, function(a, b)
-    if #a.item.text ~= #b.item.text then return #a.item.text < #b.item.text end
+  -- Innermost first: a literal inside a formula comes before the formula.
+  table.sort(hits, function(a, b)
+    local ea, eb = extent(a.item), extent(b.item)
+    if ea ~= eb then return ea < eb end
     return a.order < b.order
   end)
-  if #pool == 1 then return { kind = "one", item = pool[1].item } end
+  if #hits == 1 then return { kind = "one", item = hits[1].item } end
   local out = {}
-  for _, hit in ipairs(pool) do out[#out + 1] = hit.item end
+  for _, hit in ipairs(hits) do out[#out + 1] = hit.item end
   return { kind = "many", items = out }
 end
 

@@ -888,10 +888,12 @@ or any other expression is set with set or expr, not bumped.
 How it goes: the plugin inspects the file, finds the listed value that is
 under the cursor, and sets it with the hash inspect gave. A value that
 changed since is refused by the daemon and nothing is written. The daemon
-sends no line or column, so the value is found by its text on your line, and
-two values with the same text are told apart by the binding the cursor is in
-and the record field written before it. When that still leaves more than
-one, you are asked which; the plugin never guesses.
+sends each value's range (line, column, end line, end column, columns in
+characters), and the plugin turns the cursor's byte column into the same
+count, so the value is the one whose range holds the cursor: two values with
+the same text on one line are two ranges, and a value that spans lines is
+found from any line it covers. When a value sits inside a bigger one, you are
+asked which; the plugin never guesses.
 
 The daemon writes the file on disk, so:
   - a buffer with unsaved edits is refused by name (write it, or :edit! to

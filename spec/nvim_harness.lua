@@ -2464,7 +2464,7 @@ end)
 
 -- ─── Nudge, in a real buffer, with a fake daemon ─────────────────────────────
 -- The daemon here is a function that rewrites the file on disk the way the real
--- nudge_value tool does (and ends its reply with the event echo a real one can).
+-- nudge_value tool does, and lists each value with its range.
 -- Everything else is real: the buffer, the cursor, :edit, vim.notify, the command,
 -- the map and the gate.
 
@@ -2498,13 +2498,22 @@ describe("nudge in a real buffer (fake daemon)", function()
             table.insert(calls, args)
             local text = table.concat(vim.fn.readfile(path), "\n")
             local speed, drag = text:match("let speed = (%S+)"), text:match("let drag = (%S+)")
+            -- where the daemon says a value is: line from 1, column from 0, endColumn exclusive
+            local function listed(address, name, shown)
+              local lines = vim.fn.readfile(path)
+              for i, line in ipairs(lines) do
+                local s = line:find("let " .. name .. " = ", 1, true)
+                if s then
+                  local column = s - 1 + #("let " .. name .. " = ")
+                  return { address = address, text = shown, hash = "h-" .. name, kind = "Knob", valueKind = "Real",
+                    value = tonumber(shown), line = i, column = column, endLine = i, endColumn = column + #shown }
+                end
+              end
+            end
             if args.action == "inspect" then
               cb(true, vim.json.encode({
                 outcome = "Inspected", file = path, fileHash = "fh", journaled = 0, undoSteps = 0, redoSteps = 0, listing = "Complete",
-                items = {
-                  { address = "M.speed", text = speed, hash = "h-speed", kind = "Knob", valueKind = "Real" },
-                  { address = "M.drag", text = drag, hash = "h-drag", kind = "Knob", valueKind = "Real" },
-                },
+                items = { listed("M.speed", "speed", speed), listed("M.drag", "drag", drag) },
                 notes = {},
               }))
             elseif args.action == "set" then
