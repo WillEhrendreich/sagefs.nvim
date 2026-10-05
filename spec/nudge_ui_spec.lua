@@ -17,15 +17,19 @@ local LINES = {
   "let mode = Hard",               -- 7
 }
 
-local function item(address, text, kind, value_kind)
-  return { address = address, text = text, hash = "hash-" .. address, kind = kind or "Knob", valueKind = value_kind }
+-- An item as inspect lists it: its place ({ line, column, endLine, endColumn }: lines
+-- from 1, columns from 0 in characters) and, for a literal, its typed value.
+local function item(address, text, kind, value_kind, place, value)
+  local it = { address = address, text = text, hash = "hash-" .. address, kind = kind or "Knob", valueKind = value_kind, value = value }
+  if place then it.line, it.column, it.endLine, it.endColumn = place[1], place[2], place[3] or place[1], place[4] end
+  return it
 end
 
 local ITEMS = {
-  item("Game.Tuning.tuning/{JumpVelocity}", "12.5", "Knob", "Real"),
-  item("Game.Tuning.tuning/{Gravity}", "9.8", "Knob", "Real"),
-  item("Game.Tuning.tuning/{Cap}", "12", "Knob", "Integer"),
-  item("Game.Tuning.mode", "Hard", "Knob", "UnionCase"),
+  item("Game.Tuning.tuning/{JumpVelocity}", "12.5", "Knob", "Real", { 4, 19, 4, 23 }, 12.5),
+  item("Game.Tuning.tuning/{Gravity}", "9.8", "Knob", "Real", { 5, 14, 5, 17 }, 9.8),
+  item("Game.Tuning.tuning/{Cap}", "12", "Knob", "Integer", { 6, 10, 6, 12 }, 12),
+  item("Game.Tuning.mode", "Hard", "Knob", "UnionCase", { 7, 11, 7, 15 }, "Hard"),
 }
 
 local function inspected(items, extra)
@@ -51,8 +55,7 @@ local function harness(opts)
         tick = h.tick or 1,
       }
     end,
-    working_directory = function() return opts.working_directory or "/w" end,
-    call = function(args, cb)
+    working_directory = function() return opts.working_directory or "/w" end,    call = function(args, cb)
       table.insert(h.calls, args)
       local reply = table.remove(replies, 1)
       if type(reply) == "function" then reply = reply(args) end
@@ -223,7 +226,7 @@ describe("nudge_ui.execute: set, expr, list", function()
   end)
 
   it("a formula is set as an expression even by set", function()
-    local items = { item("M.f", "x * 2.0", "Formula") }
+    local items = { item("M.f", "x * 2.0", "Formula", nil, { 1, 10, 1, 17 }) }
     local h = harness({ row = 1, col = 12, replies = { { body = inspected(items) }, written("M.f", "x * 2.0", "x * 3.0") } })
     h.deps.buffer = function() return { name = "/w/F.fs", modified = false, lines = { "let f x = x * 2.0" }, row = 1, col = 12, tick = 1 } end
     ui.execute(h.deps, { action = "set", value = "x * 3.0" }, 1)
@@ -246,8 +249,33 @@ describe("nudge_ui.execute: set, expr, list", function()
     assert.are.equal("30", h.calls[2].literal)
   end)
 
-  it("when two values tie, they are offered and the one picked is bumped", function()
-    local tied = { item("A.x/Tuple.0", "5", "Knob", "Integer"), item("A.x/Tuple.1", "5", "Knob", "Integer") }
+  it("two values with the same text on one line are told apart by their columns and the one under the cursor is bumped", function()
+    local tuple = {
+      item("A.x/Tuple.0", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
+      item("A.x/Tuple.1", "5", "Knob", "Integer", { 1, 12, 1, 13 }, 5),
+    }
+    local h = harness({ replies = { { body = inspected(tuple) }, written("A.x/Tuple.1", "5", "6") } })
+    h.deps.buffer = function() return { name = "/w/A.fs", modified = false, lines = { "let x = (5, 5)" }, row = 1, col = 12, tick = 1 } end
+    ui.execute(h.deps, { action = "up" }, 1)
+    assert.are.equal(0, #h.selects, "no picker")
+    assert.are.equal("A.x/Tuple.1", h.calls[2].address)
+    assert.are.equal("6", h.calls[2].literal)
+  end)
+
+  it("a value after text that is not ASCII is found by the character column the daemon counts", function()
+    local accents = { 'let t = ("éé", 7.5)' }
+    local listed = { item("T.t/Tuple.1", "7.5", "Knob", "Real", { 1, 15, 1, 18 }, 7.5) }
+    local h = harness({ replies = { { body = inspected(listed) }, written("T.t/Tuple.1", "7.5", "7.6") } })
+    h.deps.buffer = function() return { name = "/w/T.fs", modified = false, lines = accents, row = 1, col = 17, tick = 1 } end
+    ui.execute(h.deps, { action = "up" }, 1)
+    assert.are.equal("7.6", h.calls[2].literal)
+  end)
+
+  it("when two items hold exactly the same range, they are offered and the one picked is bumped", function()
+    local tied = {
+      item("A.x/Tuple.0", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
+      item("A.x/Tuple.1", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
+    }
     local h = harness({ pick = 2, replies = { { body = inspected(tied) }, written("A.x/Tuple.1", "5", "6") } })
     h.deps.buffer = function() return { name = "/w/A.fs", modified = false, lines = { "let x = (5, 5)" }, row = 1, col = 9, tick = 1 } end
     ui.execute(h.deps, { action = "up" }, 1)
@@ -284,6 +312,7 @@ describe("nudge_ui.execute: undo and redo", function()
 end)
 
 describe("nudge_ui.execute: the session is named on every call", function()
+
   it("every call carries the working directory the deps name", function()
     local h = harness({ working_directory = "/work/other-repo",
       replies = { { body = inspected() }, written("Game.Tuning.tuning/{JumpVelocity}", "12.5", "12.6") } })

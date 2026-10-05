@@ -10,10 +10,19 @@ require("spec.helper")
 
 local nudge = require("sagefs.nudge")
 
-local function item(address, text, kind, value_kind)
-  return {
+-- An inspect item as McpNudge.itemJson gives it: its place (`line` from 1, `column`
+-- from 0 and `endColumn` exclusive, counted in characters) and, for a literal, the
+-- typed `value`. `place` is { line, column, endLine, endColumn }; `value` is the
+-- typed value (nil for a formula, and for a real the daemon cannot write as JSON).
+local function item(address, text, kind, value_kind, place, value)
+  local it = {
     address = address, text = text, hash = ("h:" .. address), kind = kind or "Knob", valueKind = value_kind,
   }
+  if place then
+    it.line, it.column, it.endLine, it.endColumn = place[1], place[2], place[3] or place[1], place[4]
+  end
+  it.value = value
+  return it
 end
 
 -- The shape McpNudge.render gives, from the daemon's own field names.
@@ -188,9 +197,47 @@ describe("nudge.read_literal", function()
 end)
 
 describe("nudge.bump", function()
-  local function bump(text, dir, count, step)
-    return nudge.bump({ text = text }, dir, count, step)
+  -- The item as the daemon lists it: the typed value, and the text it stands as.
+  local function listed(text)
+    if text == "true" or text == "false" then return { text = text, valueKind = "Boolean", value = text == "true" } end
+    local plain = text:gsub("<.*>$", ""):gsub("_", "")
+    local hex = plain:match("^0[xX](%x+)$")
+    if hex then return { text = text, valueKind = "Integer", value = tonumber(hex, 16) } end
+    local number = tonumber(plain)
+    if number and plain:find(".", 1, true) then return { text = text, valueKind = "Real", value = number } end
+    if number then return { text = text, valueKind = "Integer", value = number } end
+    return { text = text, valueKind = "UnionCase", value = text }
   end
+
+  local function bump(text, dir, count, step)
+    return nudge.bump(listed(text), dir, count, step)
+  end
+
+  it("the number is the daemon's typed value; the text only says how it is written", function()
+    local item_with = { text = "12.5", valueKind = "Real", value = 20.0 }
+    assert.are.equal("20.1", nudge.bump(item_with, 1))
+    local hex = { text = "0x1F", valueKind = "Integer", value = 255 }
+    assert.are.equal("256", nudge.bump(hex, 1))
+    local flipped = { text = "true", valueKind = "Boolean", value = false }
+    assert.are.equal("true", nudge.bump(flipped, -1), "the bool is the value, not the word")
+  end)
+
+  it("a real the daemon could not write as a number (it sends null) is not bumped, and says why", function()
+    local literal, why = nudge.bump({ text = "1.7976931348623157e309", valueKind = "Real", value = nil }, 1)
+    assert.is_nil(literal)
+    assert.is_truthy(why:find("number", 1, true))
+    local plain, plain_why = nudge.bump({ text = "9.5", valueKind = "Real", value = nil }, 1)
+    assert.is_nil(plain, "no value, no bump, even when the text would parse")
+    assert.is_truthy(plain_why)
+  end)
+
+  it("text, a character and a union case are not numbers whatever their text looks like", function()
+    for _, kind in ipairs({ "Text", "Character", "UnionCase" }) do
+      local literal, why = nudge.bump({ text = "12", valueKind = kind, value = "12" }, 1)
+      assert.is_nil(literal, kind)
+      assert.is_truthy(why:find(":SageFsNudge set", 1, true), kind)
+    end
+  end)
 
   it("an integer goes up and down by one, by a count, and by a step", function()
     assert.are.equal("151", bump("150", 1))
@@ -262,49 +309,66 @@ describe("nudge.locate", function()
     "let pair = { Lo = 2.0; Hi = 2.0 }", -- 17
     "let fn x = x * 1.0",            -- 18
   }
+  -- Where the daemon says each one is: line from 1, column from 0, endColumn exclusive.
   local items = {
-    item("Game.Tuning.tuning/{JumpVelocity}", "12.5", "Knob", "Real"),
-    item("Game.Tuning.tuning/{Gravity}", "9.8", "Knob", "Real"),
-    item("Game.Tuning.tuning/{Cap}", "12", "Knob", "Integer"),
-    item("Game.Tuning.other/{JumpVelocity}", "12.5", "Knob", "Real"),
-    item("Game.Tuning.other/{Gravity}", "3.0", "Knob", "Real"),
-    item("Game.Tuning.other/{Cap}", "9", "Knob", "Integer"),
-    item("Game.Tuning.speed", "1.0", "Knob", "Real"),
-    item("Game.Tuning.drag", "1.0", "Knob", "Real"),
-    item("Game.Tuning.pair/{Lo}", "2.0", "Knob", "Real"),
-    item("Game.Tuning.pair/{Hi}", "2.0", "Knob", "Real"),
+    item("Game.Tuning.tuning/{JumpVelocity}", "12.5", "Knob", "Real", { 6, 19, 6, 23 }, 12.5),
+    item("Game.Tuning.tuning/{Gravity}", "9.8", "Knob", "Real", { 7, 14, 7, 17 }, 9.8),
+    item("Game.Tuning.tuning/{Cap}", "12", "Knob", "Integer", { 8, 10, 8, 12 }, 12),
+    item("Game.Tuning.other/{JumpVelocity}", "12.5", "Knob", "Real", { 11, 19, 11, 23 }, 12.5),
+    item("Game.Tuning.other/{Gravity}", "3.0", "Knob", "Real", { 12, 14, 12, 17 }, 3.0),
+    item("Game.Tuning.other/{Cap}", "9", "Knob", "Integer", { 13, 10, 13, 11 }, 9),
+    item("Game.Tuning.speed", "1.0", "Knob", "Real", { 15, 12, 15, 15 }, 1.0),
+    item("Game.Tuning.drag", "1.0", "Knob", "Real", { 16, 11, 16, 14 }, 1.0),
+    item("Game.Tuning.pair/{Lo}", "2.0", "Knob", "Real", { 17, 18, 17, 21 }, 2.0),
+    item("Game.Tuning.pair/{Hi}", "2.0", "Knob", "Real", { 17, 28, 17, 31 }, 2.0),
   }
 
   local function at(row, col)
     return nudge.locate(items, lines, row, col)
   end
 
-  it("finds the one value whose text is under the cursor", function()
+  it("finds the one value whose range holds the cursor", function()
     local found = at(7, 14) -- on 9.8
     assert.are.equal("one", found.kind)
     assert.are.equal("Game.Tuning.tuning/{Gravity}", found.item.address)
   end)
 
-  it("two bindings with the same text are told apart by the binding the cursor is in", function()
-    local first = at(6, 20)   -- 12.5 inside `tuning`
-    assert.are.equal("Game.Tuning.tuning/{JumpVelocity}", first.item.address)
-    local second = at(11, 20) -- 12.5 inside `other`
-    assert.are.equal("Game.Tuning.other/{JumpVelocity}", second.item.address)
+  it("two bindings with the same text are told apart by where they are", function()
+    assert.are.equal("Game.Tuning.tuning/{JumpVelocity}", at(6, 20).item.address)
+    assert.are.equal("Game.Tuning.other/{JumpVelocity}", at(11, 20).item.address)
   end)
 
-  it("a one-line binding is found on its own line, not by an earlier binding with the same text", function()
+  it("a one-line binding is found on its own line", function()
     assert.are.equal("Game.Tuning.speed", at(15, 14).item.address)
     assert.are.equal("Game.Tuning.drag", at(16, 13).item.address)
   end)
 
-  it("two fields on one line with the same text are told apart by the field name before them", function()
-    local lo = at(17, 19) -- on the first 2.0
-    local hi = at(17, 30) -- on the second 2.0
-    assert.are.equal("Game.Tuning.pair/{Lo}", lo.item.address)
-    assert.are.equal("Game.Tuning.pair/{Hi}", hi.item.address)
+  it("a range starts at its column and ends before its endColumn", function()
+    assert.are.equal("Game.Tuning.speed", at(15, 12).item.address, "the first character is in")
+    assert.are.equal("Game.Tuning.speed", at(15, 14).item.address, "the last character is in")
+    assert.are.equal("none", at(15, 11).kind, "the character before it is not")
+    assert.are.equal("none", at(15, 15).kind, "endColumn is one past the end")
   end)
 
-  it("off any value there is nothing, and it says what the line has", function()
+  it("two values with the same text on one line are told apart by their columns, with no picker", function()
+    local tuple = {
+      item("A.x/Tuple.0", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
+      item("A.x/Tuple.1", "5", "Knob", "Integer", { 1, 12, 1, 13 }, 5),
+    }
+    local row = { "let x = (5, 5)" }
+    assert.are.equal("A.x/Tuple.0", nudge.locate(tuple, row, 1, 9).item.address)
+    assert.are.equal("A.x/Tuple.1", nudge.locate(tuple, row, 1, 12).item.address)
+    assert.are.equal("none", nudge.locate(tuple, row, 1, 10).kind, "the comma is neither")
+  end)
+
+  it("a field written after its own name is no longer needed to tell values apart: the range is", function()
+    -- the same two 2.0s, with the items listed in the other order
+    local reversed = { items[10], items[9] }
+    assert.are.equal("Game.Tuning.pair/{Lo}", nudge.locate(reversed, lines, 17, 19).item.address)
+    assert.are.equal("Game.Tuning.pair/{Hi}", nudge.locate(reversed, lines, 17, 30).item.address)
+  end)
+
+  it("off any value there is nothing, and it says what to do", function()
     local found = at(5, 2)
     assert.are.equal("none", found.kind)
     assert.is_truthy(found.reason:find("cursor", 1, true))
@@ -312,38 +376,100 @@ describe("nudge.locate", function()
 
   it("a number in a binding the daemon does not list is not attributed to an earlier binding that has the same text", function()
     -- `fn` is a function the daemon does not list, and `drag` above it has 1.0
-    local found = at(18, 17)
-    assert.are.equal("none", found.kind)
+    assert.are.equal("none", at(18, 17).kind)
   end)
 
-  it("when it cannot tell two apart it offers them, innermost first, and never picks one", function()
-    local tied = {
-      item("A.x/Tuple.0", "5", "Knob", "Integer"),
-      item("A.x/Tuple.1", "5", "Knob", "Integer"),
+  it("when two items hold exactly the same range it offers them and never picks one", function()
+    local twins = {
+      item("A.x/Tuple.0", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
+      item("A.x/Tuple.1", "5", "Knob", "Integer", { 1, 9, 1, 10 }, 5),
     }
-    local found = nudge.locate(tied, { "let x = (5, 5)" }, 1, 9)
+    local found = nudge.locate(twins, { "let x = (5, 5)" }, 1, 9)
     assert.are.equal("many", found.kind)
     assert.are.equal(2, #found.items)
   end)
 
-  it("a value that spans lines is not located by text, but the rest still are", function()
-    local multi = { item("M.f", "a\n+ b", "Formula"), item("M.g", "7", "Knob", "Integer") }
-    local found = nudge.locate(multi, { "let g = 7" }, 1, 8)
-    assert.are.equal("one", found.kind)
-    assert.are.equal("M.g", found.item.address)
+  it("a value that spans lines is found from any line it covers, not by its text", function()
+    local multi = {
+      item("M.f", "a\n      + b", "Formula", nil, { 1, 8, 2, 9 }),
+      item("M.g", "7", "Knob", "Integer", { 3, 8, 3, 9 }, 7),
+    }
+    local text = { "let f = a", "      + b", "let g = 7" }
+    assert.are.equal("M.f", nudge.locate(multi, text, 1, 8).item.address, "on its first line")
+    assert.are.equal("M.f", nudge.locate(multi, text, 2, 6).item.address, "on its second line")
+    assert.are.equal("none", nudge.locate(multi, text, 1, 7).kind, "before it starts")
+    assert.are.equal("none", nudge.locate(multi, text, 2, 9).kind, "at its endColumn")
+    assert.are.equal("M.g", nudge.locate(multi, text, 3, 8).item.address, "and the rest still are")
   end)
 
   it("a formula that holds the cursor is a candidate for set, with the literal inside it too", function()
     local list = {
-      item("M.f", "x * 2.0", "Formula"),
-      item("M.f/BinOp.Right", "2.0", "Knob", "Real"),
+      item("M.f", "x * 2.0", "Formula", nil, { 1, 10, 1, 17 }),
+      item("M.f/BinOp.Right", "2.0", "Knob", "Real", { 1, 14, 1, 17 }, 2.0),
     }
-    local found = nudge.locate(list, { "let f x = x * 2.0" }, 1, 16)
+    local row = { "let f x = x * 2.0" }
+    local found = nudge.locate(list, row, 1, 15)
     assert.are.equal("many", found.kind)
     assert.are.equal("M.f/BinOp.Right", found.items[1].address, "the innermost first")
-    local knob = nudge.locate(list, { "let f x = x * 2.0" }, 1, 16, { knob_only = true })
+    local knob = nudge.locate(list, row, 1, 15, { knob_only = true })
     assert.are.equal("one", knob.kind)
     assert.are.equal("M.f/BinOp.Right", knob.item.address)
+  end)
+
+  -- The daemon counts columns in characters (UTF-16 code units, the parser's own),
+  -- the cursor is a byte offset: text before a value that is not ASCII moves one
+  -- onto the other.
+  describe("with text before the value that is not ASCII", function()
+    -- let t = ("éé", 7.5)   bytes: `"` 9, é 10-11, é 12-13, `"` 14, `,` 15, ` ` 16, `7` 17
+    --                       chars: `"` 9, é 10, é 11, `"` 12, `,` 13, ` ` 14, `7` 15
+    local accents = { 'let t = ("éé", 7.5)' }
+    local accent_items = { item("T.t/Tuple.1", "7.5", "Knob", "Real", { 1, 15, 1, 18 }, 7.5) }
+
+    it("a cursor on the value is found by its character column, not its byte column", function()
+      assert.are.equal("T.t/Tuple.1", nudge.locate(accent_items, accents, 1, 17).item.address, "on the 7")
+      assert.are.equal("T.t/Tuple.1", nudge.locate(accent_items, accents, 1, 19).item.address, "on the 5")
+    end)
+
+    it("a cursor that would be inside the range if bytes were characters is not", function()
+      assert.are.equal("none", nudge.locate(accent_items, accents, 1, 15).kind, "byte 15 is the comma")
+      assert.are.equal("none", nudge.locate(accent_items, accents, 1, 16).kind, "byte 16 is the space")
+      assert.are.equal("none", nudge.locate(accent_items, accents, 1, 20).kind, "byte 20 is the paren")
+    end)
+
+    it("an emoji is two characters to the parser (two UTF-16 units) and four bytes to the cursor", function()
+      local emoji = { 'let t = ("😀", 7.5)' }
+      assert.are.equal("T.t/Tuple.1", nudge.locate(accent_items, emoji, 1, 17).item.address)
+      assert.are.equal("none", nudge.locate(accent_items, emoji, 1, 15).kind)
+    end)
+  end)
+
+  describe("nudge.char_column", function()
+    it("is the byte column on an ASCII line", function()
+      assert.are.equal(4, nudge.char_column("let x = 1", 4))
+      assert.are.equal(0, nudge.char_column("let x = 1", 0))
+    end)
+
+    it("counts a two-byte character once and an astral character twice", function()
+      assert.are.equal(1, nudge.char_column("éa", 2))
+      assert.are.equal(2, nudge.char_column("😀a", 4))
+      assert.are.equal(3, nudge.char_column("é😀a", 6))
+    end)
+
+    it("a byte column in the middle of a character is that character's own column", function()
+      assert.are.equal(0, nudge.char_column("éa", 1))
+      assert.are.equal(1, nudge.char_column("aéa", 2))
+    end)
+
+    it("a column past the end of the line is the line's length", function()
+      assert.are.equal(2, nudge.char_column("é1", 30))
+    end)
+  end)
+
+  it("items the daemon listed with no position are never located, and the reason says the daemon may be older", function()
+    local bare = { { address = "M.x", text = "1.0", hash = "h", kind = "Knob", valueKind = "Real", value = 1.0 } }
+    local found = nudge.locate(bare, { "let x = 1.0" }, 1, 9)
+    assert.are.equal("none", found.kind)
+    assert.is_truthy(found.reason:find("older", 1, true))
   end)
 end)
 
