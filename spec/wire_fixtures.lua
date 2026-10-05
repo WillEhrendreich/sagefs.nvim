@@ -17,6 +17,16 @@
 --                              be reconfigured), so this one is written from the formatter
 --                              (CohortStatusText.render, McpCohortIntegration.getCohortStatus,
 --                              TrunkFollow.statusLines) and the strings TrunkFollowTests pin.
+--   cohort-status-veto.txt     a status with a VETOED landing. Written from the same
+--                              formatter: CohortStatusText.landingStateText prints
+--                              `Blocked(vetoed by <member>: "<reason>") awaiting the
+--                              conductor: resolve_veto clears it, withdraw_landing takes it
+--                              back`, and the landing line is
+--                              `  - <id> requester=<id> state=<state> <queue> statement=".."
+--                              commits=[..]`. A veto needs a second seated member with a
+--                              reason, so it is not something to stage on the dev daemon to
+--                              photograph; every character here comes from those two format
+--                              strings.
 --   exec-behind-app.json       POST /exec body from a BehindApp session
 local M = {}
 

@@ -341,6 +341,76 @@ describe("cohort.render", function()
   end)
 end)
 
+describe("cohort.parse_status: a vetoed landing", function()
+  local model = C.parse_status(fx.read("cohort-status-veto.txt"))
+
+  it("reads who vetoed and the reason they gave, off the landing's state", function()
+    assert.are.equal(2, model.landings_total)
+    local vetoed = model.landings[1]
+    assert.are.equal("l-1", vetoed.id)
+    assert.are.equal("cap:fedcba9876543210", vetoed.requester)
+    assert.are.equal("cap:00112233445566ff", vetoed.vetoed_by)
+    assert.are.equal("the landing drops the retry", vetoed.veto_reason)
+  end)
+
+  it("reads a veto's queue position as not queued, so the state and the queue agree", function()
+    -- The veto takes the landing OUT of the queue, which is what `not queued` says.
+    -- Parsed after the state, or the state's own words swallow the queue suffix.
+    assert.are.equal("not queued", model.landings[1].queue)
+    assert.are.equal("Blocked", model.landings[1].state)
+  end)
+
+  it("leaves an unvetoed landing with no veto on it", function()
+    local queued = model.landings[2]
+    assert.are.equal("l-2", queued.id)
+    assert.are.equal("Queued", queued.state)
+    assert.are.equal("front of queue", queued.queue)
+    assert.is_nil(queued.vetoed_by)
+    assert.is_nil(queued.veto_reason)
+  end)
+
+  it("reads a veto reason that contains quotes and colons, because it is the tail of the state", function()
+    local text = table.concat({
+      'Cohort ledger head: v1',
+      'Members (1):',
+      '  - cap:aaaa [Implementer] present',
+      'Landings (1):',
+      '  - l-9 requester=cap:aaaa state=Blocked(vetoed by cap:bbbb: "it says "no" twice: twice") awaiting the conductor: resolve_veto clears it, withdraw_landing takes it back not queued statement="s" commits=[aa]',
+    }, "\n")
+    local vetoed = C.parse_status(text).landings[1]
+    assert.are.equal("cap:bbbb", vetoed.vetoed_by)
+    assert.are.equal('it says "no" twice: twice', vetoed.veto_reason)
+  end)
+
+  it("shows the veto and both ways out on the landing's row", function()
+    local text = table.concat(line_texts(C.render(model)), "\n")
+    assert.truthy(text:find("vetoed by cap:00112233445566ff", 1, true))
+    assert.truthy(text:find('"the landing drops the retry"', 1, true))
+    assert.truthy(text:find("resolve_veto", 1, true))
+    assert.truthy(text:find("withdraw_landing", 1, true))
+  end)
+
+  it("marks a vetoed landing apart from a queued one: a warn-coloured line under the row, and only under a vetoed row", function()
+    local rendered = C.render(model)
+    local veto_line, queued_has_veto = nil, false
+    for _, l in ipairs(rendered.lines) do
+      if l.text:find("vetoed by ", 1, true) then
+        veto_line = l
+        -- which row is it under: the one before it in the list
+        for i, prev in ipairs(rendered.lines) do
+          if prev == l then
+            local above = rendered.lines[i - 1]
+            queued_has_veto = above.text:find("l-2 ", 1, true) ~= nil
+          end
+        end
+      end
+    end
+    assert.is_not_nil(veto_line)
+    assert.are.equal("SageFsReloadWarn", veto_line.hl)
+    assert.is_false(queued_has_veto)
+  end)
+end)
+
 describe("cohort events from the SSE stream", function()
   local events = require("sagefs.events")
   local sse = require("sagefs.sse")

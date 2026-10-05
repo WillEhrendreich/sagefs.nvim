@@ -208,6 +208,26 @@ end
 
 local QUEUE_SUFFIXES = { " not queued$", " front of queue$", " position %d+ in queue$" }
 
+-- A veto is rendered INSIDE the state, so the state has to give it up before the
+-- state can be read. CohortStatusText.landingStateText prints
+--   Blocked(vetoed by <member>: "<reason>") awaiting the conductor: resolve_veto
+--   clears it, withdraw_landing takes it back
+-- The member id is taken as everything up to the FIRST `: "`, not up to the next
+-- colon: a minted id IS `cap:<hex>` and a connection fingerprint IS `mcp:m-<hex>`,
+-- so both hold a colon and no colon in the id is a boundary. A space is, though --
+-- no member id contains one, and the reason is always introduced by `: "`.
+-- The reason itself is free text that may hold quotes and colons, so it runs to
+-- the LAST `")` (greedy `.*`), the only anchor that cannot be one of the reason's
+-- own quotes. The anchor is the phrase `awaiting the conductor:` itself and NOT
+-- the end of the line: the queue position is printed AFTER that phrase, so by
+-- the time the queue suffix has been peeled the line no longer ends with the
+-- phrase's tail.
+local function parse_veto(state)
+  local lead, rest = state:match('^Blocked%(vetoed by (.-): "(.*)"%) awaiting the conductor:')
+  if not lead then return nil end
+  return lead, rest
+end
+
 local function parse_landing(line)
   local marker = ' statement="'
   local at = line:find(marker, 1, true)
@@ -217,6 +237,9 @@ local function parse_landing(line)
   if not statement then return nil end
   local id, requester, state_and_queue = left:match("^%s+%- (%S+) requester=(%S+) state=(.*)$")
   if not id then return nil end
+  -- The queue suffix is peeled FIRST. A vetoed landing's state ends with the two
+  -- ways out ("... resolve_veto clears it, withdraw_landing takes it back"), and
+  -- reading the veto before the queue would leave the queue's words glued to it.
   local queue, state = "", state_and_queue
   for _, suffix in ipairs(QUEUE_SUFFIXES) do
     local q = state_and_queue:match(suffix)
@@ -226,10 +249,13 @@ local function parse_landing(line)
       break
     end
   end
+  local vetoed_by, veto_reason = parse_veto(state)
+  state = state:match("^%a+") or state
   local list = {}
   for sha in commits:gmatch("[^,]+") do table.insert(list, sha) end
   return {
-    id = id, requester = requester, state = state:match("^%a+") or state, queue = queue,
+    id = id, requester = requester, state = state, queue = queue,
+    vetoed_by = vetoed_by, veto_reason = veto_reason,
     statement = statement, commits = list,
   }
 end
@@ -425,6 +451,15 @@ function M.render(model)
     for _, l in ipairs(model.landings) do
       add(string.format("  %s  %s  %s  %s  %s  [%s]",
         l.id, l.state, l.queue, M.mask_member(l.requester), l.statement, table.concat(l.commits, ",")))
+      -- A veto is the one landing state a reader cannot act on from the row
+      -- alone: who vetoed and why, and which tool clears it. The state word
+      -- `Blocked` says nothing on its own, so the reason goes on its own line.
+      if l.vetoed_by then
+        add(string.format("        vetoed by %s: %q", M.mask_member(l.vetoed_by), l.veto_reason or ""),
+          "SageFsReloadWarn")
+        add("        the conductor resolves it (resolve_veto), or the requester takes it back (withdraw_landing)",
+          "SageFsReloadQuiet")
+      end
     end
   end
   for _, o in ipairs(model.overflow) do add("  " .. o, "SageFsReloadQuiet") end

@@ -1,0 +1,13 @@
+Cohort ledger head: v4
+Cohort scope: repo:/home/will/Work/SageFs
+Conductor: mcp:m-0123456789abcdef
+Members (3):
+  - mcp:m-0123456789abcdef [Implementer] present
+  - cap:fedcba9876543210 [Implementer] present
+  - cap:00112233445566ff [Verifier] present
+Claims (0):
+Integration head: 0000000000000000000000000000000000000000
+Landings (2):
+  - l-1 requester=cap:fedcba9876543210 state=Blocked(vetoed by cap:00112233445566ff: "the landing drops the retry") awaiting the conductor: resolve_veto clears it, withdraw_landing takes it back not queued statement="fix the retry" commits=[1a2b3c4]
+  - l-2 requester=cap:fedcba9876543210 state=Queued front of queue statement="wire the callers panel" commits=[5d6e7f8]
+Integration session: (not configured — call set_integration_ref)
