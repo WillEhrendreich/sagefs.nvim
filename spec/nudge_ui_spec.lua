@@ -55,7 +55,8 @@ local function harness(opts)
         tick = h.tick or 1,
       }
     end,
-    working_directory = function() return opts.working_directory or "/w" end,    call = function(args, cb)
+    working_directory = function() return opts.working_directory or "/w" end,
+    session_id = function() return opts.session_id end,    call = function(args, cb)
       table.insert(h.calls, args)
       local reply = table.remove(replies, 1)
       if type(reply) == "function" then reply = reply(args) end
@@ -312,6 +313,28 @@ describe("nudge_ui.execute: undo and redo", function()
 end)
 
 describe("nudge_ui.execute: the session is named on every call", function()
+  it("every call carries the session id the deps name, so two sessions in one directory work", function()
+    local h = harness({ session_id = "sess-9",
+      replies = { { body = inspected() }, written("Game.Tuning.tuning/{JumpVelocity}", "12.5", "12.6") } })
+    ui.execute(h.deps, { action = "up" }, 1)
+    assert.are.equal(2, #h.calls)
+    for _, call in ipairs(h.calls) do
+      assert.are.equal("sess-9", call.session_id)
+    end
+  end)
+
+  it("undo and redo name it too", function()
+    local h = harness({ session_id = "sess-9", replies = { { body = vim.json.encode({ outcome = "Undone", address = "M.x", before = "2", after = "1", notes = {} }) } } })
+    ui.execute(h.deps, { action = "undo" }, 1)
+    assert.are.equal("sess-9", h.calls[1].session_id)
+  end)
+
+  it("with no active session there is no session_id, and the directory names it as before", function()
+    local h = harness({ replies = { { body = inspected() }, written("Game.Tuning.tuning/{JumpVelocity}", "12.5", "12.6") } })
+    ui.execute(h.deps, { action = "up" }, 1)
+    assert.is_nil(h.calls[1].session_id)
+  end)
+
 
   it("every call carries the working directory the deps name", function()
     local h = harness({ working_directory = "/work/other-repo",

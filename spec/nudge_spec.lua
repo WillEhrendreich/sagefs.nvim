@@ -43,6 +43,12 @@ describe("nudge.build_args", function()
     assert.are.same({ action = "inspect", file = "/w/Game.fs", working_directory = "/w" }, inspect)
   end)
 
+  it("names the session by its id when it has one, so two sessions in one directory work", function()
+    local args = nudge.build_args({ action = "inspect", file = "/w/Game.fs", working_directory = "/w", session_id = "sess-9" })
+    assert.are.same({ action = "inspect", file = "/w/Game.fs", working_directory = "/w", session_id = "sess-9" }, args)
+    assert.is_nil(nudge.build_args({ action = "inspect", session_id = "" }).session_id)
+  end)
+
   it("sends an expression under its own name, never inside literal", function()
     local args = nudge.build_args({ action = "set", file = "f", address = "a", seen = "s", expression = "gravity * 2.0" })
     assert.are.equal("gravity * 2.0", args.expression)
