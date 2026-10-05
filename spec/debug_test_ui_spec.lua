@@ -220,3 +220,35 @@ describe("debug_test_ui registration", function()
     assert.is_truthy(notes[1]:find("nothing", 1, true))
   end)
 end)
+
+describe("debug_test_ui.run_for_entry, the test panel row", function()
+  it("starts the test the row names, by id, tied to no buffer", function()
+    local started, notes = {}, {}
+    ui.run_for_entry({}, { notify = function(msg) table.insert(notes, msg) end },
+      { testId = "ROWID", displayName = "adds" },
+      { start = function(target, bufnr) table.insert(started, { target = target, bufnr = bufnr }) end })
+    assert.are.equal(1, #started)
+    assert.are.same({ test_id = "ROWID" }, started[1].target)
+    assert.is_nil(started[1].bufnr, "the panel's scratch buffer must not be what ends the hold when it closes")
+    assert.are.equal(0, #notes)
+  end)
+
+  it("says what to do on a row that is not a test (a header or a blank line)", function()
+    local started, notes = {}, {}
+    ui.run_for_entry({}, { notify = function(msg) table.insert(notes, msg) end }, { text = "== Tests ==" },
+      { start = function(target) table.insert(started, target) end })
+    assert.are.equal(0, #started)
+    assert.is_truthy(notes[1]:find("test row", 1, true))
+    ui.run_for_entry({}, { notify = function(msg) table.insert(notes, msg) end }, nil,
+      { start = function(target) table.insert(started, target) end })
+    assert.are.equal(0, #started)
+    assert.are.equal(2, #notes)
+  end)
+
+  it("the panel key is one the panel does not use already", function()
+    assert.are.equal("g", ui.PANEL_KEY)
+    for _, taken in ipairs({ "f", "m", "a", "b", "<Tab>", "<CR>", "<C-d>" }) do
+      assert.are_not.equal(taken, ui.PANEL_KEY)
+    end
+  end)
+end)
