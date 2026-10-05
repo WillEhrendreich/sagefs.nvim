@@ -132,6 +132,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
 | **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtg` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
+| **Nudge a value** | `:SageFsNudge up` (or `<leader>rk+`) bumps the number under the cursor through the daemon's `nudge_value` tool, which rewrites just that expression in the file. Also `down`, `set`, `expr`, `undo`, `redo`, `list`, and a count. See [Nudging a value](#nudging-a-value). |
 | **Live bindings** | `:SageFsBindings` opens a split with the daemon's value tree, a key to run one held getter, and a Safe/Everything/Off mode switch. See [Live bindings](#live-bindings). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
@@ -241,11 +242,17 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rtd` | n | Disable live testing |
 | `<leader>rtg` | n | Debug the failing test on this line (nvim-dap) |
 | `<leader>rtc` | n | Tests that cover this line (float, `<CR>` jumps) |
+| **Nudge a value** | | |
+| `<leader>rk+` / `<leader>rk-` | n | Bump the number under the cursor up / down (a count repeats: `5<leader>rk+`) |
+| `<leader>rks` / `<leader>rke` | n | Set it to a typed literal / replace it with an F# expression |
+| `<leader>rku` / `<leader>rkr` | n | Undo / redo the last nudge in this file |
+| `<leader>rkl` | n | List the values of this file and nudge one |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
 | `<C-g>` | n | Explicit jump to source - telescope picker only (warns if no location) |
 | `<C-r>` | n | Run selected test - telescope picker only |
 | `<C-d>` | n | Show failure narrative floating window - test panel only (not mapped in telescope) |
+| `D` | n | Debug the test on this row (nvim-dap) - test panel only |
 | **Browse & explore** | | |
 | `<leader>rb` | n | Live bindings pane |
 | `<leader>rd` | n | Eval diff |
@@ -313,6 +320,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsDisableTesting` | Disable live testing |
 | `:SageFsDebugTest [name or id]` | Debug a failing test with nvim-dap. No argument: the failing test on this line, or the only failing test in the file |
 | `:SageFsDebugRelease` | Release the test SageFs is holding for the debugger and stop the debug run |
+| `:[count]SageFsNudge [up\|down [step]\|set [value]\|expr [expression]\|undo\|redo\|list]` | Change the value under the cursor through the daemon, which writes the file. With no argument it bumps up. See [Nudging a value](#nudging-a-value) |
 | `:SageFsWorkflow [name]` | Switch the active session's workflow (`interactive`, `livetesting`, `hotreload`; no name opens a picker). The daemon restarts the same session in place through `POST /api/sessions/{id}/workflow`, so its REPL bindings are not kept |
 | `:SageFsPickTest` | Pick a test to run/jump-to via Telescope |
 | `:SageFsSwitchProject` | Switch the active project for a session |
@@ -539,6 +547,32 @@ nvim-dap is optional. Without it I still hold the test and print the pid and the
 
 Breakpoints bind in your project's compiled assemblies. A test file SageFs re-evaluated after a save has no PDB, so hard reset the session with a rebuild to debug the compiled copy. On Linux, `kernel.yama.ptrace_scope` at 1 is fine (the host opens the door for the length of the hold), at 2 or 3 the attach is refused.
 
+In the test panel, `D` on a row debugs that test. The row carries the test id, so I do not ask, and the run is tied to no buffer, so closing the panel does not end the hold. `:checkhealth sagefs` says whether nvim-dap is there, which coreclr adapter I would use (yours, or netcoredbg on `PATH` or under mason) and what `kernel.yama.ptrace_scope` is. A missing piece is information or a warning with the fix, never an error.
+
+A hold the daemon refuses is shown in the daemon's words, which say what to do. If another client has a test held (`hold_already_open`), the message names the ticket in the way. If the hold window runs out, I release it and you get `No debugger released the test within 2 minutes`. If the test host dies while it holds your test, you get `The test host ended while it held the test: ...` and `Start debugging again once the session is Ready`.
+
+## Nudging a value
+
+The daemon's `nudge_value` tool changes one value in a source file the session owns and writes it back as just that expression. `:SageFsNudge` puts it under your cursor.
+
+```vim
+:SageFsNudge up            " 12.5 -> 12.6: the step is the last decimal place the literal has
+:5SageFsNudge down         " five steps down (5<leader>rk- does the same)
+:SageFsNudge up 0.25       " a step of your own
+:SageFsNudge set 13.5      " a typed literal, read as the kind the literal already is
+:SageFsNudge expr gravity * 2.0
+:SageFsNudge undo          " and redo: they step through what the tool wrote to this file
+:SageFsNudge list          " every value of the file, pick one, type its value
+```
+
+An integer goes by one. A bool toggles. Hex goes up as the number it is and comes back as hex (`0x1F` to `0x20`), a unit of measure is kept (`12.5<m>` to `12.6<m>`), and a union case or any other expression is set with `set` or `expr`, not bumped. The maps are all under `<leader>rk` (`+ - s e u r l`).
+
+What I do, in order: I inspect the file, find the listed value under the cursor, and set it with the hash `inspect` gave. If the value changed since, the daemon refuses and nothing is written. The daemon sends no line or column with its list, so I find the value by its text on your line, and tell two values with the same text apart by the binding the cursor is inside and the record field written before it. When that still leaves more than one, I ask you which; I never guess.
+
+The daemon writes the file on disk, so a buffer with unsaved edits is refused by name (`:write` it, or `:edit!` to drop the edits). A buffer that changed while the daemon was answering is not written to. After a write, an undo or a redo I read the buffer again and keep your cursor; a buffer you started editing since is left alone. One nudge runs at a time per buffer and the rest wait in order, so a held key lands every step.
+
+A refusal is shown as the daemon says it, with its rule and its next action. Every call names the session by its working directory (the active session's own), because the daemon will not guess when several sessions share one. If hot reload is not watching the file, the file changes and the running app does not; the reply says so, and `:SageFsWatchAll` turns the watch on.
+
 ## Live bindings
 
 `:SageFsBindings` (or `<leader>rb`) opens a split with the value tree the daemon walks for your session. Every binding you have defined shows up with its members, the way a watch window would, and it updates after every eval, every click and every mode switch. I fold the daemon's `live_bindings` snapshots as they arrive, so the pane is always the latest one the daemon pushed.
@@ -576,6 +610,7 @@ Run `:checkhealth sagefs` to verify:
 - ✅ Live testing enabled
 - ✅ Tree-sitter F# parser available
 - ✅ curl available on PATH
+- ✅ nvim-dap, the coreclr adapter and `kernel.yama.ptrace_scope` (only for `:SageFsDebugTest`; all optional)
 
 ### Versions
 
@@ -732,7 +767,7 @@ nvim --headless -u NONE -l spec/treesitter_cells_spec.lua  # needs the fsharp pa
 
 Busted prints `N successes / N failures / N errors / N pending` and the harness prints `Results: N passed, N failed`. Both exit non-zero on a failure. The plugin targets the Lua that Neovim embeds, LuaJIT (Lua 5.1 semantics): the suite runs under LuaJIT, the release hook runs busted through `luajit`, and the GitHub workflow runs it under Lua 5.1. `TESTING.md` has the Linux commands and the details I tripped over.
 
-The E2E suite uses 5 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`, `samples/HotReloadLoop`). Each E2E spec copies a sample to a temp directory, starts its own SageFs daemon, runs tests, then cleans up. The daemon gets its own `SAGEFS_DATA_DIR` (so a run never reads or writes your `~/.SageFs`), `--no-resume`, and `--owner-pid` of the Neovim running the suite, so it ends with it (`spec/e2e/daemon_launch.lua`, tested by `spec/daemon_launch_spec.lua`). `spec/e2e/e2e_reload_display_spec.lua` follows a real `run_app` app through a pending patch, a confirmed one and one nothing calls, and `spec/e2e/e2e_live_values_spec.lua` drives `:SageFsBindings` (Safe mode, a click, a mode switch) and `:SageFsWorkflow`.
+The E2E suite uses 5 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`, `samples/HotReloadLoop`). Each E2E spec copies a sample to a temp directory, starts its own SageFs daemon, runs tests, then cleans up. The daemon gets its own `SAGEFS_DATA_DIR` (so a run never reads or writes your `~/.SageFs`), `--no-resume`, and `--owner-pid` of the Neovim running the suite, so it ends with it (`spec/e2e/daemon_launch.lua`, tested by `spec/daemon_launch_spec.lua`). `spec/e2e/e2e_reload_display_spec.lua` follows a real `run_app` app through a pending patch, a confirmed one and one nothing calls, and `spec/e2e/e2e_live_values_spec.lua` drives `:SageFsBindings` (Safe mode, a click, a mode switch) and `:SageFsWorkflow`. `spec/e2e/e2e_nudge_spec.lua` nudges values in a real buffer against the real daemon (bump, count, set, expr, undo, redo, refusals, five bumps in a row). `spec/e2e/e2e_debug_spec.lua` debugs a failing test with a real nvim-dap and a real netcoredbg attaching to the real test host; it needs nvim-dap (`SAGEFS_E2E_NVIM_DAP`, default `~/.local/share/nvim/lazy/nvim-dap`) and netcoredbg (on `PATH`, or `SAGEFS_E2E_NETCOREDBG`), and says it was skipped and why when either is missing. `SAGEFS_E2E_SLOW=1` adds the two-minute hold window nobody attaches in.
 
 Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. E2E tests additionally require `sagefs` and `dotnet` on PATH.
 

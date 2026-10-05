@@ -35,6 +35,7 @@
 :SageFsLoadScript	sagefs.txt	/*:SageFsLoadScript*
 :SageFsMintMember	sagefs.txt	/*:SageFsMintMember*
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
+:SageFsNudge	sagefs.txt	/*:SageFsNudge*
 :SageFsPickTest	sagefs.txt	/*:SageFsPickTest*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
 :SageFsReloadStatus	sagefs.txt	/*:SageFsReloadStatus*
@@ -128,6 +129,7 @@ sagefs-hotreload	sagefs.txt	/*sagefs-hotreload*
 sagefs-introduction	sagefs.txt	/*sagefs-introduction*
 sagefs-keymaps	sagefs.txt	/*sagefs-keymaps*
 sagefs-member-token	sagefs.txt	/*sagefs-member-token*
+sagefs-nudge	sagefs.txt	/*sagefs-nudge*
 sagefs-pending	sagefs.txt	/*sagefs-pending*
 sagefs-quickstart	sagefs.txt	/*sagefs-quickstart*
 sagefs-reload-truth	sagefs.txt	/*sagefs-reload-truth*

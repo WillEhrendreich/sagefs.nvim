@@ -413,6 +413,16 @@ Analysis ~
 :SageFsUnwatchAll                                       *:SageFsUnwatchAll*
     Unwatch all files for hot reload.
 
+:[count]SageFsNudge [up|down [step]|set [value]|expr [expression]|undo|redo|list]
+                                                             *:SageFsNudge*
+    Change one value in the file you are in, through the daemon, without
+    typing it: |:SageFsNudge| up bumps the number under the cursor by one
+    step (a count repeats it), down lowers it, set takes a literal, expr an
+    F# expression, undo and redo step through what was written, and list
+    shows every value of the file. With no argument it bumps up. The daemon
+    writes the file, so a buffer with unsaved edits is refused. See
+    |sagefs-nudge|.
+
 :SageFsReloadStatus                                   *:SageFsReloadStatus*
     Show what the last save did to the running app, how it got there
     (detour or metadata delta), the named causes and the remedy, and whether
@@ -495,6 +505,7 @@ Testing ~
   <leader>rte  Enable live testing
   <leader>rtd  Disable live testing
   <leader>rtg  Debug the failing test on this line (nvim-dap)
+  D            Debug the test on this row (inside the test panel)
   <leader>rtc  Tests that cover this line (float, <CR> jumps)
   <leader>tf   Filter tests by name pattern (prompts for input)
   <leader>tF   Run all tests (clears any active filter)
@@ -527,8 +538,18 @@ Misc ~
   <leader>rw   Watch all files for hot reload
   <leader>rW   Unwatch all files
 <
+Nudge a value ~
+>
+  <leader>rk+  Bump the number under the cursor up (a count repeats: 5<leader>rk+)
+  <leader>rk-  Bump it down
+  <leader>rks  Set it to a typed literal
+  <leader>rke  Replace it with an F# expression
+  <leader>rku  Undo the last nudge in this file
+  <leader>rkr  Redo it
+  <leader>rkl  List the values of this file and nudge one
+<
 ==============================================================================
-6. CONFIGURATION                                          *sagefs-config*
+6. CONFIGURATION                                         *sagefs-config*
 
 Pass configuration to setup(): >lua
 
@@ -615,6 +636,16 @@ has no failing test, the one failing test of the file is named and you are
 asked before it is held. The hint is drawn only when the display density
 allows it (minimal draws none). <leader>rtD is not used: it sits one shifted
 letter from <leader>rtd, which disables live testing.
+
+In the test panel (|:SageFsTestPanel|), D on a test row debugs that test: the
+row carries the test id, so nothing is asked. That run is tied to no buffer,
+so closing the panel does not end the hold.
+
+|:checkhealth| sagefs says whether nvim-dap is there, which coreclr adapter
+it would use (yours, or netcoredbg on PATH or under mason) and, on Linux,
+what kernel.yama.ptrace_scope is. A missing piece is information or a
+warning with the way to fix it, never an error: the plugin and every other
+feature work without nvim-dap.
 
 The plugin asks the daemon to hold the test (POST /api/live-testing/debug),
 attaches the coreclr adapter through nvim-dap to the pid it answers, then
@@ -831,6 +862,51 @@ than member tokens, `mcp:` plus the agent's MCP session id. The first two are
 shown whole. The third works as a bearer handle, so only its first six
 characters are shown.
 
+                                                              *sagefs-nudge*
+Nudging a value ~
+
+The daemon's `nudge_value` tool changes ONE value in a source file the
+session owns and writes the file as just that expression. The running app
+picks the change up through hot reload when it is watching the file (the
+reply says so when it is not: |:SageFsWatchAll|). |:SageFsNudge| puts it
+under the cursor: >vim
+
+  :SageFsNudge up          " 12.5 -> 12.6 (the step is the last decimal place)
+  :5SageFsNudge down       " five steps down
+  :SageFsNudge up 0.25     " a step of your own
+  :SageFsNudge set 13.5    " a typed literal, read as the kind it already is
+  :SageFsNudge expr gravity * 2.0
+  :SageFsNudge undo
+  :SageFsNudge redo
+  :SageFsNudge list        " every value of the file, pick one, type its value
+<
+The same under <leader>rk (+ - s e u r l), and a count repeats a bump.
+A bool toggles. An integer goes by one. Hex goes up as the number it is and
+is written back in hex; a unit of measure (12.5<m/s>) is kept. A union case
+or any other expression is set with set or expr, not bumped.
+
+How it goes: the plugin inspects the file, finds the listed value that is
+under the cursor, and sets it with the hash inspect gave. A value that
+changed since is refused by the daemon and nothing is written. The daemon
+sends no line or column, so the value is found by its text on your line, and
+two values with the same text are told apart by the binding the cursor is in
+and the record field written before it. When that still leaves more than
+one, you are asked which; the plugin never guesses.
+
+The daemon writes the file on disk, so:
+  - a buffer with unsaved edits is refused by name (write it, or :edit! to
+    drop the edits), and a buffer that is no file is refused;
+  - a buffer that changed while the daemon was answering is not written to;
+  - after a write, undo or redo the buffer is read again, and the cursor
+    stays where it was. A buffer you started editing since is left alone;
+  - one nudge runs at a time per buffer and the rest wait in order (up to
+    20), so a held key lands every step instead of being refused.
+
+A refusal is shown as the daemon says it: its token, its rule and its next
+action. Every call names the session by its working directory (the active
+session's own), because the daemon will not guess when several sessions
+share one.
+
 ==============================================================================
 11. TYPE EXPLORER                                      *sagefs-type-explorer*
 
@@ -861,6 +937,7 @@ Run `:checkhealth sagefs` to verify your setup. Checks: >
   ✓ plugin understands api 3, daemon speaks api 3: compatible
   ✓ Tree-sitter F# parser installed
   ✓ curl available
+  ✓ nvim-dap available, netcoredbg found (for |:SageFsDebugTest|)
 <
                                                           *sagefs-versions*
 Versions ~

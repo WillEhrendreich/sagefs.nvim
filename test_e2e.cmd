@@ -82,6 +82,8 @@ for %%F in (
   spec\e2e\e2e_completions_spec.lua
   spec\e2e\e2e_reload_display_spec.lua
   spec\e2e\e2e_live_values_spec.lua
+  spec\e2e\e2e_nudge_spec.lua
+  spec\e2e\e2e_debug_spec.lua
 ) do (
   if exist %%F (
     echo --- Running %%F ---
