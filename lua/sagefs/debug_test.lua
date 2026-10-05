@@ -44,15 +44,14 @@ M.KNOWN_STATUSES = {
 M.HOLD_PATH = "/api/live-testing/debug"
 M.CONTINUE_PATH = "/api/live-testing/debug/continue"
 
--- The daemon waits 20 s per continue call; give the HTTP client well over that.
+-- The daemon waits 20 s per continue call, and a release that finds no debugger yet
+-- stays open through Timeouts.debugAttachGrace (5 s, scaled by the machine tier)
+-- before it answers released_without_debugger; give the HTTP client well over both.
 local CONTINUE_TIMEOUT_S = 75
 local HOLD_TIMEOUT_S = 30
--- How long to wait for configurationDone after the adapter says it initialized
--- before releasing anyway (an adapter that never sends it must not strand the hold).
--- netcoredbg answers it when it has attached to the FSI host, and that has taken
--- longer than 1.5 s (found against a real daemon: the release went out first and the
--- host found no debugger in it). A slow attach is not a missing answer.
-M.CONFIGURED_GRACE_MS = 15000
+-- There is no grace after the adapter initializes: the release goes out on
+-- configurationDone, which netcoredbg answers once it has attached to the FSI host.
+-- A release that is ahead of a slow attach is the daemon's to wait out, not ours.
 -- How long dap.run gets to put a debug session of ours on the board. An adapter
 -- that cannot start (missing binary) never creates one and fires no event, so
 -- without this check the hold would sit until the two minute backstop.
@@ -537,17 +536,11 @@ local function new_run(deps)
   local function arm_dap(dap)
     config = M.dap_config(held)
     key = "sagefs_debug_" .. tostring(held.ticket)
-    local grace_cancel = nil
 
-    add_listener(dap, "after", "event_initialized", key, function(session)
-      if not mine(session) or release_sent then return end
-      if grace_cancel then pcall(grace_cancel) end
-      grace_cancel = deps.defer(M.CONFIGURED_GRACE_MS, release)
-      table.insert(cancels, grace_cancel)
-    end)
+    -- initialized is not the moment: breakpoints are not set yet. configurationDone is.
+    -- An adapter that never answers it is released by the hold window's watchdog.
     add_listener(dap, "after", "configurationDone", key, function(session)
       if not mine(session) then return end
-      if grace_cancel then pcall(grace_cancel); grace_cancel = nil end
       release()
     end)
     for _, spec in ipairs({
