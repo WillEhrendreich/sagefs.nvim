@@ -674,6 +674,12 @@ function M.register_commands(plugin, helpers)
         vim.api.nvim_win_set_cursor(0, { entry.line, 0 })
       end
     end, { buffer = test_panel_buf, desc = "Jump to test source" })
+    -- Buffer-local D to debug the test on the row (nvim-dap, see sagefs.debug_test)
+    local debug_ui = require("sagefs.debug_test_ui")
+    vim.keymap.set("n", debug_ui.PANEL_KEY, function()
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      debug_ui.run_for_entry(plugin, helpers, test_panel_entries[row])
+    end, { buffer = test_panel_buf, desc = "Debug the test on this row (nvim-dap)" })
     -- Buffer-local scope keymaps
     vim.keymap.set("n", "f", function() set_panel_scope("file") end,
       { buffer = test_panel_buf, desc = "Filter: file scope" })

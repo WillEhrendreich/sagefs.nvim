@@ -158,6 +158,31 @@ function M.run(plugin, helpers, args, env)
   end
 end
 
+-- ─── A row of the test panel ─────────────────────────────────────────────────
+
+--- The key on a row of the test panel. The panel already uses f m a b <Tab> <CR> <C-d>.
+--- Not g: a mapping on a bare g takes gg and every other g command away.
+M.PANEL_KEY = "D"
+
+--- Debug the test a panel row names. The row carries the test id, so there is
+--- nothing to ask. The run is tied to no buffer: the panel's scratch buffer
+--- closing must not be what ends the hold.
+---@param entry table|nil the panel entry under the cursor
+---@param env { start: function|nil }|nil
+function M.run_for_entry(plugin, helpers, entry, env)
+  env = env or {}
+  if not entry or not entry.testId or entry.testId == "" then
+    helpers.notify("Put the cursor on a test row to debug it.", LEVELS.WARN)
+    return
+  end
+  local target = { test_id = entry.testId }
+  if env.start then
+    env.start(target, nil)
+  else
+    dt.start(dt.default_deps(plugin, helpers, nil), target)
+  end
+end
+
 -- ─── Registration ────────────────────────────────────────────────────────────
 
 ---@param create_user_command function|nil defaults to nvim_create_user_command

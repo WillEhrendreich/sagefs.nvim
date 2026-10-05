@@ -246,8 +246,9 @@ describe("debug_test_ui.run_for_entry, the test panel row", function()
   end)
 
   it("the panel key is one the panel does not use already", function()
-    assert.are.equal("g", ui.PANEL_KEY)
-    for _, taken in ipairs({ "f", "m", "a", "b", "<Tab>", "<CR>", "<C-d>" }) do
+    assert.are.equal("D", ui.PANEL_KEY)
+    -- not g: a mapping on a bare g takes gg and every other g command away
+    for _, taken in ipairs({ "g", "f", "m", "a", "b", "<Tab>", "<CR>", "<C-d>" }) do
       assert.are_not.equal(taken, ui.PANEL_KEY)
     end
   end)
