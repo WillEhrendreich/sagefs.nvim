@@ -49,7 +49,10 @@ local CONTINUE_TIMEOUT_S = 75
 local HOLD_TIMEOUT_S = 30
 -- How long to wait for configurationDone after the adapter says it initialized
 -- before releasing anyway (an adapter that never sends it must not strand the hold).
-local CONFIGURED_GRACE_MS = 1500
+-- netcoredbg answers it when it has attached to the FSI host, and that has taken
+-- longer than 1.5 s (found against a real daemon: the release went out first and the
+-- host found no debugger in it). A slow attach is not a missing answer.
+M.CONFIGURED_GRACE_MS = 15000
 -- How long dap.run gets to put a debug session of ours on the board. An adapter
 -- that cannot start (missing binary) never creates one and fires no event, so
 -- without this check the hold would sit until the two minute backstop.
@@ -539,7 +542,7 @@ local function new_run(deps)
     add_listener(dap, "after", "event_initialized", key, function(session)
       if not mine(session) or release_sent then return end
       if grace_cancel then pcall(grace_cancel) end
-      grace_cancel = deps.defer(CONFIGURED_GRACE_MS, release)
+      grace_cancel = deps.defer(M.CONFIGURED_GRACE_MS, release)
       table.insert(cancels, grace_cancel)
     end)
     add_listener(dap, "after", "configurationDone", key, function(session)
