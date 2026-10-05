@@ -37,6 +37,18 @@ local LIBRARY = table.concat({
   "let pair = (5, 5)",
   "let add x y = x + y",
   "",
+  -- after text that is not ASCII: the daemon's columns count characters (UTF-16
+  -- units), the cursor is a byte column
+  'let label = ("café", 7.5)',
+  'let emoji = ("😀", 8.5)',
+  "",
+  -- a value that spans two lines, with a literal inside it on the second
+  "type Wide = { A: float; B: float }",
+  "let wide =",
+  "  { A = speed",
+  "          * 2.0",
+  "    B = 3.0 }",
+  "",
 }, "\n")
 
 local function json_decode(s)
@@ -230,26 +242,89 @@ H.run_suite({
         H.assert_truthy(wait_said("Library.mode"), "mode moved: " .. vim.inspect(notes))
         H.assert_truthy(H.wait_for(function() return disk_has("let mode = Easy") end, 5000, 50), "on disk")
         notes = {}
-        put_cursor("= Easy", 3)
+        -- not "= Easy": the first line with that is `type Mode = Easy | Hard`, a declaration
+        -- the daemon lists no value for (the old text match took it for the value)
+        put_cursor("let mode = Easy", 13)
         vim.cmd("SageFsNudge up")
-        H.assert_truthy(wait_said("SageFsNudge set"), "a case is not bumped, and the message says what to do instead")
+        local said_how = wait_said("SageFsNudge set")
+        if not said_how then dump() end
+        H.assert_truthy(said_how, "a case is not bumped, and the message says what to do instead")
         H.assert_falsy(disk_has("let mode = Hard"), "and nothing was written")
       end)
 
-      H.it("two values nothing can tell apart are offered, and the one picked moves", function()
+      H.it("two values with the same text on one line are two ranges: the one under the cursor moves, with no picker", function()
         notes = {}
         local offered
         local real_select = vim.ui.select
         vim.ui.select = function(items, opts, cb)
           offered = items
-          cb(items[2])
+          cb(nil)
         end
         put_cursor("(5, 5)", 4) -- on the second 5
         vim.cmd("SageFsNudge up")
-        H.assert_truthy(H.wait_for(function() return offered end, 30000, 50), "the picker was shown")
-        H.assert_eq(2, #offered, "both are offered")
+        H.assert_truthy(wait_said("Library.pair/Tuple.1"), "the second moved: " .. vim.inspect(notes))
         H.assert_truthy(H.wait_for(function() return disk_has("let pair = (5, 6)") end, 5000, 50),
-          "the picked one moved: " .. (line_with("let pair") or "?"))
+          "the second moved: " .. (line_with("let pair") or "?"))
+        H.assert_falsy(offered, "the daemon's range told them apart, so nothing was offered")
+        notes = {}
+        put_cursor("(5, 6)", 1) -- and now the first
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.pair/Tuple.0"), "the first moved: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return disk_has("let pair = (6, 6)") end, 5000, 50),
+          "and only the first: " .. (line_with("let pair") or "?"))
+        vim.ui.select = real_select
+      end)
+
+      H.it("a value after an accented character is found by the character column the daemon counts", function()
+        notes = {}
+        -- the é is two bytes and one character, so the cursor's byte column is one past its character column
+        local row = put_cursor("7.5", 1)
+        local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+        H.assert_truthy(line:find("café", 1, true), "the line is the accented one: " .. line)
+        H.assert_truthy(vim.api.nvim_win_get_cursor(0)[2] ~= vim.fn.charidx(line, vim.api.nvim_win_get_cursor(0)[2]),
+          "the byte column and the character column differ here, which is the point")
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.label/Tuple.1"), "label's number moved: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return disk_has('let label = ("café", 7.6)') end, 5000, 50),
+          "on disk: " .. (line_with("let label") or "?"))
+        H.assert_falsy(said("no value"), "nothing was 'not under the cursor'")
+      end)
+
+      H.it("a value after an emoji (two UTF-16 units, four bytes) is found too", function()
+        notes = {}
+        put_cursor("8.5", 2)
+        vim.cmd("SageFsNudge up")
+        H.assert_truthy(wait_said("Library.emoji/Tuple.1"), "emoji's number moved: " .. vim.inspect(notes))
+        H.assert_truthy(H.wait_for(function() return disk_has('let emoji = ("😀", 8.6)') end, 5000, 50),
+          "on disk: " .. (line_with("let emoji") or "?"))
+      end)
+
+      H.it("a value that spans two lines is found from its second line, and a literal inside it is offered with it", function()
+        notes = {}
+        local row = put_cursor("* 2.0", 0) -- on the multiplication sign, the second line of the formula
+        local offered
+        local real_select = vim.ui.select
+        vim.ui.select = function(items, opts, cb)
+          offered = items
+          cb(nil)
+        end
+        vim.cmd("SageFsNudge expr speed * 3.0")
+        H.assert_truthy(H.wait_for(function() return disk_has("{ A = speed * 3.0") end, 30000, 50),
+          "the whole two-line formula was replaced: " .. vim.inspect(notes))
+        H.assert_falsy(offered, "only the formula holds that cursor, so nothing was offered")
+        H.assert_truthy(disk_has("B = 3.0 }"), "and B was not touched")
+        -- on the literal inside a formula that spans lines, set offers both, innermost first
+        vim.cmd("silent! edit!")
+        notes = {}
+        vim.cmd("SageFsNudge undo")
+        H.assert_truthy(wait_said("undone"), "undone")
+        H.assert_truthy(H.wait_for(function() return disk_has("* 2.0") end, 5000, 50), "the formula's old text is back")
+        vim.cmd("silent! edit!")
+        put_cursor("2.0", 1) -- the literal on the formula's second line
+        vim.cmd("SageFsNudge set")
+        H.assert_truthy(H.wait_for(function() return offered end, 30000, 50), "the picker was shown")
+        H.assert_eq("Library.wide/{A}/BinOp.Right", offered[1].address, "the literal first")
+        H.assert_eq("Library.wide/{A}", offered[2].address, "then the formula around it")
         vim.ui.select = real_select
       end)
 
