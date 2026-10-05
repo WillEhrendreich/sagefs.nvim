@@ -299,6 +299,26 @@ function M._check_dependencies()
   else
     vim.health.info("plenary.nvim not installed (optional, required by telescope.nvim)")
   end
+
+  -- nvim-dap + netcoredbg (optional, :SageFsDebugTest)
+  M._check_debugging()
+end
+
+--- Debugging a failing test: nvim-dap, the coreclr adapter, ptrace.
+--- The report itself is pure (sagefs.debug_test.health_items).
+function M._check_debugging()
+  local debug_test = require("sagefs.debug_test")
+  local ok, items = pcall(function() return debug_test.health_items(debug_test.health_env()) end)
+  if not ok then
+    vim.health.info("could not read the debugging setup: " .. tostring(items))
+    return
+  end
+  for _, item in ipairs(items) do
+    local report = vim.health[item.level]
+    if report then
+      if item.advice then report(item.message, item.advice) else report(item.message) end
+    end
+  end
 end
 
 return M

@@ -106,6 +106,84 @@ function M.install_hint(kind)
     .. "then run :SageFsDebugTest again. Nothing was held."
 end
 
+-- ─── Pure: what :checkhealth says ────────────────────────────────────────────
+
+--- The lines :checkhealth sagefs shows about debugging a failing test. Everything
+--- here is optional, so a missing piece is "info" or "warn" with the fix, never
+--- an error: the plugin and every other feature work without it.
+---@param env { has_dap: boolean, adapters: table|nil, netcoredbg: string|nil, netcoredbg_source: string|nil, ptrace_scope: number|nil, is_linux: boolean|nil }
+---@return { level: string, message: string, advice: string[]|nil }[]
+function M.health_items(env)
+  local items = {}
+  if not env.has_dap then
+    table.insert(items, {
+      level = "info",
+      message = "nvim-dap not installed (optional, :SageFsDebugTest attaches through it)",
+      advice = {
+        "Install mfussenegger/nvim-dap with your plugin manager, and netcoredbg for the coreclr adapter",
+        "Without it :SageFsDebugTest still holds the test and prints the pid: attach to process N with any coreclr debugger",
+      },
+    })
+  else
+    table.insert(items, { level = "ok", message = "nvim-dap available (:SageFsDebugTest attaches the debugger for you)" })
+    if env.adapters and env.adapters.coreclr then
+      table.insert(items, { level = "ok", message = "dap coreclr adapter configured (yours is used as it is)" })
+    elseif env.netcoredbg then
+      table.insert(items, {
+        level = "ok",
+        message = string.format("netcoredbg found at %s (%s): the coreclr adapter is set up on first use", env.netcoredbg, env.netcoredbg_source or "PATH"),
+      })
+    else
+      table.insert(items, {
+        level = "warn",
+        message = "netcoredbg not found on PATH or under mason, so :SageFsDebugTest cannot attach",
+        advice = {
+          "Install it with :MasonInstall netcoredbg",
+          "Or take the release from https://github.com/Samsung/netcoredbg/releases and put it on PATH",
+        },
+      })
+    end
+  end
+  if env.is_linux and env.ptrace_scope ~= nil then
+    if env.ptrace_scope >= 2 then
+      table.insert(items, {
+        level = "warn",
+        message = string.format("kernel.yama.ptrace_scope = %d: the OS will refuse a debugger attaching to the test host", env.ptrace_scope),
+        advice = {
+          "Set it to 1 (or 0): sudo sysctl kernel.yama.ptrace_scope=1",
+          "At 1 the test host opens the door for the length of the hold, so 1 is enough",
+        },
+      })
+    else
+      table.insert(items, {
+        level = "ok",
+        message = string.format("kernel.yama.ptrace_scope = %d (a debugger can attach to the test host)", env.ptrace_scope),
+      })
+    end
+  end
+  return items
+end
+
+--- The real inputs to health_items, read from Neovim and /proc.
+function M.health_env()
+  local ok_dap, dap = pcall(require, "dap")
+  local path, source = M.find_netcoredbg(M.default_probe())
+  local scope
+  local f = io.open("/proc/sys/kernel/yama/ptrace_scope", "r")
+  if f then
+    scope = tonumber(f:read("*l"))
+    f:close()
+  end
+  return {
+    has_dap = ok_dap,
+    adapters = ok_dap and dap.adapters or nil,
+    netcoredbg = path,
+    netcoredbg_source = source,
+    ptrace_scope = scope,
+    is_linux = vim.fn.has("linux") == 1,
+  }
+end
+
 -- ─── Pure: wire shapes ───────────────────────────────────────────────────────
 
 --- Body for the hold route. A test id wins over a name pattern.
