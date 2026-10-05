@@ -11,6 +11,7 @@
 -- cached.
 
 local cohort = require("sagefs.cohort")
+local actions = require("sagefs.cohort_actions")
 local mcp_client = require("sagefs.mcp_client")
 
 local M = {}
@@ -93,6 +94,28 @@ function M.status_args(cwd)
   return { working_directory = cwd or "" }
 end
 
+--- The last status the view parsed, which is what completion reads. Kept so the
+--- member and landing ids a command offers are the ones actually on screen: a
+--- completion that offers a stale id is worse than one that offers none.
+local last_model = nil
+
+--- The ids a completion offers, from the last status. Pure over the model, so the
+--- decision is testable and the shell stays a shell.
+---@param model table|nil parsed cohort, or nil when nothing has been read
+---@param which string "members" or "landings"
+---@return string[] ids
+function M.complete_ids(model, which)
+  if not model then return {} end
+  if which == "members" then
+    local out = {}
+    for _, m in ipairs(model.members or {}) do table.insert(out, m.id) end
+    return out
+  end
+  local out = {}
+  for _, l in ipairs(model.landings or {}) do table.insert(out, l.id) end
+  return out
+end
+
 --- Fetch get_cohort_status and show it.
 function M.refresh()
   if fetching then return end
@@ -112,6 +135,7 @@ function M.refresh()
       write(lines)
       return
     end
+    last_model = model
     write(cohort.render(model).lines)
   end)
 end
@@ -134,7 +158,7 @@ function M.open()
     if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
       local existing = vim.fn.bufnr(BUF_NAME)
       bufnr = existing ~= -1 and existing or vim.api.nvim_create_buf(false, true)
-      if existing == -1 then vim.api.nvim_buf_set_name(bufnr, BUF_NAME) end
+      if existing ~= -1 then vim.api.nvim_buf_set_name(bufnr, BUF_NAME) end
       vim.bo[bufnr].buftype = "nofile"
       vim.bo[bufnr].bufhidden = "hide"
       vim.bo[bufnr].swapfile = false
@@ -149,6 +173,39 @@ function M.open()
   M.refresh()
 end
 
+--- Report the outcome of an action, where a person will see it: the cohort buffer
+--- if it is open, otherwise a notification.
+local function report(ok, text)
+  local win = visible_window()
+  if win then
+    vim.api.nvim_echo({ { text, ok and "Title" or "ErrorMsg" } }, false, {})
+  else
+    vim.notify(text, ok and vim.log.levels.INFO or vim.log.levels.ERROR)
+  end
+end
+
+--- Run one cohort action: build its arguments, refuse locally what the tool's own
+--- bounds forbid, call it, and refresh the view so the row shows the new state.
+---
+--- The arguments come from the matching builder in cohort_actions, which is where
+--- the `working_directory` rule lives. A local refusal is not a second source of
+--- truth about the rules: it covers only the two bounds the tool documents (a
+--- reason of 1..1000 characters, and required names), so a malformed command costs
+--- no round trip and the message arrives before the user wonders.
+local function run_action(spec, args, refusal)
+  if refusal then
+    report(false, refusal)
+    return
+  end
+  get_client().call_tool(spec.tool, args, function(ok, text)
+    report(ok, text)
+    -- A landing that just went Blocked, resolved or withdrawn shows in the buffer,
+    -- and the cohort SSE event will also fire; refreshing here means the row is
+    -- right now rather than at the next event.
+    M.refresh()
+  end)
+end
+
 --- Register :SageFsCohort and the refresh autocmds.
 ---@param port function returns the daemon port
 function M.register(port)
@@ -156,6 +213,72 @@ function M.register(port)
   vim.api.nvim_create_user_command("SageFsCohort", function() M.open() end, {
     desc = "Show the cohort: members, claims, the landing queue and the trunk",
   })
+
+  -- The four cohort actions from 0.6.896. Each takes the agent name first (the
+  -- name the cohort knows you by), then its own arguments. The landing ids and
+  -- member ids complete from the last status read into this view.
+  --
+  -- `nargs = "+"` and not the arity, because Neovim refuses a numeric nargs above
+  -- 1. The count is checked in the handler so a short command can say WHICH
+  -- argument is missing (see cohort_actions.check_arity).
+  local function register_action(spec, builder, which)
+    local usage = spec.name .. " <agent>"
+      .. (spec.arity == 3 and " <landing> <reason>" or " <landing-or-member>")
+    vim.api.nvim_create_user_command(spec.name, function(opts)
+      local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+      -- ONE split, shared by the refusals and the call: a veto's reason is the
+      -- rest of the line joined, and checking one string while sending another is
+      -- how a bound gets enforced on the wrong value.
+      local agent, id, reason = actions.split_args(parts)
+      local bad = actions.check_arity(parts, spec.arity, usage)
+      if not bad then
+        bad = actions.check_agent(agent, spec.name)
+      end
+      if not bad and spec.arity == 3 then
+        bad = actions.check_veto(reason, id)
+      end
+      local args
+      if spec.arity == 3 then
+        args = actions.veto_args(agent, id, reason, vim.fn.getcwd())
+      else
+        args = builder(agent, id, vim.fn.getcwd())
+      end
+      run_action(spec, args, bad)
+    end, {
+      nargs = "+",
+      desc = spec.desc,
+      complete = function(_, lead)
+        local ids = M.complete_ids(last_model, which)
+        return vim.tbl_filter(function(id) return id:find(lead, 1, true) == 1 end, ids)
+      end,
+    })
+  end
+
+  register_action(
+    { name = "SageFsCohortDelegate", tool = "delegate_conductor", arity = 2,
+      desc = "Hand the conductor seat to another present cohort member" },
+    function(agent, to_member, cwd) return actions.delegate_args(agent, to_member, cwd) end,
+    "members"
+  )
+  register_action(
+    { name = "SageFsCohortVeto", tool = "veto_landing", arity = 3,
+      desc = "Object to a landing, with the reason" },
+    function(agent, landing_id, reason, cwd) return actions.veto_args(agent, landing_id, reason, cwd) end,
+    "landings"
+  )
+  register_action(
+    { name = "SageFsCohortResolveVeto", tool = "resolve_veto", arity = 2,
+      desc = "Clear a veto as the conductor; the landing queues again" },
+    function(agent, landing_id, cwd) return actions.resolve_args(agent, landing_id, cwd) end,
+    "landings"
+  )
+  register_action(
+    { name = "SageFsCohortWithdraw", tool = "withdraw_landing", arity = 2,
+      desc = "Withdraw your own landing" },
+    function(agent, landing_id, cwd) return actions.withdraw_args(agent, landing_id, cwd) end,
+    "landings"
+  )
+
   local group = vim.api.nvim_create_augroup("SageFsCohortView", { clear = true })
   vim.api.nvim_create_autocmd("User", {
     group = group,

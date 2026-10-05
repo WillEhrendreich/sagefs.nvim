@@ -662,7 +662,8 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `rebuild.lua` | `lastRestart`: the statusline segment, the "started in the background" answer, and the rule for following a rebuild until it ends |
 | `source_state.lua` | `InSync` / `Stale` / `Rebuilding` / `Unknown`, the statusline segment, the panel lines, the `:SageFsStatus` line |
 | `status_fields.lua` | Registry of per-session report fields (`lastReload`, `replFreshness`, `sourceState`, `lastRestart`, the next one is one `register` call) |
-| `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member kinds (`mcp:m-`, `cap:`, older `mcp:`), masking of an older daemon's handles |
+| `cohort.lua` | `get_cohort_status` parser, trunk verdicts, rendering, member kinds (`mcp:m-`, `cap:`, older `mcp:`), masking of an older daemon's handles, and a vetoed landing's member and reason |
+| `cohort_actions.lua` | The four cohort actions from 0.6.896 (`:SageFsCohortDelegate`, `:SageFsCohortVeto`, `:SageFsCohortResolveVeto`, `:SageFsCohortWithdraw`): their tool arguments, the veto reason's 1..1000 bound, and the pre-flight refusals |
 | `mcp_client.lua` | Small MCP client over the daemon's streamable HTTP transport |
 | `wire_runtime.lua` | The reload and REPL-freshness glue, with every impure thing injected |
 | `live_bindings.lua` | Live bindings model: a pure fold over the daemon's `live_bindings` snapshots (SSE profile and click-outcome profile) |
@@ -692,7 +693,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `annotations.lua` | (listed above; uses `vim.NIL` guard) |
 | **Integration layer** | |
 | `help.lua` | `:SageFsHelp` and the first-run hint; the command list comes from the live command table |
-| `cohort_view.lua` | `:SageFsCohort`: the cohort and the trunk in a scratch buffer, refreshed on cohort events |
+| `cohort_view.lua` | `:SageFsCohort`: the cohort and the trunk in a scratch buffer, refreshed on cohort events; also registers the four cohort actions, with ids completed from the last status read |
 | `reload_ui.lua` | Highlight groups and the virtual-text mark on the saved file for the hot reload verdict |
 | `wire_commands.lua` | `:SageFsReloadStatus`, `:SageFsCohort` and the member token commands' registration |
 | `member_view.lua` | `:SageFsMintMember` and `:SageFsRevokeMember`: the arguments, the call, and the float that shows a token once |
