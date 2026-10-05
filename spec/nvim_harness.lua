@@ -121,7 +121,7 @@ describe("plugin setup", function()
       "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage", "SageFsTypeExplorer",
       "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
       "SageFsCancel", "SageFsTestTrace", "SageFsLoadScript",
-      "SageFsStart", "SageFsStop",
+      "SageFsStart", "SageFsStop", "SageFsNudge", "SageFsDebugTest", "SageFsDebugRelease",
     }
     for _, name in ipairs(expected) do
       assert_truthy(cmds[name], "missing command: " .. name)
@@ -2459,6 +2459,138 @@ describe("member commands in a real Neovim", function()
     vim.cmd("wincmd p")
     vim.wait(100, function() return not vim.api.nvim_buf_is_valid(float_buf) end)
     assert_falsy(vim.api.nvim_buf_is_valid(float_buf), "the float is gone after the window is left")
+  end)
+end)
+
+-- ─── Nudge, in a real buffer, with a fake daemon ─────────────────────────────
+-- The daemon here is a function that rewrites the file on disk the way the real
+-- nudge_value tool does (and ends its reply with the event echo a real one can).
+-- Everything else is real: the buffer, the cursor, :edit, vim.notify, the command,
+-- the map and the gate.
+
+describe("nudge in a real buffer (fake daemon)", function()
+  local nudge_ui = require("sagefs.nudge_ui")
+  local real_client = package.loaded["sagefs.mcp_client"]
+  local real_notify = vim.notify
+  local notes, calls, path
+
+  local function replace_in_file(from, to)
+    local text = table.concat(vim.fn.readfile(path), "\n") .. "\n"
+    local start, stop = text:find(from, 1, true)
+    assert_truthy(start, "the file holds " .. from)
+    local out = text:sub(1, start - 1) .. to .. text:sub(stop + 1)
+    local f = assert(io.open(path, "wb"))
+    f:write(out)
+    f:close()
+  end
+
+  local function setup_case(lines)
+    notes, calls = {}, {}
+    path = vim.fn.tempname() .. "-Nudge.fs"
+    vim.fn.writefile(lines, path)
+    vim.cmd("edit " .. vim.fn.fnameescape(path))
+    vim.notify = function(msg, level) table.insert(notes, { msg = tostring(msg), level = level }) end
+    package.loaded["sagefs.mcp_client"] = {
+      connect = function()
+        return {
+          close = function() end,
+          call_tool = function(_, args, cb)
+            table.insert(calls, args)
+            local text = table.concat(vim.fn.readfile(path), "\n")
+            local speed, drag = text:match("let speed = (%S+)"), text:match("let drag = (%S+)")
+            if args.action == "inspect" then
+              cb(true, vim.json.encode({
+                outcome = "Inspected", file = path, fileHash = "fh", journaled = 0, undoSteps = 0, redoSteps = 0, listing = "Complete",
+                items = {
+                  { address = "M.speed", text = speed, hash = "h-speed", kind = "Knob", valueKind = "Real" },
+                  { address = "M.drag", text = drag, hash = "h-drag", kind = "Knob", valueKind = "Real" },
+                },
+                notes = {},
+              }) .. "\n\n📡 SageFs events since last call:\n  • ✓ warmup complete")
+            elseif args.action == "set" then
+              local before = args.address == "M.speed" and speed or drag
+              replace_in_file(args.address == "M.speed" and ("speed = " .. before) or ("drag = " .. before),
+                (args.address == "M.speed" and "speed = " or "drag = ") .. args.literal)
+              cb(true, vim.json.encode({ outcome = "Written", file = path, address = args.address, before = before, after = args.literal, notes = {} }))
+            end
+          end,
+        }
+      end,
+    }
+  end
+
+  local function teardown_case()
+    package.loaded["sagefs.mcp_client"] = real_client
+    vim.notify = real_notify
+    vim.cmd("bwipeout! " .. vim.api.nvim_get_current_buf())
+    vim.fn.delete(path)
+  end
+
+  local plugin = { active_session = { id = "s1", working_directory = "/w" }, config = { port = 1 } }
+  local helpers = { notify = function() end }
+
+  it("a bump rewrites the file, the buffer is read again, the cursor and the unmodified state are kept", function()
+    setup_case({ "module M", "let speed = 1.0", "let drag = 2.0" })
+    local ok, err = pcall(function()
+      local buf = vim.api.nvim_get_current_buf()
+      vim.api.nvim_win_set_cursor(0, { 2, 13 })
+      nudge_ui.run(plugin, helpers, { action = "up" }, 1)
+      assert_truthy(vim.wait(5000, function() return vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "let speed = 1.1" end, 10),
+        "the buffer has what the daemon wrote: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      assert_eq(2, vim.api.nvim_win_get_cursor(0)[1], "the cursor stayed on its line")
+      assert_eq(13, vim.api.nvim_win_get_cursor(0)[2], "and its column")
+      assert_falsy(vim.bo[buf].modified, "the reloaded buffer is not modified")
+      assert_eq("/w", calls[1].working_directory, "the session is named by its working directory")
+      assert_eq("h-speed", calls[2].seen, "the write carries the hash inspect gave")
+      assert_truthy(notes[#notes].msg:find("1.0 -> 1.1", 1, true), "the notice shows the change: " .. notes[#notes].msg)
+    end)
+    teardown_case()
+    assert_truthy(ok, err)
+  end)
+
+  it("a buffer with unsaved edits is refused before the daemon is asked", function()
+    setup_case({ "module M", "let speed = 1.0", "let drag = 2.0" })
+    local ok, err = pcall(function()
+      vim.api.nvim_buf_set_lines(0, 0, 0, false, { "// not saved" })
+      vim.api.nvim_win_set_cursor(0, { 3, 13 })
+      nudge_ui.run(plugin, helpers, { action = "up" }, 1)
+      assert_eq(0, #calls, "nothing went to the daemon")
+      assert_contains(notes[1].msg, "unsaved")
+      assert_eq(vim.log.levels.WARN, notes[1].level)
+    end)
+    teardown_case()
+    assert_truthy(ok, err)
+  end)
+
+  it("three bumps typed at once land as three steps, in order", function()
+    setup_case({ "module M", "let speed = 1.0", "let drag = 2.0" })
+    local ok, err = pcall(function()
+      local buf = vim.api.nvim_get_current_buf()
+      vim.api.nvim_win_set_cursor(0, { 3, 13 })
+      for _ = 1, 3 do nudge_ui.run(plugin, helpers, { action = "up" }, 1) end
+      assert_truthy(vim.wait(5000, function() return vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] == "let drag = 2.3" end, 10),
+        "2.0 and three steps is 2.3: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      for _, n in ipairs(notes) do
+        assert_falsy(n.msg:find("changed while", 1, true), "none was turned away: " .. n.msg)
+      end
+    end)
+    teardown_case()
+    assert_truthy(ok, err)
+  end)
+
+  it("the command is registered with a count, completes its sub-commands, and the maps are buffer-local", function()
+    local cmd = vim.api.nvim_get_commands({})["SageFsNudge"]
+    assert_truthy(cmd, "the command exists")
+    assert_eq("*", cmd.nargs)
+    local completed = vim.fn.getcompletion("SageFsNudge u", "cmdline")
+    assert_contains(completed, "up")
+    assert_contains(completed, "undo")
+    local buf = make_buffer({ "let x = 1" })
+    nudge_ui.register_keymaps(plugin, helpers, buf)
+    local map = vim.fn.maparg((vim.g.mapleader or "\\") .. "rk+", "n", false, true)
+    assert_eq(1, map.buffer, "the map is buffer-local")
+    local elsewhere = make_buffer({ "let y = 2" })
+    assert_eq("", vim.fn.maparg((vim.g.mapleader or "\\") .. "rk+", "n"), "and absent from a buffer it was not made for: " .. elsewhere)
   end)
 end)
 
