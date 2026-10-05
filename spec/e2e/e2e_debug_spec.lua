@@ -104,6 +104,7 @@ H.run_suite({
 
     local dt = require("sagefs.debug_test")
     local dap = require("dap")
+    dap.set_log_level("TRACE")
     local helpers = { base_url = function() return "http://localhost:" .. port end }
 
     local function finished()
@@ -169,6 +170,58 @@ H.run_suite({
         vim.cmd("SageFsDebugTest deliberately failing")
         H.assert_truthy(H.wait_for(finished, 120000, 250), "the debug run finished")
         H.assert_truthy(said("failed"), "the test ran under the debugger again")
+      end)
+
+      H.it("D on a row of the test panel debugs that test", function()
+        dt._reset()
+        notes = {}
+        sagefs.start_sse()
+        post("/api/live-testing/run", { sessionId = sid }, port)
+        H.assert_truthy(H.wait_for(function()
+          for _, t in pairs(sagefs.testing_state.tests) do
+            if (t.displayName or ""):find("deliberately failing", 1, true) then return true end
+          end
+          return false
+        end, 120000, 250), "the plugin learned of the tests over SSE")
+        -- the live run is over (all four have a verdict), so the host is idle when D asks it to hold one
+        H.assert_truthy(H.wait_for(function()
+          local _, status = get("/api/live-testing/status?sessionId=" .. sid, port)
+          local s = status and status.Summary
+          return s and (s.Running or 1) == 0 and (s.Passed or 0) + (s.Failed or 0) >= 4
+        end, 120000, 500), "the live run finished")
+        vim.cmd("edit " .. vim.fn.fnameescape(temp.project .. "/MathTests.fs"))
+        vim.cmd("SageFsTestPanel")
+        local panel_buf, panel_win
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+          local b = vim.api.nvim_win_get_buf(win)
+          if vim.api.nvim_buf_get_name(b):find("sagefs://tests", 1, true) then panel_buf, panel_win = b, win end
+        end
+        H.assert_truthy(panel_buf, "the panel is open")
+        local row
+        H.assert_truthy(H.wait_for(function()
+          for i, line in ipairs(vim.api.nvim_buf_get_lines(panel_buf, 0, -1, false)) do
+            if line:find("deliberately failing", 1, true) then row = i; return true end
+          end
+          return false
+        end, 15000, 100), "the panel has a row for the failing test")
+        vim.api.nvim_set_current_win(panel_win)
+        vim.api.nvim_win_set_cursor(panel_win, { row, 0 })
+        H.assert_eq("D", require("sagefs.debug_test_ui").PANEL_KEY)
+        H.assert_truthy(vim.fn.maparg("D", "n", false, true).buffer == 1, "D is a map of the panel's own buffer")
+        vim.cmd("normal D")
+        H.assert_truthy(H.wait_for(finished, 120000, 250), "the debug run finished")
+        if not said("deliberately failing") then
+          local log = vim.fn.stdpath("log") .. "/dap.log"
+          if vim.fn.filereadable(log) == 1 then
+            local lines = vim.fn.readfile(log)
+            io.write("      dap.log tail:\n")
+            for i = math.max(1, #lines - 40), #lines do io.write("        " .. lines[i]:sub(1, 240) .. "\n") end
+          end
+        end
+        H.assert_truthy(said("deliberately failing"), "the verdict names the test the row named: " .. vim.inspect(notes))
+        H.assert_truthy(said("failed"), "it ran under the debugger and failed")
+        H.assert_truthy(H.wait_for(function() return dap.session() == nil end, 15000, 100), "the debugger detached")
+        vim.cmd("SageFsTestPanel")
       end)
     end)
 
