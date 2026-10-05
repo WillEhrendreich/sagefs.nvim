@@ -2506,7 +2506,7 @@ describe("nudge in a real buffer (fake daemon)", function()
                   { address = "M.drag", text = drag, hash = "h-drag", kind = "Knob", valueKind = "Real" },
                 },
                 notes = {},
-              }) .. "\n\n📡 SageFs events since last call:\n  • ✓ warmup complete")
+              }))
             elseif args.action == "set" then
               local before = args.address == "M.speed" and speed or drag
               replace_in_file(args.address == "M.speed" and ("speed = " .. before) or ("drag = " .. before),

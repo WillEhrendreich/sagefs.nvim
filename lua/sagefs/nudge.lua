@@ -89,36 +89,10 @@ end
 
 -- ─── The reply ───────────────────────────────────────────────────────────────
 
---- The JSON object a text starts with, cut out by its braces (those inside a
---- string do not count), or nil when the text does not start with a complete one.
---- A tool's text can end with what the daemon saw since the caller's last call
---- (McpTools withEcho), so the reply is the object and then lines that are not
---- JSON, and a strict decoder refuses the whole.
----@param raw string
----@return string|nil
-local function leading_object(raw)
-  local start = raw:find("%S")
-  if not start or raw:sub(start, start) ~= "{" then return nil end
-  local depth, in_string, escaped = 0, false, false
-  for i = start, #raw do
-    local c = raw:sub(i, i)
-    if in_string then
-      if escaped then escaped = false
-      elseif c == "\\" then escaped = true
-      elseif c == '"' then in_string = false end
-    elseif c == '"' then in_string = true
-    elseif c == "{" then depth = depth + 1
-    elseif c == "}" then
-      depth = depth - 1
-      if depth == 0 then return raw:sub(start, i) end
-    end
-  end
-  return nil
-end
-
---- Read what the tool answered. `ok` is false when the call itself failed (a
---- member token without the role, an older daemon with no such tool); the text is
---- then the daemon's own words.
+--- Read what the tool answered: the answer is JSON on its own (the client hands
+--- over the first text block, and the daemon's event echo is a block of its own).
+--- `ok` is false when the call itself failed (a member token without the role, an
+--- older daemon with no such tool); the text is then the daemon's own words.
 ---@param ok boolean
 ---@param raw string|nil
 ---@return table reply always has `outcome`; `Failed` carries `message`
@@ -126,8 +100,7 @@ function M.parse_reply(ok, raw)
   if not ok then
     return { outcome = "Failed", message = tostring(raw or "no reply from the daemon") }
   end
-  local object = type(raw) == "string" and leading_object(raw) or nil
-  local decoded, data = util.json_decode(object)
+  local decoded, data = util.json_decode(type(raw) == "string" and raw or nil)
   if decoded and type(data) == "table" and type(data.outcome) == "string" then
     if type(data.notes) ~= "table" then data.notes = {} end
     if type(data.items) ~= "table" then data.items = {} end

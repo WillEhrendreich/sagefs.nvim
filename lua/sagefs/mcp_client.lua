@@ -88,19 +88,22 @@ function M.parse_body(raw)
   return { ok = true, result = chosen.result, id = chosen.id }
 end
 
---- The text blocks of a tools/call result, joined.
+--- A tools/call result's answer: its FIRST text block. When the daemon saw events
+--- since the caller's last call it adds the "SageFs events since last call" echo as
+--- one more block after the answer (docs/mcp-tools.md, "Reading a tool reply"), so
+--- a later block is the daemon talking, never part of the answer, and a tool whose
+--- answer is JSON is valid JSON on its own.
 ---@param result table|nil
 ---@return string
 function M.tool_text(result)
-  local out = {}
   if type(result) == "table" and type(result.content) == "table" then
     for _, block in ipairs(result.content) do
       if type(block) == "table" and block.type == "text" and type(block.text) == "string" then
-        table.insert(out, block.text)
+        return block.text
       end
     end
   end
-  return table.concat(out, "\n")
+  return ""
 end
 
 function M.tool_is_error(result)
