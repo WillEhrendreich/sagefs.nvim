@@ -132,7 +132,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Enable/disable live testing** | `:SageFsEnableTesting` / `:SageFsDisableTesting` → explicit live test pipeline control. |
 | **Test trace** | `:SageFsTestTrace` → floating window showing the three-speed pipeline state. |
 | **Debug a failing test** | `:SageFsDebugTest` (or `<leader>rtg` on the line with the "debug" hint) asks the daemon to hold the test, attaches netcoredbg through nvim-dap, then releases it. See [Debugging a failing test](#debugging-a-failing-test). |
-| **Nudge a value** | `:SageFsNudge up` (or `<leader>rk+`) bumps the number under the cursor through the daemon's `nudge_value` tool, which rewrites just that expression in the file. Also `down`, `set`, `expr`, `undo`, `redo`, `list`, and a count. See [Nudging a value](#nudging-a-value). |
+| **Nudge a value** | `:SageFsNudge up` (or `<leader>rk+`) bumps the number under the cursor through the daemon's `nudge_value` tool, which rewrites just that expression in the file. Also `down`, `set`, `expr`, `undo`, `redo`, `list`, and a count — and the scrub keys `<A-k>`/`<A-j>`, which repeat the bump while held, through the same door. See [Nudging a value](#nudging-a-value). |
 | **Live bindings** | `:SageFsBindings` opens a split with the daemon's value tree, a key to run one held getter, and a Safe/Everything/Off mode switch. See [Live bindings](#live-bindings). |
 | **Coverage gutter signs** | Green=covered, Red=uncovered per-line signs from FCS symbol graph. |
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
@@ -247,6 +247,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rks` / `<leader>rke` | n | Set it to a typed literal / replace it with an F# expression |
 | `<leader>rku` / `<leader>rkr` | n | Undo / redo the last nudge in this file |
 | `<leader>rkl` | n | List the values of this file and nudge one |
+| `<A-k>` / `<A-j>` | n | Scrub the value under the cursor up / down: one nudge per press, hold to repeat the key to turn it like a knob (single keys on purpose — a `<leader>rk+` sequence cannot be held; remap with `require("sagefs.config").SCRUB_UP_KEY` / `SCRUB_DOWN_KEY`) |
 | **Test panel / Telescope actions** | | |
 | `<CR>` | n | Jump to test source file/line (in telescope or test panel) |
 | `<C-g>` | n | Explicit jump to source - telescope picker only (warns if no location) |
@@ -567,6 +568,8 @@ The daemon's `nudge_value` tool changes one value in a source file the session o
 
 An integer goes by one. A bool toggles. Hex goes up as the number it is and comes back as hex (`0x1F` to `0x20`), a unit of measure is kept (`12.5<m>` to `12.6<m>`), and a union case or any other expression is set with `set` or `expr`, not bumped. The maps are all under `<leader>rk` (`+ - s e u r l`).
 
+The scrub keys `<A-k>` (up) and `<A-j>` (down) run this same flow once per press, so holding either — the terminal or GUI repeats the key — turns the value the way a knob turns, one default step per press, each press its own journaled write with its own undo, queued in order behind the one before it. They are single keys on purpose: auto-repeat of a `<leader>rk+` sequence repeats only its last key, which alone is just `+`. Remap them by setting `require("sagefs.config").SCRUB_UP_KEY` / `SCRUB_DOWN_KEY` before an F# buffer opens; they are buffer-local maps, so a map of your own over them works too.
+
 What I do, in order: I inspect the file, find the listed value under the cursor, and set it with the hash `inspect` gave. If the value changed since, the daemon refuses and nothing is written. The daemon sends each value's range with its list (line, column, end line, end column; the columns count characters, so I turn your cursor's byte column into the same count first, which matters after an accent or an emoji). I find the value whose range holds the cursor, so two values with the same text on one line are two ranges, and a value that spans lines is found from any line it covers. When a value sits inside a bigger one (a literal in a formula) I ask you which; I never guess. The number I bump is the typed `value` the daemon sends, and the text only tells me how it is written.
 
 The daemon writes the file on disk, so a buffer with unsaved edits is refused by name (`:write` it, or `:edit!` to drop the edits). A buffer that changed while the daemon was answering is not written to. After a write, an undo or a redo I read the buffer again and keep your cursor; a buffer you started editing since is left alone. One nudge runs at a time per buffer and the rest wait in order, so a held key lands every step.
@@ -703,7 +706,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `debug_test.lua` | Debug a failing test through nvim-dap: hold the test on the daemon, attach, release; the lifecycle that never leaks a hold |
 | `debug_test_ui.lua` | `:SageFsDebugTest`, the quiet "debug" hint on a failing-test line, the keymap, and `D` on a test panel row |
 | `nudge.lua` | Nudging a value, the pure side: the request, the reply, which listed value the cursor is on, what a bump of a literal comes to, and the words for each outcome |
-| `nudge_ui.lua` | `:SageFsNudge` and the `<leader>rk` maps: inspect, find the value under the cursor, set it with the hash inspect gave, show the reply, reload the buffer the daemon wrote |
+| `nudge_ui.lua` | `:SageFsNudge`, the `<leader>rk` maps and the `<A-k>`/`<A-j>` scrub keys: inspect, find the value under the cursor, set it with the hash inspect gave, show the reply, reload the buffer the daemon wrote |
 | `init.lua` | Coordinator: SSE dispatch, eval, session API, check-on-save, daemon |
 | `transport.lua` | HTTP via curl, SSE connections with exponential backoff reconnect |
 | `render.lua` | Extmarks, test/coverage gutter signs, floating windows |

@@ -462,14 +462,22 @@ describe("nudge_ui registration", function()
     vim.keymap = { set = function(mode, lhs, rhs, opts) table.insert(mapped, { mode = mode, lhs = lhs, opts = opts }) end }
     ui.register_keymaps({}, { notify = function() end }, 7)
     vim.keymap = prev
+    -- The scrub keys (spec/nudge_scrub_spec.lua) are single keys of their own:
+    -- a <leader> sequence cannot be held, since key auto-repeat repeats only
+    -- its last key. Everything else stays under <leader>rk.
+    local config = require("sagefs.config")
+    local scrub = { [config.SCRUB_UP_KEY] = true, [config.SCRUB_DOWN_KEY] = true }
     local seen = {}
     for _, m in ipairs(mapped) do
-      assert.is_truthy(m.lhs:find("^<leader>rk"), m.lhs .. " is under <leader>rk")
+      if not scrub[m.lhs] then
+        assert.is_truthy(m.lhs:find("^<leader>rk"), m.lhs .. " is under <leader>rk")
+      end
       assert.are.equal(7, m.opts.buffer)
       assert.is_falsy(seen[m.lhs], m.lhs .. " is mapped once")
       seen[m.lhs] = true
     end
-    for _, lhs in ipairs({ "<leader>rk+", "<leader>rk-", "<leader>rks", "<leader>rke", "<leader>rku", "<leader>rkr", "<leader>rkl" }) do
+    for _, lhs in ipairs({ "<leader>rk+", "<leader>rk-", "<leader>rks", "<leader>rke", "<leader>rku", "<leader>rkr", "<leader>rkl",
+      config.SCRUB_UP_KEY, config.SCRUB_DOWN_KEY }) do
       assert.is_truthy(seen[lhs], lhs .. " is mapped")
     end
   end)

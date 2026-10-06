@@ -547,6 +547,9 @@ Nudge a value ~
   <leader>rku  Undo the last nudge in this file
   <leader>rkr  Redo it
   <leader>rkl  List the values of this file and nudge one
+  <A-k>        Scrub up: one nudge per press; hold the key to repeat it and
+               the value turns like a knob (remap: SCRUB_UP_KEY in config)
+  <A-j>        Scrub down (remap: SCRUB_DOWN_KEY in config)
 <
 ==============================================================================
 6. CONFIGURATION                                         *sagefs-config*
@@ -881,6 +884,13 @@ under the cursor: >vim
   :SageFsNudge list        " every value of the file, pick one, type its value
 <
 The same under <leader>rk (+ - s e u r l), and a count repeats a bump.
+The scrub keys <A-k> and <A-j> run this same flow once per press, so a
+held key lands step after step, in order, through the same door (the
+terminal or GUI repeats the key; a <leader> sequence cannot be held,
+because auto-repeat repeats only its last key). Each press is its own
+journaled write with its own undo. Remap them by setting SCRUB_UP_KEY
+/ SCRUB_DOWN_KEY of sagefs.config before an F# buffer attaches; they
+are buffer-local maps, so a map of your own over them works too.
 A bool toggles. An integer goes by one. Hex goes up as the number it is and
 is written back in hex; a unit of measure (12.5<m/s>) is kept. A union case
 or any other expression is set with set or expr, not bumped.

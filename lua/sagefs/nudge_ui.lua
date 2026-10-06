@@ -340,8 +340,18 @@ function M.register(plugin, helpers, create_user_command)
   end
 end
 
---- Buffer-local maps, all under <leader>rk (k for knob). A count repeats a bump:
---- 5<leader>rk+ is five steps.
+--- Buffer-local maps: the bump keys under <leader>rk (k for knob), and the two
+--- scrub keys (sagefs.config.SCRUB_UP_KEY / SCRUB_DOWN_KEY, Alt-k and Alt-j by
+--- default). A count repeats a bump: 5<leader>rk+ is five steps, and so is
+--- 5<A-k>.
+---
+--- The scrub keys exist because a <leader>rk+ sequence cannot be held: key
+--- auto-repeat repeats only its last key, which alone is just `+`. A single key
+--- can be held, and every repeat presses it again — each press is one flow
+--- through M.run (inspect, find the value under the cursor by the range the
+--- daemon reports, bump, set with the hash inspect gave), and the gate holds
+--- them in order per buffer, so a held key scrubs the value through the same
+--- nudge door, rules and undo as :SageFsNudge itself.
 function M.register_keymaps(plugin, helpers, bufnr)
   local function map(lhs, cmd, desc, counted)
     vim.keymap.set("n", lhs, function()
@@ -355,6 +365,12 @@ function M.register_keymaps(plugin, helpers, bufnr)
   map("<leader>rku", { action = "undo" }, "SageFs: undo the last nudge in this file")
   map("<leader>rkr", { action = "redo" }, "SageFs: redo the nudge that was undone")
   map("<leader>rkl", { action = "list" }, "SageFs: list the values in this file and nudge one")
+
+  local config = require("sagefs.config")
+  map(config.SCRUB_UP_KEY, { action = "up" },
+    "SageFs: scrub the value under the cursor up (hold to repeat; a count multiplies)", true)
+  map(config.SCRUB_DOWN_KEY, { action = "down" },
+    "SageFs: scrub the value under the cursor down (hold to repeat; a count multiplies)", true)
 
   local ok, wk = pcall(require, "which-key")
   if ok and wk.add then

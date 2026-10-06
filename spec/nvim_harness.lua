@@ -2472,7 +2472,7 @@ describe("nudge in a real buffer (fake daemon)", function()
   local nudge_ui = require("sagefs.nudge_ui")
   local real_client = package.loaded["sagefs.mcp_client"]
   local real_notify = vim.notify
-  local notes, calls, path
+  local notes, calls, path, refuse_set
 
   local function replace_in_file(from, to)
     local text = table.concat(vim.fn.readfile(path), "\n") .. "\n"
@@ -2484,8 +2484,10 @@ describe("nudge in a real buffer (fake daemon)", function()
     f:close()
   end
 
-  local function setup_case(lines)
+  local function setup_case(lines, opts)
+    opts = opts or {}
     notes, calls = {}, {}
+    refuse_set = opts.refuse == true
     path = vim.fn.tempname() .. "-Nudge.fs"
     vim.fn.writefile(lines, path)
     vim.cmd("edit " .. vim.fn.fnameescape(path))
@@ -2517,10 +2519,16 @@ describe("nudge in a real buffer (fake daemon)", function()
                 notes = {},
               }))
             elseif args.action == "set" then
-              local before = args.address == "M.speed" and speed or drag
-              replace_in_file(args.address == "M.speed" and ("speed = " .. before) or ("drag = " .. before),
-                (args.address == "M.speed" and "speed = " or "drag = ") .. args.literal)
-              cb(true, vim.json.encode({ outcome = "Written", file = path, address = args.address, before = before, after = args.literal, notes = {} }))
+              if refuse_set then
+                cb(true, vim.json.encode({ outcome = "Refused", refusal = "SourceMoved",
+                  rule = "The expression changed since you inspected it.",
+                  nextAction = "Run action=inspect again." }))
+              else
+                local before = args.address == "M.speed" and speed or drag
+                replace_in_file(args.address == "M.speed" and ("speed = " .. before) or ("drag = " .. before),
+                  (args.address == "M.speed" and "speed = " or "drag = ") .. args.literal)
+                cb(true, vim.json.encode({ outcome = "Written", file = path, address = args.address, before = before, after = args.literal, notes = {} }))
+              end
             end
           end,
         }
@@ -2584,6 +2592,65 @@ describe("nudge in a real buffer (fake daemon)", function()
       for _, n in ipairs(notes) do
         assert_falsy(n.msg:find("changed while", 1, true), "none was turned away: " .. n.msg)
       end
+    end)
+    teardown_case()
+    assert_truthy(ok, err)
+  end)
+
+  it("the scrub key <A-k> / <A-j> nudges through the same door: every press is a daemon write", function()
+    setup_case({ "module M", "let speed = 1.0", "let drag = 2.0" })
+    local ok, err = pcall(function()
+      local buf = vim.api.nvim_get_current_buf()
+      nudge_ui.register_keymaps(plugin, helpers, buf)
+      local function press(lhs)
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(lhs, true, false, true), "mx", false)
+      end
+      vim.api.nvim_win_set_cursor(0, { 2, 13 })
+      press("<A-k>")
+      assert_truthy(vim.wait(5000, function()
+        return vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "let speed = 1.1"
+      end, 10), "one press is one step up: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      press("<A-k>")
+      assert_truthy(vim.wait(5000, function()
+        return vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "let speed = 1.2"
+      end, 10), "the next press is the next step: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      vim.api.nvim_win_set_cursor(0, { 3, 13 })
+      press("<A-j>")
+      assert_truthy(vim.wait(5000, function()
+        return vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] == "let drag = 1.9"
+      end, 10), "and down goes the other way: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      -- Three presses, each an inspect and a set on the nudge tool — nothing
+      -- else was ever asked: the file changes only through the nudge door.
+      assert_truthy(#calls >= 6, "three presses, each inspect + set: " .. #calls)
+      for _, c in ipairs(calls) do
+        assert_truthy(c.action == "inspect" or c.action == "set",
+          "the scrub key only ever used the nudge tool: " .. tostring(c.action))
+      end
+      assert_truthy(calls[#calls].seen ~= nil, "the last write carried the hash its inspect gave")
+      assert_falsy(vim.bo[buf].modified, "the plugin never typed into the buffer")
+    end)
+    teardown_case()
+    assert_truthy(ok, err)
+  end)
+
+  it("a stale address refused by the daemon reaches the user from the scrub key, and the file is left alone", function()
+    setup_case({ "module M", "let speed = 1.0", "let drag = 2.0" }, { refuse = true })
+    local ok, err = pcall(function()
+      local buf = vim.api.nvim_get_current_buf()
+      nudge_ui.register_keymaps(plugin, helpers, buf)
+      vim.api.nvim_win_set_cursor(0, { 2, 13 })
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<A-k>", true, false, true), "mx", false)
+      local refusal
+      assert_truthy(vim.wait(5000, function()
+        for _, n in ipairs(notes) do
+          if n.msg:find("SourceMoved", 1, true) then refusal = n; return true end
+        end
+        return false
+      end, 10), "the refusal is shown, not swallowed: " .. vim.inspect(notes))
+      assert_eq(vim.log.levels.WARN, refusal.level)
+      assert_contains(refusal.msg, "Run action=inspect again.")
+      assert_eq("let speed = 1.0", vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1], "the file was not changed")
+      assert_falsy(vim.bo[buf].modified, "and the buffer was not written either")
     end)
     teardown_case()
     assert_truthy(ok, err)

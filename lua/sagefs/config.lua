@@ -17,6 +17,19 @@ M.EVAL_STATUS_POLL_MS = 3000
 --- Shown in the "N more lines, <key> to expand" footer.
 M.EXPAND_RESULT_KEY = "<leader>rE"
 
+--- The scrub keys: press (or hold — the terminal or GUI repeats the key) either
+--- to move the value under the cursor up or down, one nudge per press, the way a
+--- knob turns. They run :SageFsNudge's own flow, so every press is a journaled
+--- write through the daemon's nudge_value tool, with its refusals and its undo
+--- (SageFs docs/roadmap.md: "a scrub key in Neovim ... writing through the nudge
+--- door so the same rules and the same undo apply"). Single Alt keys, not a
+--- `<leader>` sequence: holding the last key of a sequence would not repeat the
+--- map. j/k for down/up, like Alt-drag on the dashboard's knob. Buffer-local,
+--- registered when an F# buffer attaches — set either here before that to
+--- remap, or over the buffer-local map afterwards.
+M.SCRUB_UP_KEY = "<A-k>"
+M.SCRUB_DOWN_KEY = "<A-j>"
+
 --- While the plugin's session reads Starting/Building/Restarting/WarmingUp,
 --- the session list is re-read this often until it does not. The daemon
 --- answers a create request only once the session is up, so the events that
