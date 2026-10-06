@@ -34,6 +34,7 @@ describe("events.build_autocmd_data — completeness", function()
     "binding_scope_map",
     "eval_timeline",
     "eval_result",
+    "eval_heartbeat",
     "failure_narratives",
     "warmup_context",
     "hotreload_snapshot",
@@ -61,8 +62,8 @@ describe("events.build_autocmd_data — completeness", function()
 end)
 
 describe("events.EVENT_NAMES — completeness", function()
-it("contains entries for all 45 supported autocmd events", function()
-assert.are.equal(45, #events.EVENT_NAMES)
+it("contains entries for all 46 supported autocmd events", function()
+assert.are.equal(46, #events.EVENT_NAMES)
   end)
 end)
 

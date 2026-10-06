@@ -44,6 +44,10 @@ function M.new()
       output = nil,
       cell_id = nil,
       duration_ms = nil,
+      -- { file, line, elapsed_ms } while the daemon's eval_heartbeat ticks;
+      -- eval_result replaces this whole table, so a finished eval never
+      -- keeps a heartbeat of its own.
+      heartbeat = nil,
     },
     filmstrip = {},
     bindings = {},
@@ -179,11 +183,31 @@ end
 
 handlers.eval_result = function(state, payload)
   if not payload then return state end
+  -- Fresh table: the running eval's heartbeat is dropped here, so the
+  -- ticking elapsed display stops and duration_ms below is the truth.
   state.eval = {
     output = payload.output or payload.Output or payload.text or payload.Text,
     cell_id = payload.cellId or payload.CellId,
     duration_ms = payload.durationMs or payload.DurationMs,
   }
+  return state
+end
+
+-- ~500ms heartbeat while an eval runs (daemon wire: FilePath, BlockStartLine,
+-- ElapsedMs — both casings read, like eval_result above).
+handlers.eval_heartbeat = function(state, payload)
+  if not payload then return state end
+  local file = payload.FilePath or payload.filePath
+  local line = payload.BlockStartLine or payload.blockStartLine
+  local elapsed = payload.ElapsedMs or payload.elapsedMs
+  local hb = state.eval.heartbeat
+  -- A heartbeat for a different file/block is another eval's: it must not
+  -- overwrite (corrupt) the elapsed value of the one on display.
+  if hb and ((file and hb.file and file ~= hb.file)
+      or (line and hb.line and line ~= hb.line)) then
+    return state
+  end
+  state.eval.heartbeat = { file = file, line = line, elapsed_ms = elapsed }
   return state
 end
 

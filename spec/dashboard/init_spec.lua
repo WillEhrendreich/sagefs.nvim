@@ -51,6 +51,10 @@ describe("Dashboard init", function()
       assert.equals("eval_result", dashboard._autocmd_to_event("SageFsEvalResult"))
     end)
 
+    it("converts SageFsEvalHeartbeat to eval_heartbeat", function()
+      assert.equals("eval_heartbeat", dashboard._autocmd_to_event("SageFsEvalHeartbeat"))
+    end)
+
     it("converts SageFsSystemAlarm to system_alarm", function()
       assert.equals("system_alarm", dashboard._autocmd_to_event("SageFsSystemAlarm"))
     end)

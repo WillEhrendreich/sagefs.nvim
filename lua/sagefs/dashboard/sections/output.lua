@@ -5,7 +5,14 @@ local M = {}
 
 M.id = "output"
 M.label = "Output"
-M.events = { "eval_result", "eval_completed" }
+M.events = { "eval_result", "eval_completed", "eval_heartbeat" }
+
+--- Format the running eval's elapsed milliseconds (from eval_heartbeat).
+local function elapsed_label(ms)
+  if type(ms) ~= "number" then return "?" end
+  if ms >= 1000 then return string.format("%.1fs", ms / 1000) end
+  return string.format("%dms", ms)
+end
 
 --- Render the eval output section from dashboard state.
 --- @param state table
@@ -20,8 +27,22 @@ function M.render(state)
     line = 0, col_start = 0, col_end = #lines[1], hl_group = "SageFsSectionHeader",
   })
 
+  -- While the daemon is still sending eval_heartbeat the eval is running:
+  -- show its elapsed time. eval_result clears the heartbeat, so this line
+  -- disappears when the eval finishes and the meta duration below is the
+  -- completed eval's, not the last heartbeat's.
+  if e.heartbeat then
+    table.insert(lines, "Evaluating… " .. elapsed_label(e.heartbeat.elapsed_ms))
+    table.insert(highlights, {
+      line = #lines - 1, col_start = 0, col_end = #lines[#lines],
+      hl_group = "SageFsEvalDuration",
+    })
+  end
+
   if not e.output then
-    table.insert(lines, "(no eval output)")
+    if not e.heartbeat then
+      table.insert(lines, "(no eval output)")
+    end
     return { section_id = M.id, lines = lines, highlights = highlights, keymaps = {} }
   end
 

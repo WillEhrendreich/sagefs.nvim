@@ -1048,6 +1048,19 @@ Event reference ~
       })
 <
 
+*SageFsEvalHeartbeat*
+    Fired about twice a second while an evaluation is running, so an
+    integration can show elapsed time and see the stream is alive. Payload: >
+
+      { FilePath, BlockStartLine, ElapsedMs }
+<
+    - `FilePath`        File being evaluated
+    - `BlockStartLine`  1-based line of the cell's start
+    - `ElapsedMs`       Milliseconds since the eval started
+
+    Stops when the eval finishes (an eval_result follows); the dashboard's
+    Output section shows the elapsed time while it runs.
+
 *SageFsTestPassed*
     Fired when a single test transitions to passed state.
 

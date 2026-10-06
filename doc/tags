@@ -76,6 +76,7 @@ SageFsCoverageView	sagefs.txt	/*SageFsCoverageView*
 SageFsDisconnected	sagefs.txt	/*SageFsDisconnected*
 SageFsEvalCompleted	sagefs.txt	/*SageFsEvalCompleted*
 SageFsEvalDiff	sagefs.txt	/*SageFsEvalDiff*
+SageFsEvalHeartbeat	sagefs.txt	/*SageFsEvalHeartbeat*
 SageFsEvalResult	sagefs.txt	/*SageFsEvalResult*
 SageFsEvalTimeline	sagefs.txt	/*SageFsEvalTimeline*
 SageFsFailureNarratives	sagefs.txt	/*SageFsFailureNarratives*

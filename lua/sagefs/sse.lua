@@ -143,6 +143,8 @@ function M.classify_event(event)
     eval_timeline = "eval_timeline",
     -- Inline eval result decorations (Sprint 7+ daemon)
     eval_result = "eval_result",
+    -- ~500ms heartbeat while an eval runs: elapsed time of the running eval
+    eval_heartbeat = "eval_heartbeat",
     -- Failure narrative context for tests that transitioned Passed→Failed
     failure_narratives = "failure_narratives",
     FailureNarratives = "failure_narratives",

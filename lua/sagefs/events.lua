@@ -35,6 +35,8 @@ local EVENT_CATALOG = {
   { "binding_scope_map", "SageFsBindingScopeMap" },
   { "eval_timeline", "SageFsEvalTimeline" },
   { "eval_result", "SageFsEvalResult" },
+  -- ~500ms heartbeat while an eval runs (feeds the dashboard's elapsed display)
+  { "eval_heartbeat", "SageFsEvalHeartbeat" },
   { "failure_narratives", "SageFsFailureNarratives" },
   { "warmup_progress", "SageFsWarmupProgress" },
   { "session_faulted", "SageFsSessionFaulted" },

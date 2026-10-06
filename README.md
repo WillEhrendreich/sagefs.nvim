@@ -790,6 +790,7 @@ vim.api.nvim_create_autocmd("User", {
 |-------|---------------|--------------------|
 | `SageFsEvalCompleted` | Evaluation completes (any outcome) | result data |
 | `SageFsEvalResult` | Eval result received from daemon | `filePath`, `blockStartLine`, `output`, `success` |
+| `SageFsEvalHeartbeat` | Eval still running (~500ms heartbeat; stops when the eval finishes) | `FilePath`, `BlockStartLine`, `ElapsedMs` |
 | `SageFsEvalDiff` | Diff between last two evals of a cell | diff lines |
 | `SageFsEvalTimeline` | Timeline data updated | timestamps, durations, status |
 | `SageFsTestPassed` | A single test transitions to passed | test id, name |

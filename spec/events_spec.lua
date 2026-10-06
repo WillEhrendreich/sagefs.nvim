@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 45 event names", function()
-      assert.are.equal(45, #events.EVENT_NAMES)
+    it("contains 46 event names", function()
+      assert.are.equal(46, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()
@@ -103,6 +103,7 @@ describe("events", function()
         { "binding_scope_map", "SageFsBindingScopeMap" },
         { "eval_timeline", "SageFsEvalTimeline" },
         { "eval_result", "SageFsEvalResult" },
+        { "eval_heartbeat", "SageFsEvalHeartbeat" },
         { "failure_narratives", "SageFsFailureNarratives" },
         { "warmup_progress", "SageFsWarmupProgress" },
         -- Phase 7C: lifecycle events
