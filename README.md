@@ -65,14 +65,14 @@ SageFs is a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/too
 
 **Key SageFs capabilities:**
 
-- **Sub-second hot reload** - Save a `.fs` file and your running web server picks up the change in ~100ms (design target; the engine README cites 300–800ms typical on the current FSI-driven hot path). [Harmony](https://github.com/pardeike/Harmony) patches method pointers at runtime - no restart, no rebuild ([`SageFs.Core/Middleware/HotReloading.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Middleware/HotReloading.fs#L375-L377)). Browsers auto-refresh via SSE/DevReload ([`SageFs.Host/DevReloadInjector.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Host/DevReloadInjector.fs)).
+- **Sub-second hot reload** - Save a `.fs` file and your running web server picks up the change. The engine measured about 0.26 s from save to the new code being served, on one machine and one small app ([how long a save takes](https://github.com/WillEhrendreich/SageFs/blob/master/docs/how-hot-reload-works.md#how-long-a-save-takes)). [Harmony](https://github.com/pardeike/Harmony) patches method pointers at runtime - no restart, no rebuild ([`SageFs.Core/Middleware/HotReloading.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Middleware/HotReloading.fs#L375-L377)). Browsers auto-refresh via SSE/DevReload ([`SageFs.Host/DevReloadInjector.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Host/DevReloadInjector.fs)).
 - **Live unit testing** - A three-speed pipeline (design-goal timings ~50ms detect / ~350ms analyze / ~500ms execute): [tree-sitter](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/TestTreeSitter.fs) detects tests even in broken code, F# Compiler Service type-checks and builds a dependency graph, then affected tests execute. Gutter markers show pass/fail inline. Covers xUnit, xUnit v3, NUnit, MSTest, TUnit, and Expecto via the executors in [`LiveTestingExecutors.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/LiveTestingExecutors.fs#L247-L302). Configurable run policies per test category. Free - no VS Enterprise license needed.
 - **FCS-based coverage + IL branch coverage** - Line-level code coverage computed from F# Compiler Service typed AST symbol graph (lightweight, no IL instrumentation for basic coverage), plus IL-instrumented branch-level coverage ([`SageFs.Core/Features/CoverageInstrumenter.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/CoverageInstrumenter.fs)). Both streamed as SSE events with per-file and per-line annotations.
 - **Full project context in the REPL** - All NuGet packages, project references, and namespaces loaded automatically. No `#r` directives.
-- **Affordance-driven MCP** - AI tools (Copilot, Claude, etc.) can execute F# code, type-check, explore .NET APIs, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)) - agents see `get_fsi_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
-- **Multi-session isolation** - Run multiple FSI sessions simultaneously across different projects, each in an isolated worker sub-process. A standby pool of pre-warmed sessions makes hard resets near-instant.
+- **Affordance-driven MCP** - AI tools (Copilot, Claude, etc.) can execute F# code, type-check, run tests, and manage sessions against your real project via [Model Context Protocol](https://modelcontextprotocol.io/). The MCP server only presents tools valid for the current session state ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)) - agents see `get_session_status` during warmup, then `send_fsharp_code` once ready. No wasted tokens from guessing.
+- **Multi-session isolation** - Run multiple FSI sessions simultaneously across different projects, each in an isolated worker sub-process. A hard reset starts the replacement worker first and swaps once it is ready, so the old one keeps serving until then. There is no standby pool ([decision](https://github.com/WillEhrendreich/SageFs/blob/master/docs/decisions.md#no-standby-worker-pool)).
 - **Crash-proof supervisor** - Erlang-style auto-restart with exponential backoff (`sagefs --supervised`, implemented in [`SageFs/Program.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs/Program.fs#L115-L116)). Watchdog state exposed via API and shown in editor status bars.
-- **Binary session persistence** - Session state and test caches saved to compact binary files (`.sagefs` v3, `.sagetc` v1) for near-instant cold starts. Raw binary with CRC-32C integrity checking - no JSON parsing, no database ([`SageFs.Core/Features/TestCachePersistence.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/TestCachePersistence.fs)).
+- **Binary session persistence** - Session state and test caches saved to compact binary files (`.sagefm` v1 for the daemon's session list, `.sagetc` v3 for the test cache) for near-instant cold starts. Raw binary with CRC-32C integrity checking - no JSON parsing, no database ([`SageFs.Core/Features/TestCachePersistence.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Features/TestCachePersistence.fs)).
 
 See the [SageFs README](https://github.com/WillEhrendreich/SageFs) for full details, including CLI reference, per-directory config (`.SageFs/config.fsx`), startup profiles, and the full [frontend feature matrix](https://github.com/WillEhrendreich/SageFs#frontend-feature-matrix).
 
@@ -628,7 +628,7 @@ Whether the plugin and a daemon can talk to each other is a separate question, a
 ## Architecture
 
 > Interactive diagrams (self-contained HTML - open in any browser; pan/zoom/focus/theme included):
-> - [One SageFS daemon, every client](docs/diagrams/d1-daemon-clients.html) - daemon, ports, session workers, standby pool, supervisor
+> - [One SageFS daemon, every client](docs/diagrams/d1-daemon-clients.html) - daemon, ports, session workers, supervisor (the picture still draws a "Standby Pool" node; the daemon no longer has one)
 > - [Save → Green: the test feedback pipeline](docs/diagrams/d2-save-green.html) - tree-sitter → FCS → affected-test exec → SSE → gutter
 > - [MCP eval round-trip](docs/diagrams/d3-mcp-sequence.html) - agent → affordance gate → FSI worker → result
 
@@ -842,7 +842,7 @@ The full catalog is defined in [`lua/sagefs/events.lua`](lua/sagefs/events.lua).
 
 ## SageFs MCP Tools Reference
 
-SageFs exposes an MCP server with an **affordance-driven tool surface** - only tools valid for the current session state are presented ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)). During warmup you see `get_fsi_status`/`list_sessions`/`get_available_projects`; once the session is `Ready`, the full state-gated set appears. The canonical, always-current list is the engine's [MCP Tools Reference](https://github.com/WillEhrendreich/SageFs/blob/master/docs/mcp-tools.md) - the tool set has grown well past the original ~24, so treat the tables below as the highlights and the engine doc as the source of truth.
+SageFs exposes an MCP server with an **affordance-driven tool surface** - only tools valid for the current session state are presented ([`SageFs.Core/Affordances.fs`](https://github.com/WillEhrendreich/SageFs/blob/master/SageFs.Core/Affordances.fs)). During warmup you see `get_session_status`/`list_sessions`/`get_available_projects`; once the session is `Ready`, the full state-gated set appears. The canonical, always-current list is the engine's [MCP Tools Reference](https://github.com/WillEhrendreich/SageFs/blob/master/docs/mcp-tools.md) - the tool set has grown well past the original ~24, so treat the tables below as the highlights and the engine doc as the source of truth.
 
 **Code execution & status**
 
@@ -851,20 +851,17 @@ SageFs exposes an MCP server with an **affordance-driven tool surface** - only t
 | `send_fsharp_code` | Execute F# code (each `;;` is a transaction - failures are isolated) |
 | `check_fsharp_code` | Type-check without executing (pre-validate before committing) |
 | `cancel_eval` | Cancel a running evaluation (recover from infinite loops) |
-| `load_fsharp_script` | Load an `.fsx` file with partial progress |
 | `get_recent_fsi_events` | Recent evals, errors, and loads with timestamps |
-| `get_fsi_status` | Session health, loaded projects, statistics, affordances |
-| `get_startup_info` | Projects, features, CLI arguments |
+| `get_session_status` | The selected session's lifecycle, loaded projects and progress |
+| `get_daemon_status` | The daemon's version, ports and sessions |
 | `get_available_projects` | Discover `.fsproj`/`.sln`/`.slnx` in working directory |
-| `get_completions` | Code completions at cursor position |
-| `explore_namespace` / `explore_type` | Browse types/members in a .NET namespace/type |
-| `get_elm_state` | Current UI render state (editor, output, diagnostics) |
 
 **Sessions**
 
 | Tool | Description |
 |------|-------------|
-| `create_session` / `list_sessions` / `switch_session` / `stop_session` | Create, list, switch, stop isolated FSI sessions |
+| `create_project_session` / `create_solution_session` / `create_bare_session` | Create an isolated FSI session for a project, a solution, or nothing |
+| `list_sessions` / `switch_session` / `stop_session` | List, switch, stop sessions |
 | `reset_fsi_session` / `hard_reset_fsi_session` | Soft reset (clear definitions, keep DLLs) / full reset (rebuild, reload) |
 | `switch_workflow` | Switch between REPL and Live workflows |
 
@@ -874,10 +871,8 @@ SageFs exposes an MCP server with an **affordance-driven tool surface** - only t
 |------|-------------|
 | `list_tests` | List discovered tests with source locations |
 | `run_tests` | Run tests on demand with name/category filters |
-| `explain_test_run` | Why a test was selected to run (trigger reason, changed symbols) |
 | `explain_test_failure` | Enriched failure context for a Passed→Failed test |
 | `targeted_verify` | Plan a trustworthy verification pass for one changed behavior |
-| `get_file_coverage` / `query_test_coverage` | Per-line / per-symbol coverage queries |
 | `decompose_pipeline` | Decompose an F# pipeline into stages with purity classification |
 | `diagnose`, `coverage_intel`, `impact_forecast`, `suggest_next_action`, `plan_ripple`, `preview_what_if`, `suggest_next_cell`, `suggest_repair`, `discover_features`, `get_cell_dependencies` | Feature-analysis surface |
 
