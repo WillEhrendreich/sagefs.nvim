@@ -7,14 +7,19 @@
 -- carries that as a closed state on every session report:
 --   {state:"InSync"}
 --   {state:"BehindApp", savesSince:int, declarations:string[], message:string}
+--   {state:"Unknown", reason:{kind:"SessionGone"|"LookupFailed"|"NotRead", detail:string}, message:string}
 -- and appends a "WARNING: The REPL is BEHIND the app" line after tool text results.
 -- The remedy is a rebuild of the REPL, which replaces the worker and so STOPS the app.
+--
+-- Unknown is the daemon saying it could not read the state: the session is gone, the
+-- registry lookup failed, or a status never looked. It is not "in sync", and nothing
+-- here draws it as one.
 
 local closed_set = require("sagefs.closed_set")
 
 local M = {}
 
-M.STATE = closed_set.define("ReplFreshness", { "InSync", "BehindApp" })
+M.STATE = closed_set.define("ReplFreshness", { "InSync", "BehindApp", "Unknown" })
 
 local BANNER_PREFIX = "WARNING: The REPL is BEHIND the app"
 
@@ -42,6 +47,11 @@ function M.parse(v)
     f.saves_since = type(v.savesSince) == "number" and v.savesSince or nil
     f.declarations = list_of_strings(v.declarations)
     f.message = type(v.message) == "string" and v.message or nil
+  elseif v.state == M.STATE.Unknown then
+    local reason = type(v.reason) == "table" and v.reason or {}
+    f.reason_kind = type(reason.kind) == "string" and reason.kind or nil
+    f.reason_detail = type(reason.detail) == "string" and reason.detail or nil
+    f.message = type(v.message) == "string" and v.message or nil
   end
   return f
 end
@@ -50,6 +60,18 @@ end
 ---@return boolean
 function M.is_behind(f)
   return f ~= nil and f.state == M.STATE.BehindApp
+end
+
+--- The daemon could not read whether the REPL is behind. Not the same as level.
+---@param f table|nil
+---@return boolean
+function M.is_unknown(f)
+  return f ~= nil and f.state == M.STATE.Unknown
+end
+
+--- Why it could not be read, in a few words for a one-line display.
+local function unknown_reason_text(f)
+  return f.reason_detail or f.reason_kind or "no reason given"
 end
 
 local function saves_text(n)
@@ -65,6 +87,7 @@ function M.segment(f)
   if not f.known then
     return string.format("REPL freshness: %s?", tostring(f.state))
   end
+  if M.is_unknown(f) then return "REPL freshness unknown" end
   if f.state ~= M.STATE.BehindApp then return "" end
   if f.saves_since then
     return string.format("⚠ REPL BEHIND app (%s)", saves_text(f.saves_since))
@@ -112,6 +135,9 @@ function M.lines(f)
   end
   if f.state == M.STATE.InSync then
     return { { text = "REPL in sync with the app", hl = "SageFsReplInSync" } }
+  end
+  if M.is_unknown(f) then
+    return { { text = string.format("⚠ REPL freshness unknown: %s", unknown_reason_text(f)), hl = "SageFsReplBehind" } }
   end
   local lines = { { text = "⚠ " .. M.eval_message(f), hl = "SageFsReplBehind" } }
   if f.message and f.message ~= "" then

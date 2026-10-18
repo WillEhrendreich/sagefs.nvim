@@ -371,6 +371,9 @@ function M.format_status_report(info)
       local saves = fresh.saves_since
       local what = saves and string.format(" (%d save%s)", saves, saves == 1 and "" or "s") or ""
       table.insert(lines, "REPL:      BEHIND the app" .. what)
+    elseif fresh and fresh.state == "Unknown" then
+      -- The daemon could not read it. Said with its reason, never left out as if level.
+      table.insert(lines, string.format("REPL:      freshness unknown (%s)", fresh.reason_detail or fresh.reason_kind or "no reason given"))
     end
   end
 

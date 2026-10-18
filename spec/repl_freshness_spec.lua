@@ -11,8 +11,56 @@ local function behind(saves, declarations)
 end
 
 describe("repl_freshness closed set", function()
-  it("has the two states the daemon names", function()
-    assert.are.same({ "InSync", "BehindApp" }, F.STATE.all)
+  -- The daemon gained a third state (SageFs.ReplFreshness.Unknown): a lookup that
+  -- failed, a session that is gone, or a status that never read it. It used to be
+  -- reported as InSync, which is the one answer that must never be a guess.
+  it("has the three states the daemon names", function()
+    assert.are.same({ "InSync", "BehindApp", "Unknown" }, F.STATE.all)
+  end)
+end)
+
+-- What the daemon sends for the third state (SageFs ReplFreshness.toWire).
+local function unknown(kind, detail)
+  return F.parse({
+    state = "Unknown",
+    reason = { kind = kind, detail = detail },
+    message = "Whether the REPL runs the app's build could not be read: " .. detail .. ".",
+  })
+end
+
+describe("repl_freshness Unknown: the daemon could not read it", function()
+  it("is a known state that keeps the reason and the daemon's words, and is not 'behind'", function()
+    local f = unknown("LookupFailed", "the registry did not answer (timed out)")
+    assert.are.equal("Unknown", f.state)
+    assert.is_true(f.known)
+    assert.are.equal("LookupFailed", f.reason_kind)
+    assert.are.equal("the registry did not answer (timed out)", f.reason_detail)
+    assert.truthy(f.message:find("could not be read", 1, true))
+    assert.is_true(F.is_unknown(f))
+    assert.is_false(F.is_behind(f))
+  end)
+
+  it("is not unknown for the other two states or for nothing", function()
+    assert.is_false(F.is_unknown(F.parse({ state = "InSync" })))
+    assert.is_false(F.is_unknown(nil))
+  end)
+
+  it("shows in the statusline, never as an empty string that reads as level", function()
+    assert.are.equal("REPL freshness unknown", F.segment(unknown("SessionGone", "no session")))
+  end)
+
+  it("gives a panel line that carries the daemon's reason, in the warning colour", function()
+    local lines = F.lines(unknown("NotRead", "this status never looked"))
+    assert.are.equal(1, #lines)
+    assert.truthy(lines[1].text:find("REPL freshness unknown", 1, true))
+    assert.truthy(lines[1].text:find("this status never looked", 1, true))
+    assert.are.equal("SageFsReplBehind", lines[1].hl)
+  end)
+
+  it("does not announce an eval message: nothing is known to be behind", function()
+    assert.is_nil(F.eval_message(unknown("NotRead", "x")))
+    local say = F.gate_should_announce(F.gate_new(), unknown("NotRead", "x"), 0)
+    assert.is_false(say)
   end)
 end)
 

@@ -355,6 +355,11 @@ describe("format_status_report: the build and the REPL", function()
     assert.is_truthy(joined:find("REPL:      BEHIND the app (2 saves)", 1, true))
   end)
 
+  it("says the REPL freshness could not be read, with the reason, instead of saying nothing", function()
+    local joined = report({ id = "x", repl_freshness = { state = "Unknown", known = true, reason_kind = "SessionGone", reason_detail = "the session is no longer registered" } })
+    assert.is_truthy(joined:find("REPL:      freshness unknown (the session is no longer registered)", 1, true))
+  end)
+
   it("adds neither line for a daemon that sends neither field", function()
     local joined = report({ id = "x" })
     assert.is_falsy(joined:find("Source:", 1, true))
