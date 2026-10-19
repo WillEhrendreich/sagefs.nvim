@@ -31,10 +31,10 @@ local function reload_frames()
 end
 
 describe("reload_state closed sets", function()
-  it("names the eight outcomes SessionReload.ReloadCase names, in one place", function()
+  it("names the nine outcomes SessionReload.ReloadCase names, in one place", function()
     assert.are.same({
       "Patched", "PatchPending", "NeverEntered", "Restarted",
-      "NoEffect", "RestartRequired", "CompileFailed", "KeptLiveState",
+      "NoEffect", "RestartRequired", "CompileFailed", "EvalFailed", "KeptLiveState",
     }, R.OUTCOME.all)
     assert.are.equal("PatchPending", R.OUTCOME.PatchPending)
   end)
@@ -221,6 +221,30 @@ describe("reload_state.display: the truth in words", function()
     assert.are.equal("did not compile; the app keeps running the last code that did: error FS0001: bad", x.text)
     assert.are.equal("error", x.severity)
     assert.are.equal("compile failed", x.short)
+  end)
+
+  it("EvalFailed is not a compile failure: it names its cause and never says the file did not compile", function()
+    local x = d({
+      state = "finished", outcome = "EvalFailed", patched = 0, considered = 0,
+      message = "Not applied — the save did not finish evaluating, so the app is still serving the last good code: SageFs hit an internal error while applying the save (ArgumentOutOfRangeException: chunkLength)\n→ Save again.",
+      reasons = { { case = "InternalFault", message = "SageFs hit an internal error while applying the save (ArgumentOutOfRangeException: chunkLength)", suggestedAction = "Save again." } },
+    })
+    assert.are.equal(
+      "evaluation failed; the app keeps running the last code that worked: InternalFault, SageFs hit an internal error while applying the save (ArgumentOutOfRangeException: chunkLength)",
+      x.text)
+    assert.is_nil(x.text:find("did not compile", 1, true))
+    assert.are.equal("error", x.severity)
+    assert.are.equal("evaluation failed", x.short)
+  end)
+
+  it("EvalFailed without reasons reads its cause out of the message", function()
+    local x = d({
+      state = "finished", outcome = "EvalFailed", patched = 0, considered = 0,
+      message = "Not applied — the save did not finish evaluating, so the app is still serving the last good code: The evaluation was interrupted before it finished",
+    })
+    assert.are.equal(
+      "evaluation failed; the app keeps running the last code that worked: The evaluation was interrupted before it finished",
+      x.text)
   end)
 
   it("NoEffect with nothing considered is quiet and says how little reached the app: the real eval-time frame", function()
@@ -481,7 +505,7 @@ describe("reload_state fade: a settled harmless verdict leaves the statusline, a
   end)
 
   it("pending, never-entered, restarts and compile failures never fade", function()
-    for _, outcome in ipairs({ "PatchPending", "NeverEntered", "Restarted", "RestartRequired", "CompileFailed" }) do
+    for _, outcome in ipairs({ "PatchPending", "NeverEntered", "Restarted", "RestartRequired", "CompileFailed", "EvalFailed" }) do
       local r = observed({ state = "finished", outcome = outcome, patched = 0, considered = 1, message = "m" }, 0)
       assert.are_not.equal("", R.statusline(r, 10 * 60 * 1000), outcome)
     end

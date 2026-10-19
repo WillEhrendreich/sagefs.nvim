@@ -13,6 +13,8 @@
 --   Patched       patched (ran)
 --   NeverEntered  applied, but the new body never ran
 --   Restarted     restarted: <cause>
+--   EvalFailed    the save did not finish evaluating and it was NOT a compile error
+--                 (an interrupted or superseded eval, a SageFs fault, a host crash)
 --   RestartRequired / CompileFailed / NoEffect / KeptLiveState likewise
 --
 -- A mechanism ("detour" or "metadata-delta") is read from the field and never
@@ -28,7 +30,7 @@ local M = {}
 --- SageFs.Core/SessionReload.fs ReloadCase, one token per case.
 M.OUTCOME = closed_set.define("ReloadOutcome", {
   "Patched", "PatchPending", "NeverEntered", "Restarted",
-  "NoEffect", "RestartRequired", "CompileFailed", "KeptLiveState",
+  "NoEffect", "RestartRequired", "CompileFailed", "EvalFailed", "KeptLiveState",
 })
 
 --- SageFs.Core ReloadOutcome.PatchMechanism wire names. "" is a verdict that is not a patch.
@@ -282,7 +284,7 @@ local function cause_from_message(outcome, message)
     stripped = line:match("^Restarted the app: (.*)$")
   elseif outcome == M.OUTCOME.RestartRequired then
     stripped = line:match("^Restart needed: (.*)$")
-  elseif outcome == M.OUTCOME.CompileFailed then
+  elseif outcome == M.OUTCOME.CompileFailed or outcome == M.OUTCOME.EvalFailed then
     stripped = line:match("last good code: (.*)$")
   elseif outcome == M.OUTCOME.NoEffect then
     stripped = line:match("reached the running app " .. EM_DASH .. " (.*)$")
@@ -441,6 +443,14 @@ function M.display(report)
     local base = "did not compile; the app keeps running the last code that did"
     d.text = (d.cause and d.cause.text ~= "") and (base .. ": " .. d.cause.text) or base
     d.short = "compile failed"
+  elseif outcome == M.OUTCOME.EvalFailed then
+    d.icon = "✗"
+    d.severity, d.hl, d.notify_level, d.attention = "error", "SageFsReloadError", "error", true
+    d.cause = M.cause(report)
+    local base = "evaluation failed; the app keeps running the last code that worked"
+    local why = cause_text(d.cause)
+    d.text = why and (base .. ": " .. why) or base
+    d.short = "evaluation failed"
   elseif outcome == M.OUTCOME.NoEffect then
     d.icon = "○"
     d.severity, d.hl, d.fade_ms = "quiet", "SageFsReloadQuiet", FADE_QUIET_MS
