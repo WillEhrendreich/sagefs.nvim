@@ -213,7 +213,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 
 ## ⌨️ Keymaps
 
-Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace. Test-run keymaps additionally use `<leader>t` (`<leader>tf` filter, `<leader>tF` run-all, `<leader>tp` pick-test).
+Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace. The test-run keymaps use `<leader>t` (`<leader>tf` filter, `<leader>tF` run-all, `<leader>tp` pick-test).
 
 | Key | Mode | Description |
 |-----|------|-------------|
@@ -773,7 +773,7 @@ Busted prints `N successes / N failures / N errors / N pending` and the harness 
 
 The E2E suite uses 5 sample projects (`samples/Minimal`, `samples/WithTests`, `samples/MultiFile`, `samples/HotReloadDemo`, `samples/HotReloadLoop`). Each E2E spec copies a sample to a temp directory, starts its own SageFs daemon, runs tests, then cleans up. The daemon gets its own `SAGEFS_DATA_DIR` (so a run never reads or writes your `~/.SageFs`), `--no-resume`, and `--owner-pid` of the Neovim running the suite, so it ends with it (`spec/e2e/daemon_launch.lua`, tested by `spec/daemon_launch_spec.lua`). `spec/e2e/e2e_reload_display_spec.lua` follows a real `run_app` app through a pending patch, a confirmed one and one nothing calls, and `spec/e2e/e2e_live_values_spec.lua` drives `:SageFsBindings` (Safe mode, a click, a mode switch) and `:SageFsWorkflow`. `spec/e2e/e2e_nudge_spec.lua` nudges values in a real buffer against the real daemon (bump, count, set, expr, undo, redo, refusals, five bumps in a row). `spec/e2e/e2e_debug_spec.lua` debugs a failing test with a real nvim-dap and a real netcoredbg attaching to the real test host; it needs nvim-dap (`SAGEFS_E2E_NVIM_DAP`, default `~/.local/share/nvim/lazy/nvim-dap`) and netcoredbg (on `PATH`, or `SAGEFS_E2E_NETCOREDBG`), and says it was skipped and why when either is missing. `SAGEFS_E2E_SLOW=1` adds the two-minute hold window nobody attaches in.
 
-Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. E2E tests additionally require `sagefs` and `dotnet` on PATH.
+Requires [busted](https://lunarmodules.github.io/busted/) and `dkjson` via LuaRocks. Integration tests require Neovim 0.10+ on PATH. The E2E tests require `sagefs` and `dotnet` on PATH.
 
 ## User Autocmd Events
 
