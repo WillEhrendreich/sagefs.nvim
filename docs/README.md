@@ -1,6 +1,6 @@
 # sagefs.nvim Documentation
 
-Developer documentation for the sagefs.nvim Neovim plugin — the Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs).
+Developer documentation for the sagefs.nvim Neovim plugin, the Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs).
 
 ## Guides
 
@@ -10,9 +10,9 @@ Developer documentation for the sagefs.nvim Neovim plugin — the Neovim fronten
 
 ## Quick Links
 
-- **[Main README](../README.md)** — Full feature table, installation, keymaps, commands, architecture, MCP tools reference
-- **[Vim Help](../doc/sagefs.txt)** — `:help sagefs` documentation with command/config reference
-- **[Screenshots](./screenshots/)** — Visual tour of all major features
+- **[Main README](../README.md)**: Full feature table, installation, keymaps, commands, architecture, MCP tools reference
+- **[Vim Help](../doc/sagefs.txt)**, `:help sagefs` documentation with command/config reference
+- **[Screenshots](./screenshots/)**: Visual tour of all major features
 
 ## Architecture Overview
 
@@ -63,18 +63,18 @@ Modules that touch `vim` APIs (`cell_highlight.lua`, `treesitter_cells.lua`, `he
 
 The plugin communicates with the SageFs daemon over two ports:
 
-- **Port 37749** (main) — HTTP POST for commands (`/exec`, `/reset`, etc.) + SSE stream (`/events`) for live updates
-- **Port 37750** (dashboard) — Code completions, callers/callees, hot reload
+- **Port 37749** (main): HTTP POST for commands (`/exec`, `/reset`, etc.) + SSE stream (`/events`) for live updates
+- **Port 37750** (dashboard): Code completions, callers/callees, hot reload
 
-All state flows from daemon to plugin via SSE. POST responses carry only acknowledgment — results always arrive through the event stream.
+All state flows from daemon to plugin via SSE. POST responses carry only acknowledgment, results always arrive through the event stream.
 
 ## Testing
 
 | Suite | Runner | Count | Description |
 |-------|--------|-------|-------------|
-| Busted | `busted` (LuaRocks) | 1372 passed / 0 failed / 4 pending (latest run) | Pure module logic — state machines, parsing, formatting |
-| Integration | Headless Neovim (`nvim -l`) | 56 passed / 0 failed (latest run) | Real vim APIs — commands, extmarks, keymaps |
-| E2E | Neovim + real SageFs | 28 cases across 6 spec files (requires running daemon) | Full daemon lifecycle — eval, SSE, sessions, testing |
+| Busted | `busted` (LuaRocks) | 1372 passed / 0 failed / 4 pending (latest run) | Pure module logic: state machines, parsing, formatting |
+| Integration | Headless Neovim (`nvim -l`) | 56 passed / 0 failed (latest run) | Real vim APIs: commands, extmarks, keymaps |
+| E2E | Neovim + real SageFs | 28 cases across 6 spec files (requires running daemon) | Full daemon lifecycle: eval, SSE, sessions, testing |
 
 Run with:
 ```cmd

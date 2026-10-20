@@ -1,6 +1,6 @@
-# Copilot Instructions — sagefs.nvim
+# Copilot Instructions: sagefs.nvim
 
-Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs), a live F# development server with sub-second hot reload, MCP for AI agents, multi-session management, and file watching. This plugin connects Neovim to the running SageFs daemon — providing cell evaluation with inline results, session management, hot reload controls, and SSE live updates.
+Neovim frontend for [SageFs](https://github.com/WillEhrendreich/SageFs), a live F# development server with sub-second hot reload, MCP for AI agents, multi-session management, and file watching. This plugin connects Neovim to the running SageFs daemon, providing cell evaluation with inline results, session management, hot reload controls, and SSE live updates.
 
 ## Build & Test
 
@@ -19,11 +19,11 @@ Tests require `busted` and `dkjson` from LuaRocks. `test.cmd` sets `LUA_PATH`/`L
 
 ## Architecture
 
-**Pure modules + integration layer**: Four modules (`cells`, `format`, `model`, `sse`) plus `sessions` and `hotreload` are pure Lua with zero vim API dependencies. They are fully testable under busted outside Neovim. `init.lua` is the only module that touches `vim.*` APIs — it wires the pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
+**Pure modules + integration layer**: Four modules (`cells`, `format`, `model`, `sse`) plus `sessions` and `hotreload` are pure Lua with zero vim API dependencies. They are fully testable under busted outside Neovim. `init.lua` is the only module that touches `vim.*` APIs, it wires the pure modules to keymaps, extmarks, autocmds, and curl-based HTTP.
 
 **Cell model**: `;;` at end of a line (outside strings/comments) defines a cell boundary. `cells.lua` handles boundary detection, cell finding by cursor position, and code preparation for submission.
 
-**State machine**: Cell states flow `idle → running → success|error`. Buffer edits push `success|error → stale`. The model (`model.lua`) is a plain Lua table — no metatables, no OOP. All transitions are pure functions returning a new (mutated) table.
+**State machine**: Cell states flow `idle → running → success|error`. Buffer edits push `success|error → stale`. The model (`model.lua`) is a plain Lua table, no metatables, no OOP. All transitions are pure functions returning a new (mutated) table.
 
 **Communication with SageFs**: HTTP via `curl` (jobstart). `POST /exec` sends code, `GET /events` is an SSE stream for live updates. Session management hits `/api/sessions/*`. Hot reload uses a separate dashboard port (default 37750).
 
@@ -37,5 +37,5 @@ Tests require `busted` and `dkjson` from LuaRocks. `test.cmd` sets `LUA_PATH`/`L
 
 ## MCP Servers
 
-**Neovim MCP** — Use the `NeovimMCP` tools (`vim_buffer`, `vim_command`, `vim_edit`, etc.) for integration testing and debugging inside a live Neovim instance. This is useful for verifying extmark rendering, keymap behavior, command registration, and the full eval → extmark pipeline that can't be tested under busted alone. The pure module tests (busted) cover logic; Neovim MCP covers the `init.lua` integration layer.
+**Neovim MCP**. Use the `NeovimMCP` tools (`vim_buffer`, `vim_command`, `vim_edit`, etc.) for integration testing and debugging inside a live Neovim instance. This is useful for verifying extmark rendering, keymap behavior, command registration, and the full eval → extmark pipeline that can't be tested under busted alone. The pure module tests (busted) cover logic; Neovim MCP covers the `init.lua` integration layer.
 

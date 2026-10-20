@@ -1,14 +1,14 @@
-# Live Testing — Neovim Plugin
+# Live Testing: Neovim Plugin
 
-Live testing in sagefs.nvim gives you pass/fail feedback in the gutter as you work, powered by SageFs's three-speed test pipeline. No manual test runs needed — results stream in via SSE and update inline.
+Live testing in sagefs.nvim gives you pass/fail feedback in the gutter as you work, powered by SageFs's three-speed test pipeline. No manual test runs needed, results stream in via SSE and update inline.
 
 ## How It Works
 
-SageFs's daemon runs a three-speed pipeline that detects, analyzes, and executes tests automatically (the ms figures are the engine's design goals — the engine README cites 300–800ms typical on the current hot path):
+SageFs's daemon runs a three-speed pipeline that detects, analyzes, and executes tests automatically (the ms figures are the engine's design goals, the engine README cites 300–800ms typical on the current hot path):
 
-1. **Tree-sitter detection** (~50ms) — Finds `[<Test>]`, `[<Fact>]`, `[<Property>]` attributes even in broken code
-2. **F# Compiler Service analysis** (~350ms) — Builds a dependency graph to determine which tests are affected by your change
-3. **Test execution** (~500ms) — Runs only the affected tests via the appropriate framework (Expecto, xUnit, xUnit v3, NUnit, MSTest, TUnit)
+1. **Tree-sitter detection** (~50ms): Finds `[<Test>]`, `[<Fact>]`, `[<Property>]` attributes even in broken code
+2. **F# Compiler Service analysis** (~350ms): Builds a dependency graph to determine which tests are affected by your change
+3. **Test execution** (~500ms): Runs only the affected tests via the appropriate framework (Expecto, xUnit, xUnit v3, NUnit, MSTest, TUnit)
 
 The plugin receives results through the SSE event stream and renders them as gutter signs.
 
@@ -86,9 +86,9 @@ When live testing is enabled, FCS-based code coverage runs alongside tests. Cove
 
 The testing subsystem spans several modules:
 
-- **`testing.lua`** (~1200 lines) — Core testing state machine: SSE handlers, gutter sign management, panel formatting, policy configuration, pipeline state, annotation integration
-- **`test_trace.lua`** (~65 lines) — Test trace parsing and formatting for the three-speed pipeline display
-- **`annotations.lua`** (~240 lines) — Coverage annotation formatting, branch coverage signs, CodeLens-style markers, inline failure display
-- **`events.lua`** — Defines 10+ test-related User autocmd events for scripting integration
+- **`testing.lua`** (~1200 lines). Core testing state machine: SSE handlers, gutter sign management, panel formatting, policy configuration, pipeline state, annotation integration
+- **`test_trace.lua`** (~65 lines). Test trace parsing and formatting for the three-speed pipeline display
+- **`annotations.lua`** (~240 lines). Coverage annotation formatting, branch coverage signs, CodeLens-style markers, inline failure display
+- **`events.lua`**. Defines 10+ test-related User autocmd events for scripting integration
 
-All test modules are pure Lua with zero vim API dependencies — they're fully testable under busted without Neovim.
+All test modules are pure Lua with zero vim API dependencies, they're fully testable under busted without Neovim.
