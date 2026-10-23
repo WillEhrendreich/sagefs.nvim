@@ -931,16 +931,27 @@ function M.handle_results_batch(state, data)
     for _, entry in ipairs(entries) do
       M.update_test(state, M.normalize_entry(entry))
     end
-    local summary = data.Summary or data.summary
-    if summary then
-      local normalized = M.normalize_summary(summary)
-      if M.should_accept_summary(state, normalized) then
-        state.summary = normalized
-      end
+  end
+
+  -- The tally and the verdict do not depend on the entries, so they are read whether or not the frame
+  -- carries them. This block used to sit inside `if entries`, which would have thrown away a frame
+  -- with no list: the stream is moving to a summary on the wire with the list behind
+  -- GET /api/live-testing/entries, and every batch after that change arrives without Entries.
+  local summary = data.Summary or data.summary
+  if summary then
+    local normalized = M.normalize_summary(summary)
+    if M.should_accept_summary(state, normalized) then
+      state.summary = normalized
     end
-    state.generation = M.parse_generation(data.Generation or data.generation) or state.generation
-    state.freshness = M.parse_freshness(data.Freshness or data.freshness)
-    state.completion = M.parse_completion(data.Completion or data.completion)
+  end
+  local generation = data.Generation or data.generation
+  local freshness = data.Freshness or data.freshness
+  local completion = data.Completion or data.completion
+  if generation then state.generation = M.parse_generation(generation) or state.generation end
+  if freshness then state.freshness = M.parse_freshness(freshness) end
+  if completion then state.completion = M.parse_completion(completion) end
+
+  if entries or summary or generation or freshness or completion then
     -- Bump version so schedule_render() version-skip check fires the render.
     -- update_test already bumps per-entry but an empty batch with summary-only
     -- changes (e.g. freshness snapshot) would otherwise be silently dropped.
