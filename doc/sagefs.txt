@@ -457,6 +457,31 @@ Analysis ~
     token is refused from the next call, for ever. Conductor only.
     See |sagefs-member-token|.
 
+:SageFsCohortDelegate {member}                       *:SageFsCohortDelegate*
+    Hand the conductor seat to another PRESENT cohort member, with the
+    daemon's `delegate_conductor` tool. {member} is the id shown by
+    |:SageFsCohort|. Only the conductor may delegate, and the seat moves at
+    once: the old conductor is an ordinary member afterwards.
+    See |sagefs-cohort|.
+
+:SageFsCohortVeto {landing} {reason}                   *:SageFsCohortVeto*
+    Object to a landing, with the daemon's `veto_landing` tool. {landing}
+    is the id in |:SageFsCohort|'s landing queue; {reason} is the rest of
+    the command line and is shown to the landing's author and everyone.
+    Any present member may veto; the landing stops short of the integration
+    head while it stands. See |sagefs-cohort|.
+
+:SageFsCohortResolveVeto {landing}               *:SageFsCohortResolveVeto*
+    Clear a veto on a landing with the daemon's `resolve_veto` tool, so it
+    queues again as it was. {landing} is the id in |:SageFsCohort|'s
+    landing queue. Conductor only. See |sagefs-cohort|.
+
+:SageFsCohortWithdraw {landing}                     *:SageFsCohortWithdraw*
+    Withdraw a landing YOU requested, with the daemon's `withdraw_landing`
+    tool, in any state short of landed. {landing} is the id in
+    |:SageFsCohort|'s landing queue. Only the landing's own requester may
+    withdraw it. See |sagefs-cohort|.
+
 :SageFsHygiene                                             *:SageFsHygiene*
     Show what agents and orchestrators left behind on this machine
     (worktrees, branches, gate checkouts) as the daemon's dry-run plan:

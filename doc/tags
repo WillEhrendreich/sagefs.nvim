@@ -7,6 +7,10 @@
 :SageFsCellStyle	sagefs.txt	/*:SageFsCellStyle*
 :SageFsClear	sagefs.txt	/*:SageFsClear*
 :SageFsCohort	sagefs.txt	/*:SageFsCohort*
+:SageFsCohortDelegate	sagefs.txt	/*:SageFsCohortDelegate*
+:SageFsCohortResolveVeto	sagefs.txt	/*:SageFsCohortResolveVeto*
+:SageFsCohortVeto	sagefs.txt	/*:SageFsCohortVeto*
+:SageFsCohortWithdraw	sagefs.txt	/*:SageFsCohortWithdraw*
 :SageFsConfig	sagefs.txt	/*:SageFsConfig*
 :SageFsConnect	sagefs.txt	/*:SageFsConnect*
 :SageFsContext	sagefs.txt	/*:SageFsContext*
