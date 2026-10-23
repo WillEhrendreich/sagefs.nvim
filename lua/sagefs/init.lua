@@ -236,7 +236,7 @@ local dispatch_table
 local SSE_HANDLER_DEFS = {
   -- Testing cycle (decode + state update ± session check ± event)
   { action = "tests_discovered", fn = "handle_tests_discovered", target = "testing", session_scoped = true },
-  { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch" },
+  { action = "test_results_batch", fn = "handle_results_batch", target = "testing", session_scoped = true, event = "test_results_batch", hydrate_entries = true },
   { action = "test_run_started", fn = "handle_test_run_started", target = "testing", session_scoped = true, event = "test_run_started" },
   -- A finished run says which build it ran against when the daemon sends the
   -- event's own `source`, and then the session list is NOT read again (see
@@ -319,6 +319,12 @@ local function fold_session_update(data)
   return found, sid
 end
 
+-- Declared here rather than at its definition below: `build_handlers` fetches a batch frame's list
+-- when the stream no longer carries it, and that callback has to be able to ask for a render. The
+-- assignment happens where it is defined (line ~591); a `local function` there would have created a
+-- second, shadowing local and this would silently have been nil.
+local schedule_render
+
 local function build_handlers()
   local handlers = {}
 
@@ -326,23 +332,52 @@ local function build_handlers()
   format.validate_handler_defs(SSE_HANDLER_DEFS)
 
   -- Generate handlers from data-driven definitions
+  local hydration = require("sagefs.batch_hydration")
+
+  -- One dispatch of a decoded frame, kept as a named function so the hydration below can dispatch the
+  -- SAME frame a second time once its list has arrived. Re-encoding a synthetic SSE line to go back
+  -- through `handlers[...]` would be a lie about what the daemon sent.
+  local function run_def(def, data)
+    if def.session_scoped and not session_matches(data) then return end
+    if def.fn and def.target then
+      local t = TARGET_MAP[def.target]
+      M[t.key] = t.mod()[def.fn](M[t.key], data)
+    end
+    if def.event then fire_user_event(def.event, data) end
+    if def.refresh_sessions then refresh_sessions_soon() end
+    if def.refresh_unless_run_source then
+      -- The run's own event says which build it used, so the whole session
+      -- list is not read again. A daemon older than that field says nothing,
+      -- and then the list is still the only answer.
+      if not testing.run_source_is_authoritative(M.testing_state) then
+        refresh_sessions_soon()
+      end
+    end
+  end
+
   for _, def in ipairs(SSE_HANDLER_DEFS) do
     handlers[def.action] = function(raw)
       local data = decode_event_data(raw)
       if not data then return end
-      if def.session_scoped and not session_matches(data) then return end
-      if def.fn and def.target then
-        local t = TARGET_MAP[def.target]
-        M[t.key] = t.mod()[def.fn](M[t.key], data)
-      end
-      if def.event then fire_user_event(def.event, data) end
-      if def.refresh_sessions then refresh_sessions_soon() end
-      if def.refresh_unless_run_source then
-        -- The run's own event says which build it used, so the whole session
-        -- list is not read again. A daemon older than that field says nothing,
-        -- and then the list is still the only answer.
-        if not testing.run_source_is_authoritative(M.testing_state) then
-          refresh_sessions_soon()
+      run_def(def, data)
+      -- A frame that carries a summary and no list still owes the caller its list: the stream sends
+      -- a tally and the list lives behind a fetch. Dispatch the frame first, because the reducer is
+      -- pure and its tally needs no list, then fetch, dispatch the same frame with the list spliced
+      -- in, and ask for a render. The SSE loop's own render runs when the NEXT event arrives, and a
+      -- discovery can be the last event of a while.
+      if def.hydrate_entries and hydration.needs_entries(data) then
+        local sid = hydration.session_of(data)
+        if sid then
+          require("sagefs.transport").http_json({
+            url = string.format("http://localhost:%d/api/live-testing/entries?session=%s", M.config.port or 37749, sid),
+            callback = function(ok, raw_body)
+              if not ok or type(raw_body) ~= "string" or raw_body == "" then return end
+              local decoded_ok, entries = pcall(vim.json.decode, raw_body)
+              if not decoded_ok or type(entries) ~= "table" then return end
+              run_def(def, hydration.with_entries(data, entries))
+              schedule_render()
+            end,
+          })
         end
       end
     end
@@ -588,7 +623,9 @@ local function get_adaptive_debounce()
   return RENDER_DEBOUNCE_MAX_MS
 end
 
-local function schedule_render()
+-- Assigned, not declared: `local schedule_render` is declared above `build_handlers` so a hydration
+-- callback can reach it. `local function` here would have shadowed that and left it nil.
+schedule_render = function()
   if render_timer then
     pcall(vim.fn.timer_stop, render_timer)
   end
