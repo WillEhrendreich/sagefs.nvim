@@ -18,7 +18,12 @@ function M.start_command(opts)
     table.insert(cmd, "--mcp-port")
     table.insert(cmd, tostring(opts.port))
   end
-  if opts.port and opts.port ~= 37749 then
+  -- The daemon refuses an unowned port that is not the one it is configured to use, so the TTL is what
+  -- makes a port of one's own acceptable. A port that IS the configured one is the daemon everybody
+  -- shares, and a four hour death timer on that makes it vanish mid-session; before this it compared
+  -- against a literal 37749, so any configured port (environment or Settings panel) got the timer.
+  local configured = opts.configured_port or 37749
+  if opts.port and opts.port ~= configured then
     table.insert(cmd, "--ttl")
     table.insert(cmd, "4h")
   end

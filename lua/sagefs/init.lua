@@ -1989,8 +1989,14 @@ end
 
 function M.setup(opts)
   opts = opts or {}
+  local explicit_port = opts.port
   M.config = vim.tbl_deep_extend("force", M.config, opts)
-  M.config.port = tonumber(vim.env.SAGEFS_MCP_PORT) or M.config.port
+  -- The port this client talks to: the environment, then an explicit `port = ` in setup, then whatever
+  -- the daemon is configured to bind. The daemon's own rule is SageFs.Core/DaemonPort.fs — environment,
+  -- the Settings panel's daemon.mcpPort, default — and this has to agree with it, because a client that
+  -- resolves the port differently is asking a daemon that is not there.
+  M.config.configured_port = require("sagefs.daemon_port").configured()
+  M.config.port = tonumber(vim.env.SAGEFS_MCP_PORT) or explicit_port or M.config.configured_port
   wire = nil -- rebuilt with this config on next use
   reload_ui.setup()
 

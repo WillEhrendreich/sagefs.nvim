@@ -656,6 +656,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `util.lua` | Shared utilities (json_decode) |
 | `hotreload_model.lua` | Pure hot reload URL builder, state, picker formatting |
 | `daemon.lua` | Daemon lifecycle state machine (idle→starting→running→stopped) |
+| `daemon_port.lua` | The port rule: `SAGEFS_MCP_PORT`, then the `daemon.mcpPort` the Settings panel persisted, then `37749`, in the same order the daemon resolves it |
 | `test_trace.lua` | Test trace parsing and formatting |
 | `placement.lua` | Where a cell's result is drawn: a pure function from the cell, the window and the result to a visible anchor line and the rows that fit |
 | `pending.lua` | Why nothing is happening: classifies a slow eval (still running, session warming, daemon unreachable, faulted, no session) into one short line |

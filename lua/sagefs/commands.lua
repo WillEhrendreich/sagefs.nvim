@@ -965,7 +965,7 @@ function M.register_commands(plugin, helpers)
         return
       end
       plugin.daemon_state = daemon.mark_starting(plugin.daemon_state, project, plugin.config.port)
-      local cmd = daemon.start_command({ project = project, port = plugin.config.port, bin = bin })
+      local cmd = daemon.start_command({ project = project, port = plugin.config.port, bin = bin, configured_port = plugin.config.configured_port })
       local stderr_lines = {}
       local job_id, spawn_err = spawn.jobstart(cmd, {
         detach = true,

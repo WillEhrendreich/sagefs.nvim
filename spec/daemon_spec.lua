@@ -28,6 +28,19 @@ describe("daemon", function()
       local cmd = daemon.start_command({ project = "Harmony.slnx", port = 9999 })
       assert.same({ "sagefs", "--mcp-port", "9999", "--ttl", "4h" }, cmd)
     end)
+
+    -- The TTL is what makes a port of one's own acceptable to the daemon; the configured port is the
+    -- daemon everybody shares, and a four hour timer on that would make it vanish mid-session. This
+    -- compared against a literal 37749 until the Settings panel could set the port.
+    it("leaves the TTL off the configured port, because that is the daemon everyone shares", function()
+      local cmd = daemon.start_command({ project = "MyApp.fsproj", port = 40000, configured_port = 40000 })
+      assert.same({ "sagefs", "--mcp-port", "40000" }, cmd)
+    end)
+
+    it("keeps the TTL when the port differs from the configured one, because the daemon refuses it unowned", function()
+      local cmd = daemon.start_command({ project = "MyApp.fsproj", port = 9999, configured_port = 40000 })
+      assert.same({ "sagefs", "--mcp-port", "9999", "--ttl", "4h" }, cmd)
+    end)
   end)
 
   describe("mark_starting", function()
