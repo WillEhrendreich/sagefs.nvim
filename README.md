@@ -142,7 +142,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **History browser** | `:SageFsHistory` → eval history for the cell under cursor with snapshot preview. |
 | **Export to .fsx** | `:SageFsExport` → export session history as executable F# script. |
 | **Load script** | `:SageFsLoadScript` → load an `.fsx` file via `#load`. File completion support. |
-| **Symbol graph** | `:SageFsSymbolTests <symbol>` → floating window with the tests that reference the symbol, from the daemon's test dependency graph. SageFs keeps no call edges, so there are no callers or callees to show. Give the symbol's full name (`Module.function`); a partial name lists the tracked names that contain it. |
+| **Tests for a symbol** | `:SageFsSymbolTests <symbol>` → floating window with the tests that cover the symbol in the session this window is bound to, with their last result. The daemon builds the map from discovered tests and the coverage each test recorded. It keeps no call edges, so there are no callers or callees to show. Give the symbol's full name (`Module.function`); a partial name lists the tracked names that contain it. An empty map says why: nothing analysed yet, no coverage recorded, coverage from another build, or no test reaching an analysed symbol. After an evaluated run the test file's own lines are not instrumented, so a test-file edit alone can read as "no test reaches" until the next compiled run. With several sessions and none bound, the command asks you to pick one with `:SageFsSessions`. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
 | **User autocmd events** | The daemon's events, fired as `User` autocmds for scripting integration. |
@@ -641,7 +641,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `sessions.lua` | Session response parsing, context-sensitive action filtering, folding daemon lifecycle events (`sessionReady`, `sessionFaulted`, session health) into the session snapshot |
 | `compat.lua` | Wire compatibility: the `apiVersion` range the plugin understands (with reasons), `check`, `startup_warning`, and the information-only `version_relation` |
 | `fileio.lua` | The one place the plugin writes files: makes the parent directory first, returns a message on failure |
-| `symbol_tests.lua` | Reading `GET /api/dependency-graph`: the request path, the failure messages, resolving a typed name against the tracked symbols, the float for `:SageFsSymbolTests` |
+| `symbol_tests.lua` | Reading `GET /api/dependency-graph`: the request path with the bound session, the failure messages (including the ambiguity refusal), the plain-words reading of an empty map's `State`, resolving a typed name against the tracked symbols, the float for `:SageFsSymbolTests` |
 | `spawn.lua` | The one place the plugin starts processes: `jobstart` that never raises, with the "sagefs is not on PATH" and "curl is not on PATH" messages |
 | `diagnostics.lua` | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
 | `testing.lua` | Live testing state: SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |

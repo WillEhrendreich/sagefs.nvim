@@ -81,7 +81,7 @@ describe("commands.register_commands: :SageFsSymbolTests", function()
       run("Mod.add")
       assert.equals(1, #http_calls)
       assert.equals("GET", http_calls[1].method)
-      assert.equals(MCP .. "/api/dependency-graph", http_calls[1].url)
+      assert.equals(MCP .. "/api/dependency-graph?session=abc12345", http_calls[1].url)
     end)
 
     it("explains usage when given no symbol", function()
@@ -94,7 +94,7 @@ describe("commands.register_commands: :SageFsSymbolTests", function()
       run("Mod.add")
       http_calls[1].callback(true, OVERVIEW, { status = 200 })
       assert.equals(2, #http_calls)
-      assert.equals(MCP .. "/api/dependency-graph?symbol=Mod.add", http_calls[2].url)
+      assert.equals(MCP .. "/api/dependency-graph?symbol=Mod.add&session=abc12345", http_calls[2].url)
     end)
   end)
 
@@ -163,6 +163,152 @@ describe("commands.register_commands: :SageFsSymbolTests", function()
       http_calls[2].callback(false, "timeout", nil)
       assert.equals(0, #floats)
       assert.is_truthy(notifications[1].msg:find("timeout", 1, true))
+    end)
+  end)
+end)
+
+-- The route answers about one session, so the command names the session it is bound to and
+-- says plainly what an empty or refused answer means. Same stubs as above; the plugin table is
+-- the only thing that changes.
+describe("commands.register_commands: :SageFsSymbolTests and the session", function()
+  local registered, notifications, http_calls, floats
+  local prev_create_user_command, prev_create_augroup, prev_create_autocmd
+
+  local function setup(active_session)
+    package.loaded["sagefs.commands"] = nil
+    package.loaded["sagefs.transport"] = nil
+    package.loaded["sagefs.render"] = nil
+    package.loaded["sagefs.symbol_tests"] = nil
+    registered = {}
+    vim.api.nvim_create_user_command = function(name, handler, opts)
+      registered[name] = { handler = handler, opts = opts }
+    end
+    http_calls = {}
+    package.loaded["sagefs.transport"] = { http_json = function(opts) table.insert(http_calls, opts) end }
+    floats = {}
+    local real_render = require("sagefs.render")
+    package.loaded["sagefs.render"] = setmetatable({
+      show_float = function(lines, opts) table.insert(floats, { lines = lines, opts = opts }) end,
+    }, { __index = real_render })
+    notifications = {}
+    require("sagefs.commands").register_commands({ active_session = active_session }, {
+      base_url = function() return MCP end,
+      dashboard_url = function() return DASH end,
+      notify = function(msg, level) table.insert(notifications, { msg = msg, level = level }) end,
+    })
+  end
+
+  local function run(arg) registered["SageFsSymbolTests"].handler({ args = arg }) end
+
+  before_each(function()
+    prev_create_user_command = vim.api.nvim_create_user_command
+    prev_create_augroup, prev_create_autocmd = vim.api.nvim_create_augroup, vim.api.nvim_create_autocmd
+    vim.api.nvim_create_augroup = function() return 1 end
+    vim.api.nvim_create_autocmd = function() end
+  end)
+
+  after_each(function()
+    vim.api.nvim_create_user_command = prev_create_user_command
+    vim.api.nvim_create_augroup = prev_create_augroup
+    vim.api.nvim_create_autocmd = prev_create_autocmd
+    package.loaded["sagefs.commands"] = nil
+    package.loaded["sagefs.transport"] = nil
+    package.loaded["sagefs.render"] = nil
+    package.loaded["sagefs.symbol_tests"] = nil
+  end)
+
+  describe("the request", function()
+    it("carries the bound session on the overview request", function()
+      setup({ id = "abc12345" })
+      run("Mod.add")
+      assert.equals(MCP .. "/api/dependency-graph?session=abc12345", http_calls[1].url)
+    end)
+
+    it("carries the symbol and the bound session on the detail request", function()
+      setup({ id = "abc12345" })
+      run("Mod.add")
+      http_calls[1].callback(true, vim.json.encode({
+        Session = "abc12345", State = "mapped",
+        Symbols = { { Symbol = "Mod.add", TestCount = 1 } }, TotalSymbols = 1,
+      }), { status = 200 })
+      assert.equals(MCP .. "/api/dependency-graph?symbol=Mod.add&session=abc12345", http_calls[2].url)
+    end)
+
+    it("names no session when the plugin is bound to none", function()
+      setup(nil)
+      run("Mod.add")
+      assert.equals(MCP .. "/api/dependency-graph", http_calls[1].url)
+    end)
+  end)
+
+  describe("what the person sees", function()
+    it("tells the person to pick a session when more than one exists and the plugin is bound to none", function()
+      setup(nil)
+      run("Mod.add")
+      http_calls[1].callback(false, vim.json.encode({
+        success = false,
+        error = "Multiple sessions active. Specify sessionId:\ns1\ns2",
+        errorDetails = { case = "AmbiguousSessions", fields = { sessionDescriptions = { "s1", "s2" } },
+          message = "Multiple sessions active", suggestedAction = "Specify a sessionId explicitly" },
+      }), { status = 400 })
+      assert.equals(0, #floats)
+      assert.equals(vim.log.levels.WARN, notifications[1].level)
+      assert.is_truthy(notifications[1].msg:find(":SageFsSessions", 1, true))
+    end)
+
+    local EMPTY_BY_STATE = {
+      nothing_analysed = "analysed",
+      no_coverage_recorded = "no test has recorded coverage",
+      coverage_of_another_build = "another build",
+      nothing_reached = "compiled run",
+    }
+    for state, word in pairs(EMPTY_BY_STATE) do
+      it("says " .. state .. " in its own words when the map is empty", function()
+        setup({ id = "abc12345" })
+        run("Mod.add")
+        http_calls[1].callback(true, vim.json.encode({
+          Session = "abc12345", State = state, Symbols = {}, TotalSymbols = 0,
+        }), { status = 200 })
+        assert.equals(1, #http_calls)
+        assert.equals(0, #floats)
+        assert.is_truthy(notifications[1].msg:find(word, 1, true), notifications[1].msg)
+        assert.is_nil(notifications[1].msg:find("no test dependency graph", 1, true))
+      end)
+    end
+
+    it("renders a mapped reply as before, with the session named", function()
+      setup({ id = "abc12345" })
+      run("Mod.add")
+      http_calls[1].callback(true, vim.json.encode({
+        Session = "abc12345", State = "mapped",
+        Symbols = { { Symbol = "Mod.add", TestCount = 1 } }, TotalSymbols = 1,
+      }), { status = 200 })
+      http_calls[2].callback(true, vim.json.encode({
+        Session = "abc12345", State = "mapped", Symbol = "Mod.add",
+        Tests = { { TestId = "t1", TestName = "adds two", Status = "passed" } }, TotalSymbols = 1,
+      }), { status = 200 })
+      local text = table.concat(floats[1].lines, "\n")
+      assert.is_truthy(text:find("adds two", 1, true))
+      assert.is_truthy(text:find("1 test: 1 passed", 1, true))
+    end)
+
+    it("renders a reply from an older daemon, with no Session and no State, as before", function()
+      setup({ id = "abc12345" })
+      run("Mod.add")
+      http_calls[1].callback(true, vim.json.encode({
+        Symbols = { { Symbol = "Mod.add", TestCount = 1 } }, TotalSymbols = 1,
+      }), { status = 200 })
+      http_calls[2].callback(true, vim.json.encode({
+        Symbol = "Mod.add", Tests = { { TestId = "t1", TestName = "adds two", Status = "passed" } }, TotalSymbols = 1,
+      }), { status = 200 })
+      assert.is_truthy(table.concat(floats[1].lines, "\n"):find("adds two", 1, true))
+    end)
+
+    it("keeps the old empty-graph sentence for an older daemon that sends no State", function()
+      setup({ id = "abc12345" })
+      run("Mod.add")
+      http_calls[1].callback(true, '{"Symbols":[],"TotalSymbols":0}', { status = 200 })
+      assert.is_truthy(notifications[1].msg:find("no test dependency graph", 1, true))
     end)
   end)
 end)

@@ -1278,10 +1278,10 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Export session history as .fsx file (to disk)" })
 
-  -- ─── Symbol Graph Command ────────────────────────────────────────────────
+  -- ─── Symbol Tests Command ────────────────────────────────────────────────
 
   -- The old callers and callees commands are gone. They asked the dashboard port for /api/callers
-  -- and /api/callees, which the daemon never mapped, and its one symbol graph
+  -- and /api/callees, which the daemon never mapped, and its one symbol route
   -- (GET /api/dependency-graph on the MCP port) has no call edges. See sagefs/symbol_tests.lua.
   vim.api.nvim_create_user_command("SageFsSymbolTests", function(opts)
     local symbol_tests = require("sagefs.symbol_tests")
@@ -1290,9 +1290,13 @@ function M.register_commands(plugin, helpers)
       return
     end
     local query = opts.args
+    -- The route answers about one session. Without one it infers the only session or refuses, so
+    -- the bound session is sent whenever the plugin has it.
+    local sid = active_session_id(plugin)
 
     -- One GET, read through the pure module. `on_parsed` gets the decoded object; any failure
-    -- is reported here with its cause.
+    -- is reported here with its cause. A refusal that asks the person to pick a session is a
+    -- warning, because nothing is broken.
     local function fetch(path, on_parsed)
       local url = helpers.base_url() .. path
       transport.http_json({
@@ -1300,9 +1304,9 @@ function M.register_commands(plugin, helpers)
         url = url,
         timeout = 10,
         callback = function(ok, raw, meta)
-          local parsed, message = symbol_tests.read_reply(ok, raw, meta, url)
+          local parsed, message, refusal = symbol_tests.read_reply(ok, raw, meta, url)
           if not parsed then
-            helpers.notify(message, vim.log.levels.ERROR)
+            helpers.notify(message, refusal == "ambiguous" and vim.log.levels.WARN or vim.log.levels.ERROR)
             return
           end
           on_parsed(parsed)
@@ -1310,7 +1314,7 @@ function M.register_commands(plugin, helpers)
       })
     end
 
-    fetch(symbol_tests.path(nil), function(parsed)
+    fetch(symbol_tests.path(nil, sid), function(parsed)
       local overview, overview_message = symbol_tests.read_overview(parsed)
       if not overview then
         helpers.notify(overview_message, vim.log.levels.ERROR)
@@ -1321,7 +1325,7 @@ function M.register_commands(plugin, helpers)
         helpers.notify(symbol_tests.describe_resolution(resolution, query, overview.total), vim.log.levels.WARN)
         return
       end
-      fetch(symbol_tests.path(resolution.name), function(detail_parsed)
+      fetch(symbol_tests.path(resolution.name, sid), function(detail_parsed)
         local detail, detail_message = symbol_tests.read_detail(detail_parsed)
         if not detail then
           helpers.notify(detail_message, vim.log.levels.ERROR)

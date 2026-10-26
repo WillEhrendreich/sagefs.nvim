@@ -245,3 +245,15 @@ describe("sagefs.compat.fields: completions", function()
     assert.is_true(used["completions.limit (request)"], "spec/commands_type_explorer_spec.lua: the request carries it")
   end)
 end)
+
+describe("sagefs.compat.fields: symbol tests", function()
+  local compat = require("sagefs.compat")
+
+  it("declares the dependency-graph request and reply fields :SageFsSymbolTests uses, each with a degradation spec", function()
+    local used = {}
+    for _, name in ipairs(compat.fields_in_use()) do used[name] = true end
+    assert.is_true(used["dependency-graph.session (request)"], "spec/commands_symbol_tests_spec.lua: the request carries it")
+    assert.is_true(used["dependency-graph.State"], "spec/symbol_tests_spec.lua: describe_empty(nil) keeps the old sentence")
+    assert.is_true(used["dependency-graph.Session"], "spec/symbol_tests_spec.lua: format_tests prints no session without it")
+  end)
+end)

@@ -59,6 +59,12 @@ M.fields = {
     note = "with `reason`: the daemon could not list (session not active, host gone, no session), which an empty `completions` used to hide. The explorer warns with the reason instead of \"No members\". A daemon that sends none gets the old empty-list reading. The omnifunc popup does not read it" },
   { name = "completions.limit (request)", daemon = "POST /api/completions reads `limit` (SageFs/McpServer.fs, 1 to 2000, default 50)", used = "type explorer",
     note = "the explorer sends `limit` (type_explorer.ROWS_REQUESTED). A daemon that does not read it ignores the key and cuts at its own default; the reply then has no total and the explorer shows what it got. The omnifunc popup sends no limit" },
+  { name = "dependency-graph.session (request)", daemon = "GET /api/dependency-graph reads `?session=` (SageFs/McpServer.fs MapGet \"/api/dependency-graph\")", used = "symbol tests",
+    note = ":SageFsSymbolTests sends the bound session. A daemon from before the route took one ignores the key and answers from its primary session, as it always did. Without the key a daemon with several sessions refuses with AmbiguousSessions (HTTP 400), which the command turns into \"pick one with :SageFsSessions\"" },
+  { name = "dependency-graph.State", daemon = "GET /api/dependency-graph (SageFs/DependencyGraphRoute.fs, SymbolTestsState.toWire)", used = "symbol tests",
+    note = "nothing_analysed, no_coverage_recorded, coverage_of_another_build, nothing_reached or mapped: why an empty map is empty. A daemon that sends none, or a word this plugin does not know, gets the old \"no test dependency graph yet\" sentence" },
+  { name = "dependency-graph.Session", daemon = "GET /api/dependency-graph (SageFs/DependencyGraphRoute.fs)", used = "symbol tests",
+    note = "the session the answer was read from, printed under the float's title. A daemon that sends none prints no session line" },
 }
 
 --- The fields this plugin release actually reads, so a caller can name them.
