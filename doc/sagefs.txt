@@ -330,7 +330,8 @@ Analysis ~
     Export the current session as an .fsx file.
 
 :SageFsTypeExplorer                                     *:SageFsTypeExplorer*
-    Browse types via completions-based namespace drill-down.
+    Browse types via completions-based namespace drill-down. See
+    |sagefs-type-explorer| for what it says when a set is cut.
 
 :SageFsTestTrace                                        *:SageFsTestTrace*
     Show the current test trace state.
@@ -951,6 +952,25 @@ Browse and search types via completions: >vim
 
   :SageFsTypeExplorer           " Drill down namespaces → types → members
 <
+Each step asks the daemon for more members than the completion popup does
+(`type_explorer.ROWS_REQUESTED`). When the set is larger than what came back,
+the last row of the list and the second line of the member panel say so:
+"Showing 200 of 212", or "Showing 200 of at least 2000" when the daemon
+stopped counting at its ceiling. That row is a note, and choosing it does
+nothing.
+
+When the daemon could not list (the session is warming up, its host is gone,
+no session matches), you get a warning with the daemon's reason instead of
+"No members found". "No members found" means the daemon looked and the set
+is empty. A could-not-list answer is not cached, so asking again asks the
+daemon again.
+
+The omnifunc completion popup asks for the daemon's short default list and
+does not show the size.
+
+A daemon that predates these fields sends no size, and the explorer then
+shows the list as it always did.
+
 Results are cached per-session.
 
 ==============================================================================

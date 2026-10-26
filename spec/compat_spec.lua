@@ -233,3 +233,15 @@ describe("sagefs.compat.fields", function()
     end
   end)
 end)
+
+describe("sagefs.compat.fields: completions", function()
+  local compat = require("sagefs.compat")
+
+  it("declares the completions fields the type explorer reads, each with a degradation spec", function()
+    local used = {}
+    for _, name in ipairs(compat.fields_in_use()) do used[name] = true end
+    assert.is_true(used["completions.total"], "spec/completions_total_spec.lua: listing_of states no size without it")
+    assert.is_true(used["completions.unavailable"], "spec/completions_total_spec.lua: listing_of states no unavailability without it")
+    assert.is_true(used["completions.limit (request)"], "spec/commands_type_explorer_spec.lua: the request carries it")
+  end)
+end)

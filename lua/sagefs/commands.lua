@@ -129,6 +129,7 @@ function M.register_commands(plugin, helpers)
   local testing = require("sagefs.testing")
   local coverage = require("sagefs.coverage")
   local type_explorer = require("sagefs.type_explorer")
+  local completions_wire = require("sagefs.completions")
   local te_cache = require("sagefs.type_explorer_cache")
   local history = require("sagefs.history")
   local export = require("sagefs.export")
@@ -1141,6 +1142,7 @@ function M.register_commands(plugin, helpers)
 
   vim.api.nvim_create_user_command("SageFsTypeExplorer", function()
     local sid = plugin.active_session and plugin.active_session.id or ""
+    local show_explorer_results
 
     local function explore(qualified_name)
       -- Check cache
@@ -1149,12 +1151,13 @@ function M.register_commands(plugin, helpers)
         show_explorer_results(qualified_name, cached)
         return
       end
-      -- Send "QualifiedName." as code and get completions at cursor after the dot
-      local code = qualified_name .. "."
-      local body = { code = code, cursorPos = #code, sessionId = sid }
+      -- "QualifiedName." with the cursor after the dot, and a limit. This is the
+      -- JSON route the omnifunc uses; /dashboard/completions answers as an SSE
+      -- DOM patch for the dashboard's dropdown, which this decode cannot read.
+      local body = sessions.scope_body(type_explorer.build_request_body(qualified_name), sid)
       transport.http_json({
         method = "POST",
-        url = helpers.dashboard_url() .. "/dashboard/completions",
+        url = helpers.base_url() .. "/api/completions",
         body = body,
         timeout = 8,
         callback = function(ok, raw)
@@ -1167,18 +1170,26 @@ function M.register_commands(plugin, helpers)
             helpers.notify("No completions for " .. qualified_name, vim.log.levels.WARN)
             return
           end
-          te_cache.set(qualified_name, data.completions)
-          show_explorer_results(qualified_name, data.completions)
+          local listing = completions_wire.listing_of(data)
+          local unavailable = completions_wire.unavailable_line(listing)
+          if unavailable then
+            -- Not cached: the session may be Ready by the next ask.
+            helpers.notify(unavailable .. " (" .. qualified_name .. ")", vim.log.levels.WARN)
+            return
+          end
+          te_cache.set(qualified_name, listing)
+          show_explorer_results(qualified_name, listing)
         end,
       })
     end
 
-    function show_explorer_results(qualified_name, completions)
+    show_explorer_results = function(qualified_name, listing)
+      local completions = listing.completions
       if #completions == 0 then
         helpers.notify("No members found for " .. qualified_name, vim.log.levels.WARN)
         return
       end
-      local items = type_explorer.format_completions(completions)
+      local items = type_explorer.format_completions(completions, listing)
       local labels = {}
       for _, item in ipairs(items) do labels[#labels + 1] = item.label end
       vim.ui.select(labels, { prompt = qualified_name .. ":" }, function(choice)
@@ -1189,12 +1200,13 @@ function M.register_commands(plugin, helpers)
         end
         if not idx then return end
         local picked = items[idx]
+        if picked.note then return end
         if picked.drillable then
           explore(qualified_name .. "." .. picked.insertText)
         else
           -- Show leaf member panel
           local panel = type_explorer.format_members_panel(
-            qualified_name .. "." .. picked.insertText, completions)
+            qualified_name .. "." .. picked.insertText, completions, listing)
           render.show_float(panel, { title = qualified_name })
         end
       end)

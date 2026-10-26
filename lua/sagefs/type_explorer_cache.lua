@@ -1,23 +1,25 @@
--- sagefs/type_explorer_cache.lua — In-memory cache for type explorer completions
--- Pure Lua, zero vim dependencies. Caches qualified name → completions.
+-- sagefs/type_explorer_cache.lua — In-memory cache for type explorer listings
+-- Pure Lua, zero vim dependencies. Caches qualified name → listing (the
+-- completions plus the size the daemon stated, from completions.listing_of), so a
+-- cached name still says "Showing 200 of at least 2000".
 -- Clear on hard reset.
 
 local M = {}
 
 local store = {}
 
---- Get cached completions for a qualified name.
+--- Get the cached listing for a qualified name.
 ---@param name string
----@return table[]|nil
+---@return table|nil
 function M.get(name)
   return store[name]
 end
 
---- Cache completions for a qualified name.
+--- Cache a listing for a qualified name.
 ---@param name string
----@param completions table[]
-function M.set(name, completions)
-  store[name] = completions
+---@param listing table
+function M.set(name, listing)
+  store[name] = listing
 end
 
 function M.has_data()

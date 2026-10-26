@@ -53,6 +53,12 @@ M.fields = {
     note = "the daemon puts the WARNING sentence in `result` and no structured field, so the plugin reads the one it is actually sent" },
   { name = "test_run_completed.source", daemon = "published on the event", used = "testing",
     note = "the daemon publishes `test_run_completed` and carries this run's `source` verdict on it (AllPassed, PassedOnStaleSource, PassedWhileRebuilding, PassedOnUnknownSource, SomeFailed, Incomplete). It used to say \"no such SSE event exists\" — the verdict lived only in the run_tests receipt, which is a different transport, so a client watching the stream could never learn WHY a run passed" },
+  { name = "completions.total", daemon = "POST /api/completions (SageFs/McpCompletions.fs formatCompletionsJson)", used = "type explorer",
+    note = "with `totalKind` (exact or atLeast): the size of the member set the reply was cut from. The explorer shows \"Showing 50 of 212\" or \"Showing 200 of at least 2000\" from it. A daemon that sends neither shows the list with no size line, as before; an unknown totalKind word is not read" },
+  { name = "completions.unavailable", daemon = "POST /api/completions (SageFs/McpCompletions.fs formatCompletionsJson)", used = "type explorer",
+    note = "with `reason`: the daemon could not list (session not active, host gone, no session), which an empty `completions` used to hide. The explorer warns with the reason instead of \"No members\". A daemon that sends none gets the old empty-list reading. The omnifunc popup does not read it" },
+  { name = "completions.limit (request)", daemon = "POST /api/completions reads `limit` (SageFs/McpServer.fs, 1 to 2000, default 50)", used = "type explorer",
+    note = "the explorer sends `limit` (type_explorer.ROWS_REQUESTED). A daemon that does not read it ignores the key and cuts at its own default; the reply then has no total and the explorer shows what it got. The omnifunc popup sends no limit" },
 }
 
 --- The fields this plugin release actually reads, so a caller can name them.

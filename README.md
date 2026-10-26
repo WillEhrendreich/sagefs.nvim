@@ -138,7 +138,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **Coverage panel** | `:SageFsCoverage` → floating window with per-file breakdown + total. |
 | **Covering tests** | `:SageFsCoveringTests` / `<leader>rtc` lists the tests that cover the line under the cursor with their last result, `<CR>` jumps to one. A per-symbol badge sits on the definition line. See [Which tests cover a line](#which-tests-cover-a-line). |
 | **Coverage statusline** | Coverage percentage in combined statusline component. |
-| **Type explorer** | `:SageFsTypeExplorer` → completions-based namespace/type drill-down. |
+| **Type explorer** | `:SageFsTypeExplorer` → completions-based namespace/type drill-down. Says "Showing 200 of 212" (or "of at least ...") when the set is larger than the list, and shows the daemon's reason when it could not list. |
 | **History browser** | `:SageFsHistory` → eval history for the cell under cursor with snapshot preview. |
 | **Export to .fsx** | `:SageFsExport` → export session history as executable F# script. |
 | **Load script** | `:SageFsLoadScript` → load an `.fsx` file via `#load`. File completion support. |

@@ -2,7 +2,24 @@
 -- Formats completions-based exploration results for picker/float display
 -- Zero vim dependencies
 
+local completions_wire = require("sagefs.completions")
+
 local M = {}
+
+--- How many members one explorer request asks for. The daemon's default is 50,
+--- which cut `System.IO` (64 members) without saying so; its ceiling is 2000.
+--- 200 is what the VS Code Type Explorer asks for, and a picker with more rows
+--- than that is not browsable anyway: the size line says how many were left out.
+M.ROWS_REQUESTED = 200
+
+--- The body of the explorer's POST /api/completions: "Name." with the cursor
+--- after the dot, and a limit. The caller adds the session id (sessions.scope_body).
+---@param qualified_name string
+---@return table
+function M.build_request_body(qualified_name)
+  local code = qualified_name .. "."
+  return { code = code, cursor_position = #code, limit = M.ROWS_REQUESTED }
+end
 
 -- Kind icons for type/member completions
 local KIND_ICONS = {
@@ -23,8 +40,10 @@ local DRILLABLE_KINDS = {
 
 --- Format completions into picker items for exploration.
 ---@param completions table[] { label, kind, insertText }
----@return table[] { label, insertText, kind, drillable }
-function M.format_completions(completions)
+---@param listing table|nil from completions.listing_of; when the reply was cut from a larger set
+---  a last row says so. It is a note, not a member: `note = true`, and choosing it does nothing.
+---@return table[] { label, insertText, kind, drillable, note? }
+function M.format_completions(completions, listing)
   local items = {}
   for _, c in ipairs(completions) do
     local icon = KIND_ICONS[c.kind] or "·"
@@ -41,15 +60,26 @@ function M.format_completions(completions)
     if a.kind ~= b.kind then return a.kind < b.kind end
     return a.label < b.label
   end)
+  local size_line = completions_wire.size_line(listing)
+  if size_line then
+    items[#items + 1] = { label = size_line, insertText = "", kind = "", drillable = false, note = true }
+  end
   return items
 end
 
 --- Format completions as a floating window panel (for non-drillable leaf views).
 ---@param qualified_name string
 ---@param completions table[] { label, kind, insertText }
+---@param listing table|nil from completions.listing_of; says how large the set was when it was
+---  cut, or why nothing could be listed
 ---@return string[]
-function M.format_members_panel(qualified_name, completions)
+function M.format_members_panel(qualified_name, completions, listing)
   local lines = { string.format("═══ %s ═══", qualified_name), "" }
+  local note = completions_wire.unavailable_line(listing) or completions_wire.size_line(listing)
+  if note then
+    lines[#lines + 1] = note
+    lines[#lines + 1] = ""
+  end
 
   -- Group by kind
   local grouped = {}
