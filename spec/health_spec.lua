@@ -355,7 +355,7 @@ describe("sagefs.health compatibility section", function()
 
   it("says compatible when plugin and daemon agree on the api version", function()
     local out = run("0.6.875", { status = "connected", api_version = 3, daemon_version = "0.6.875" })
-    assert.is_true(has(out.ok, "plugin understands api 3, daemon speaks api 3: compatible"))
+    assert.is_true(has(out.ok, "plugin understands api 3 to 4, daemon speaks api 3: compatible"))
     assert.equals(0, #out.warn)
     assert.equals(0, #out.error)
   end)
@@ -363,7 +363,7 @@ describe("sagefs.health compatibility section", function()
   it("reads the api version off the /health probe when the plugin has not connected", function()
     local out = run("0.6.875", { status = "disconnected" },
       [[{"healthy":true,"status":"Ready","apiVersion":3,"version":"0.6.875.0","features":[]}]])
-    assert.is_true(has(out.ok, "plugin understands api 3, daemon speaks api 3: compatible"))
+    assert.is_true(has(out.ok, "plugin understands api 3 to 4, daemon speaks api 3: compatible"))
   end)
 
   it("names the incompatibility and the fix when the daemon is newer than the plugin understands", function()

@@ -21,8 +21,8 @@ local M = {}
 M.api_range = {
   min = 3,
   min_reason = "api 3 added POST /api/sessions/{sid}/run-app and /stop-app, which :SageFsRunApp and :SageFsStopApp call",
-  max = 3,
-  max_reason = "api 3 is the newest contract this plugin release was tested against",
+  max = 4,
+  max_reason = "api 4 made GET /api/dependency-graph answer for one session (a session parameter, a State, and a 400 when several sessions are open and none is named), which :SageFsSymbolTests sends and reads",
 }
 
 --- What this plugin release reads off the wire, declared as the question "if a
