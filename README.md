@@ -142,7 +142,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 | **History browser** | `:SageFsHistory` → eval history for the cell under cursor with snapshot preview. |
 | **Export to .fsx** | `:SageFsExport` → export session history as executable F# script. |
 | **Load script** | `:SageFsLoadScript` → load an `.fsx` file via `#load`. File completion support. |
-| **Call graph** | `:SageFsCallers`/`:SageFsCallees` → floating window with call graph. |
+| **Symbol graph** | `:SageFsSymbolTests <symbol>` → floating window with the tests that reference the symbol, from the daemon's test dependency graph. SageFs keeps no call edges, so there are no callers or callees to show. Give the symbol's full name (`Module.function`); a partial name lists the tracked names that contain it. |
 | **Daemon lifecycle** | `:SageFsStart`/`:SageFsStop` → start/stop the SageFs daemon from Neovim. |
 | **Status dashboard** | `:SageFsStatus` → floating window with daemon, session, tests, coverage, config. |
 | **User autocmd events** | The daemon's events, fired as `User` autocmds for scripting integration. |
@@ -260,8 +260,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rg` | n | Scope map |
 | `<leader>rm` | n | Timeline |
 | `<leader>ry` | n | Type explorer |
-| `<leader>ra` | n | Callers |
-| `<leader>ro` | n | Callees |
+| `<leader>ra` | n | Tests that reference a symbol (opens `:SageFsSymbolTests `, you type the name) |
 | `<leader>rv` | n | Coverage |
 | **Server & reload** | | |
 | `<leader>rh` | n | Hot reload file picker |
@@ -332,8 +331,7 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `:SageFsTypeExplorer` | Browse namespaces → types → members via completions |
 | `:SageFsHistory` | Eval history for cell under cursor |
 | `:SageFsExport` | Export session history as `.fsx` file |
-| `:SageFsCallers <symbol>` | Show callers of a symbol |
-| `:SageFsCallees <symbol>` | Show callees of a symbol |
+| `:SageFsSymbolTests <symbol>` | Show the tests that reference a symbol, with their last result |
 | `:SageFsStats` | Runtime statistics (eval count, latency, SSE events) |
 | `:SageFsTimeline` | Eval timeline flame chart |
 | `:SageFsDiff` | Diff between last two evals of current cell |
@@ -643,6 +641,7 @@ Pure Lua modules (tested with [busted](https://lunarmodules.github.io/busted/) o
 | `sessions.lua` | Session response parsing, context-sensitive action filtering, folding daemon lifecycle events (`sessionReady`, `sessionFaulted`, session health) into the session snapshot |
 | `compat.lua` | Wire compatibility: the `apiVersion` range the plugin understands (with reasons), `check`, `startup_warning`, and the information-only `version_relation` |
 | `fileio.lua` | The one place the plugin writes files: makes the parent directory first, returns a message on failure |
+| `symbol_tests.lua` | Reading `GET /api/dependency-graph`: the request path, the failure messages, resolving a typed name against the tracked symbols, the float for `:SageFsSymbolTests` |
 | `spawn.lua` | The one place the plugin starts processes: `jobstart` that never raises, with the "sagefs is not on PATH" and "curl is not on PATH" messages |
 | `diagnostics.lua` | Diagnostic grouping, vim.diagnostic conversion, check response parsing |
 | `testing.lua` | Live testing state: SSE handlers, gutter signs, panel formatting, policies, pipeline, annotations |
@@ -740,7 +739,7 @@ Pure modules (the ones without a `vim` note) have zero vim API dependencies - th
 - **`/api/sessions/{id}/warmup-context`** - Session context (assemblies, namespaces)
 - **`/api/cancel-eval`** - Cancel a running evaluation
 - **`/api/history`** - Eval history for the cell under cursor
-- **`/api/callers`** / **`/api/callees`** - Call-graph queries
+- **`/api/dependency-graph`** - Symbol to covering tests (the overview, or `?symbol=<full name>`)
 - **`/api/completions`** - Omnifunc code completions
 - **`/api/sessions/{id}/export-fsx`** - Export session history as `.fsx`
 - **POST `/dashboard/completions`** - Code completions at cursor position

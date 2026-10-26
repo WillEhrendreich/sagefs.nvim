@@ -119,7 +119,7 @@ describe("plugin setup", function()
       "SageFsUnwatchAll", "SageFsReset", "SageFsHardReset", "SageFsContext",
       "SageFsTests", "SageFsRunTests", "SageFsTestPolicy", "SageFsTestPanel", "SageFsTestsHere",
       "SageFsEnableTesting", "SageFsDisableTesting", "SageFsCoverage", "SageFsTypeExplorer",
-      "SageFsHistory", "SageFsExport", "SageFsCallers", "SageFsCallees",
+      "SageFsHistory", "SageFsExport", "SageFsSymbolTests",
       "SageFsCancel", "SageFsTestTrace", "SageFsLoadScript",
       "SageFsStart", "SageFsStop", "SageFsNudge", "SageFsDebugTest", "SageFsDebugRelease",
     }

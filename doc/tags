@@ -1,8 +1,6 @@
 :SageFsArrows	sagefs.txt	/*:SageFsArrows*
 :SageFsBindingList	sagefs.txt	/*:SageFsBindingList*
 :SageFsBindings	sagefs.txt	/*:SageFsBindings*
-:SageFsCallees	sagefs.txt	/*:SageFsCallees*
-:SageFsCallers	sagefs.txt	/*:SageFsCallers*
 :SageFsCancel	sagefs.txt	/*:SageFsCancel*
 :SageFsCellStyle	sagefs.txt	/*:SageFsCellStyle*
 :SageFsClear	sagefs.txt	/*:SageFsClear*
@@ -56,6 +54,7 @@
 :SageFsStop	sagefs.txt	/*:SageFsStop*
 :SageFsStopApp	sagefs.txt	/*:SageFsStopApp*
 :SageFsSwitchProject	sagefs.txt	/*:SageFsSwitchProject*
+:SageFsSymbolTests	sagefs.txt	/*:SageFsSymbolTests*
 :SageFsTestPanel	sagefs.txt	/*:SageFsTestPanel*
 :SageFsTestPolicy	sagefs.txt	/*:SageFsTestPolicy*
 :SageFsTestTrace	sagefs.txt	/*:SageFsTestTrace*

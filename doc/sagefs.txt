@@ -362,11 +362,12 @@ Analysis ~
 :SageFsExportFile                                       *:SageFsExportFile*
     Export session history as an .fsx file to disk.
 
-:SageFsCallers {symbol}                                 *:SageFsCallers*
-    Show callers of a symbol in a floating window.
-
-:SageFsCallees {symbol}                                 *:SageFsCallees*
-    Show callees of a symbol in a floating window.
+:SageFsSymbolTests {symbol}                         *:SageFsSymbolTests*
+    Show the tests that reference a symbol, with their last result, in a
+    floating window. The daemon's graph maps a symbol to its tests and keeps
+    no call edges, so there is no list of callers or callees. Give the full
+    name (Module.function). A name the graph does not track is reported as
+    such, with the tracked names that contain what you typed.
 
 :SageFsStop                                             *:SageFsStop*
     Stop the managed SageFs daemon.
@@ -544,8 +545,7 @@ Browse & explore ~
   <leader>rg   Scope map (what each cell defines)
   <leader>rm   Timeline (flame chart of eval history)
   <leader>ry   Type explorer (namespace drill-down)
-  <leader>ra   Callers of symbol
-  <leader>ro   Callees of symbol
+  <leader>ra   Tests that reference a symbol (types :SageFsSymbolTests)
   <leader>rv   Coverage summary
 <
 Server & reload ~

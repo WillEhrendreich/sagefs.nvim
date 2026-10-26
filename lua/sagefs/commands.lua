@@ -1278,63 +1278,59 @@ function M.register_commands(plugin, helpers)
     })
   end, { desc = "Export session history as .fsx file (to disk)" })
 
-  -- ─── Call Graph Commands ─────────────────────────────────────────────────
+  -- ─── Symbol Graph Command ────────────────────────────────────────────────
 
-  vim.api.nvim_create_user_command("SageFsCallers", function(opts)
+  -- The old callers and callees commands are gone. They asked the dashboard port for /api/callers
+  -- and /api/callees, which the daemon never mapped, and its one symbol graph
+  -- (GET /api/dependency-graph on the MCP port) has no call edges. See sagefs/symbol_tests.lua.
+  vim.api.nvim_create_user_command("SageFsSymbolTests", function(opts)
+    local symbol_tests = require("sagefs.symbol_tests")
     if opts.args == "" then
-      helpers.notify("Usage: :SageFsCallers <symbol>", vim.log.levels.WARN)
+      helpers.notify("Usage: :SageFsSymbolTests <symbol>", vim.log.levels.WARN)
       return
     end
-    transport.http_json({
-      method = "GET",
-      url = helpers.dashboard_url() .. "/api/callers?symbol=" .. vim.uri_encode(opts.args),
-      timeout = 10,
-      callback = function(ok, raw)
-        if not ok then
-          helpers.notify("Failed to fetch callers" .. err_detail(raw), vim.log.levels.ERROR)
-          return
-        end
-        local parse_ok, data = pcall(vim.json.decode, raw)
-        if not parse_ok or not data then return end
-        local lines = { "Callers of: " .. opts.args, string.rep("─", 40) }
-        for _, caller in ipairs(data) do
-          table.insert(lines, string.format("  %s  (%s:%d)",
-            caller.symbol or caller.name or "?",
-            caller.file or "?", caller.line or 0))
-        end
-        if #lines == 2 then table.insert(lines, "  (no callers found)") end
-        render.show_float(lines, { title = "Callers" })
-      end,
-    })
-  end, { desc = "Show callers of a symbol", nargs = 1 })
+    local query = opts.args
 
-  vim.api.nvim_create_user_command("SageFsCallees", function(opts)
-    if opts.args == "" then
-      helpers.notify("Usage: :SageFsCallees <symbol>", vim.log.levels.WARN)
-      return
+    -- One GET, read through the pure module. `on_parsed` gets the decoded object; any failure
+    -- is reported here with its cause.
+    local function fetch(path, on_parsed)
+      local url = helpers.base_url() .. path
+      transport.http_json({
+        method = "GET",
+        url = url,
+        timeout = 10,
+        callback = function(ok, raw, meta)
+          local parsed, message = symbol_tests.read_reply(ok, raw, meta, url)
+          if not parsed then
+            helpers.notify(message, vim.log.levels.ERROR)
+            return
+          end
+          on_parsed(parsed)
+        end,
+      })
     end
-    transport.http_json({
-      method = "GET",
-      url = helpers.dashboard_url() .. "/api/callees?symbol=" .. vim.uri_encode(opts.args),
-      timeout = 10,
-      callback = function(ok, raw)
-        if not ok then
-          helpers.notify("Failed to fetch callees" .. err_detail(raw), vim.log.levels.ERROR)
+
+    fetch(symbol_tests.path(nil), function(parsed)
+      local overview, overview_message = symbol_tests.read_overview(parsed)
+      if not overview then
+        helpers.notify(overview_message, vim.log.levels.ERROR)
+        return
+      end
+      local resolution = symbol_tests.resolve(overview, query)
+      if resolution.kind ~= "exact" then
+        helpers.notify(symbol_tests.describe_resolution(resolution, query, overview.total), vim.log.levels.WARN)
+        return
+      end
+      fetch(symbol_tests.path(resolution.name), function(detail_parsed)
+        local detail, detail_message = symbol_tests.read_detail(detail_parsed)
+        if not detail then
+          helpers.notify(detail_message, vim.log.levels.ERROR)
           return
         end
-        local parse_ok, data = pcall(vim.json.decode, raw)
-        if not parse_ok or not data then return end
-        local lines = { "Callees of: " .. opts.args, string.rep("─", 40) }
-        for _, callee in ipairs(data) do
-          table.insert(lines, string.format("  %s  (%s:%d)",
-            callee.symbol or callee.name or "?",
-            callee.file or "?", callee.line or 0))
-        end
-        if #lines == 2 then table.insert(lines, "  (no callees found)") end
-        render.show_float(lines, { title = "Callees" })
-      end,
-    })
-  end, { desc = "Show callees of a symbol", nargs = 1 })
+        render.show_float(symbol_tests.format_tests(detail), { title = "Tests for symbol" })
+      end)
+    end)
+  end, { desc = "Show the tests that reference a symbol (the daemon's test dependency graph)", nargs = 1 })
 
   vim.api.nvim_create_user_command("SageFsStats", function()
     local lines = format.format_stats_lines(plugin.state)
@@ -1667,8 +1663,8 @@ function M.register_keymaps(plugin, helpers, bufnr)
   km("n", "<leader>rg", "<cmd>SageFsScopeMap<CR>", "SageFs: Scope map")
   km("n", "<leader>rm", "<cmd>SageFsTimeline<CR>", "SageFs: Timeline")
   km("n", "<leader>ry", "<cmd>SageFsTypeExplorer<CR>", "SageFs: Type explorer")
-  km("n", "<leader>ra", "<cmd>SageFsCallers<CR>", "SageFs: Callers")
-  km("n", "<leader>ro", "<cmd>SageFsCallees<CR>", "SageFs: Callees")
+  -- Opens the command line with the name typed and leaves the symbol to you: the command takes one.
+  km("n", "<leader>ra", ":SageFsSymbolTests ", "SageFs: Tests that reference a symbol")
   km("n", "<leader>rv", "<cmd>SageFsCoverage<CR>", "SageFs: Coverage")
 
   -- Server & reload
