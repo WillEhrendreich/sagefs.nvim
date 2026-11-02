@@ -54,6 +54,22 @@ local function decode(s)
   return nil
 end
 
+--- The words to show for a failed request's body. A member token the daemon cannot use is answered with HTTP 403 and
+--- `{"error":"invalid_token","error_description":"..."}` (SageFs #182); the description is the cause and the fix, so that is
+--- what the user reads. Any other body is shown as it came.
+---@param body any
+---@return string
+function M.failure_text(body)
+  if type(body) ~= "string" then return "" end
+  if body:find("^%s*{") then
+    local parsed = decode(body)
+    if parsed and parsed.error == "invalid_token" and type(parsed.error_description) == "string" and parsed.error_description ~= "" then
+      return parsed.error_description
+    end
+  end
+  return body
+end
+
 --- Read a reply body, SSE-framed or bare JSON, into a json-rpc outcome. When a
 --- stream carries several messages the last `data:` payload that has a result or
 --- an error wins.
@@ -167,7 +183,7 @@ function M.new(opts)
   -- token in it is hidden. A successful reply is left whole: a mint reply holds
   -- the token on purpose.
   local function fail(cb, text)
-    cb(false, member_token.redact(text, current_token()))
+    cb(false, member_token.redact(M.failure_text(text), current_token()))
   end
 
   local function take_id()

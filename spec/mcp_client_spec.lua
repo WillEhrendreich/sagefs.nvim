@@ -196,6 +196,36 @@ describe("mcp_client client: initialize once, reuse the session, recover when it
     assert.truthy(got.err:find("ECONNREFUSED", 1, true))
   end)
 
+  -- The daemon answers a member token it cannot use with HTTP 403 and an OAuth-shaped body (SageFs #182). The sentence in
+  -- error_description is the cause and the fix, so that is what a Neovim user should read, not the JSON around it.
+  local REFUSED = '{"error":"invalid_token","error_description":"The member token you presented is not known to this daemon: it was never minted here, or the daemon restarted (tokens do not survive a restart). \\u2192 Next: Ask the conductor to mint a new one with mint_member."}'
+  local REFUSED_TEXT = "The member token you presented is not known to this daemon: it was never minted here, or the daemon restarted (tokens do not survive a restart). \226\134\146 Next: Ask the conductor to mint a new one with mint_member."
+
+  it("shows a refused token's cause in words when a call is answered with 403", function()
+    local request = scripted({ INIT, ACK, { ok = false, body = REFUSED, meta = { status = 403, headers = {} } } })
+    local client = mcp.new({ port = 37749, request = request })
+    local got
+    client.call_tool("get_cohort_status", {}, function(ok, err) got = { ok = ok, err = err } end)
+    assert.is_false(got.ok)
+    assert.are.equal(REFUSED_TEXT, got.err)
+  end)
+
+  it("shows the same words when the token is refused before a session exists", function()
+    local request = scripted({ { ok = false, body = REFUSED, meta = { status = 403, headers = {} } } })
+    local client = mcp.new({ port = 37749, request = request })
+    local got
+    client.call_tool("get_cohort_status", {}, function(ok, err) got = { ok = ok, err = err } end)
+    assert.is_false(got.ok)
+    assert.are.equal(REFUSED_TEXT, got.err)
+  end)
+
+  it("leaves any other failure text as it was", function()
+    assert.are.equal("connect: ECONNREFUSED", mcp.failure_text("connect: ECONNREFUSED"))
+    assert.are.equal('{"error":"server_error"}', mcp.failure_text('{"error":"server_error"}'))
+    assert.are.equal('{"error":"invalid_token"}', mcp.failure_text('{"error":"invalid_token"}'))
+    assert.are.equal("", mcp.failure_text(nil))
+  end)
+
   it("reports an initialize answer that carries no session header", function()
     local request = scripted({ { ok = true, body = INIT.body, meta = { status = 200, headers = {} } } })
     local client = mcp.new({ port = 37749, request = request })
