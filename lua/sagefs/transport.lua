@@ -169,7 +169,31 @@ end
 ---@return { start: fun(), stop: fun(), active: fun(): boolean }
 function M.connect_sse(url, opts)
   local inactivity_ms = (opts.inactivity_timeout or 60) * 1000
-  local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "", _inactivity_timer = nil }
+  -- `_last_event_id` is the newest id the daemon sent on this stream. It outlives a dropped connection, so
+  -- the reconnect can say where it got to and be sent what it missed.
+  local handle = { job_id = nil, _buffer_parts = {}, _stopped = false, _attempt = 0, _connected = false, _partial = "", _inactivity_timer = nil, _last_event_id = nil }
+
+  local function curl_command()
+    local cmd = { "curl", "--no-buffer", "-N", "--compressed", url, "--silent", "--show-error" }
+    if handle._last_event_id then
+      table.insert(cmd, "-H")
+      table.insert(cmd, "Last-Event-ID: " .. handle._last_event_id)
+    end
+    return cmd
+  end
+
+  -- Moves the remembered id along, and drops the frames that carry only an id: they say where the
+  -- daemon has got to, and hold nothing for a handler.
+  local function take_ids(events)
+    local deliver = {}
+    for _, event in ipairs(events) do
+      if event.id then handle._last_event_id = event.id end
+      if not (event.id and event.type == nil and event.data == nil) then
+        table.insert(deliver, event)
+      end
+    end
+    return deliver
+  end
 
   local function reset_inactivity_timer()
     if handle._inactivity_timer then
@@ -196,7 +220,7 @@ function M.connect_sse(url, opts)
     handle._connected = false
     handle._attempt = handle._attempt + 1
     local job_id, spawn_err = require("sagefs.spawn").jobstart(
-      { "curl", "--no-buffer", "-N", "--compressed", url, "--silent", "--show-error" },
+      curl_command(),
       {
         on_stdout = function(_, data)
           if not data then return end
@@ -221,6 +245,7 @@ function M.connect_sse(url, opts)
           local buffer = table.concat(handle._buffer_parts)
           local events, remainder = sse_parser.parse_chunk(buffer)
           handle._buffer_parts = { remainder }
+          events = take_ids(events)
           if #events > 0 and opts.on_events then
             opts.on_events(events)
           end

@@ -104,6 +104,38 @@ describe("sse.parse_chunk", function()
     assert.are.equal("ping", events[1].type)
     assert.are.equal("", events[1].data)
   end)
+
+  -- The daemon numbers every frame `<epoch>:<seq>` so a client that drops can say where it got to.
+  it("reads the id field of an event", function()
+    local events, _ = sse.parse_chunk("id: abc12345:7\nevent: state\ndata: {}\n\n")
+    assert.are.equal(1, #events)
+    assert.are.equal("abc12345:7", events[1].id)
+    assert.are.equal("state", events[1].type)
+    assert.are.equal("{}", events[1].data)
+  end)
+
+  it("keeps the whole id when the epoch holds colons", function()
+    local events, _ = sse.parse_chunk("id: host:37749:7\nevent: state\ndata: {}\n\n")
+    assert.are.equal("host:37749:7", events[1].id)
+  end)
+
+  it("reads an id-only event as an id and nothing else", function()
+    local events, _ = sse.parse_chunk("id: abc12345:9\n\n")
+    assert.are.equal(1, #events)
+    assert.are.equal("abc12345:9", events[1].id)
+    assert.is_nil(events[1].type)
+    assert.is_nil(events[1].data)
+  end)
+
+  it("leaves id nil for an event that has none", function()
+    local events, _ = sse.parse_chunk("event: state\ndata: {}\n\n")
+    assert.is_nil(events[1].id)
+  end)
+
+  it("takes the last id when an event repeats the field", function()
+    local events, _ = sse.parse_chunk("id: a:1\nid: a:2\nevent: state\ndata: {}\n\n")
+    assert.are.equal("a:2", events[1].id)
+  end)
 end)
 
 -- ─── Property tests: SSE parsing invariants ──────────────────────────────────

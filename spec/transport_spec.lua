@@ -147,6 +147,85 @@ describe("transport.connect_sse", function()
     assert.is_not_nil(fake.jobs[42])
   end)
 
+  -- The daemon puts an id on every frame. A client that drops and comes back with the last one it saw is
+  -- sent what it missed, so the plugin has to remember it and say it.
+  local function header_of(cmd)
+    for i, arg in ipairs(cmd) do
+      if arg == "-H" and cmd[i + 1] and cmd[i + 1]:match("^Last%-Event%-ID:") then
+        return cmd[i + 1]
+      end
+    end
+    return nil
+  end
+
+  it("sends Last-Event-ID on a reconnect with the last id it saw, and none on the first connect", function()
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      auto_reconnect = true,
+    })
+
+    handle.start()
+    assert.is_nil(header_of(fake.jobs[41].cmd))
+
+    emit_stdout(41, { "id: abc12345:3", "event: ping", "data: x", "", "" })
+    exit_job(41, 18)
+    fake.deferred[1].fn()
+
+    assert.are.equal("Last-Event-ID: abc12345:3", header_of(fake.jobs[42].cmd))
+  end)
+
+  it("takes the newest id, so the second reconnect names the frame after the first", function()
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function() end,
+      auto_reconnect = true,
+    })
+
+    handle.start()
+    emit_stdout(41, { "id: abc12345:3", "event: ping", "data: x", "", "" })
+    exit_job(41, 18)
+    fake.deferred[1].fn()
+    emit_stdout(42, { "id: abc12345:5", "event: ping", "data: y", "", "" })
+    exit_job(42, 18)
+    fake.deferred[2].fn()
+
+    assert.are.equal("Last-Event-ID: abc12345:5", header_of(fake.jobs[43].cmd))
+  end)
+
+  it("moves the id on an id-only frame without handing the frame to on_events", function()
+    local batches = {}
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function(events)
+        table.insert(batches, events)
+      end,
+      auto_reconnect = true,
+    })
+
+    handle.start()
+    emit_stdout(41, { "id: abc12345:9", "", "" })
+    exit_job(41, 18)
+    fake.deferred[1].fn()
+
+    assert.are.equal(0, #batches)
+    assert.are.equal("Last-Event-ID: abc12345:9", header_of(fake.jobs[42].cmd))
+  end)
+
+  it("hands on_events a frame that has an id, with the id still on it", function()
+    local batches = {}
+    local handle = transport.connect_sse("http://127.0.0.1:37749/events", {
+      on_events = function(events)
+        table.insert(batches, events)
+      end,
+      auto_reconnect = false,
+    })
+
+    handle.start()
+    emit_stdout(41, { "id: abc12345:4", "event: state", 'data: {"phase":1}', "", "" })
+
+    assert.are.equal(1, #batches[1])
+    assert.are.equal("state", batches[1][1].type)
+    assert.are.equal('{"phase":1}', batches[1][1].data)
+  end)
+
   it("suppresses disconnect callbacks after a manual stop", function()
     local disconnects = 0
     local reconnects = 0

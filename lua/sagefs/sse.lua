@@ -4,9 +4,11 @@ local M = {}
 
 --- Parse a chunk of SSE text into events and unconsumed remainder
 --- Events are delimited by blank lines (\n\n)
---- Each event can have: event: <type>, data: <payload>, : <comment>
+--- Each event can have: event: <type>, data: <payload>, id: <id>, : <comment>
+--- The daemon numbers every frame `<epoch>:<seq>` in `id:`, and sends an id-only
+--- frame after a catch-up, so a client that drops can say where it got to.
 ---@param chunk string
----@return {type: string?, data: string?}[], string remainder
+---@return {type: string?, data: string?, id: string?}[], string remainder
 function M.parse_chunk(chunk)
   local events = {}
   local remainder = ""
@@ -34,11 +36,16 @@ function M.parse_chunk(chunk)
 
     -- Parse the event lines
     local event_type = nil
+    local event_id = nil
     local data_parts = {}
 
     for line in (event_text .. "\n"):gmatch("([^\n]*)\n") do
       if line:match("^:") then
         -- Comment, ignore
+      elseif line:match("^id:") then
+        -- One optional space after the colon belongs to the format. An empty id says nothing.
+        local value = line:match("^id: ?(.*)$")
+        if value ~= "" then event_id = value end
       elseif line:match("^event: ") then
         event_type = line:match("^event: (.+)")
       elseif line:match("^data: ") then
@@ -53,7 +60,7 @@ function M.parse_chunk(chunk)
       data = table.concat(data_parts, "\n")
     end
 
-    table.insert(events, { type = event_type, data = data })
+    table.insert(events, { type = event_type, data = data, id = event_id })
   end
 
   return events, remainder
