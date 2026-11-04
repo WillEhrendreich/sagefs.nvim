@@ -1117,6 +1117,24 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
+  it("session_created and session_stopped ask for the session list once, so a stop heard after a replay is not left on screen", function()
+    with_sse(function(sagefs, cap)
+      local original_list_sessions = sagefs.list_sessions
+      local original_debounce = sagefs.config.session_refresh_debounce_ms
+      local asked = 0
+      sagefs.config.session_refresh_debounce_ms = 1
+      sagefs.list_sessions = function(cb) asked = asked + 1; if cb then cb({ ok = false }) end end
+      -- A burst, as a replay delivers it: one stop and one creation inside one debounce window.
+      send(cap, "session", { type = "session_stopped", sessionId = "s1" })
+      send(cap, "session", { type = "session_created", sessionId = "s2", projectNames = { "App" } })
+      vim.wait(1000, function() return asked > 0 end, 5)
+      vim.wait(50)
+      sagefs.list_sessions = original_list_sessions
+      sagefs.config.session_refresh_debounce_ms = original_debounce
+      assert_eq(1, asked, "one GET /api/sessions for the burst")
+    end)
+  end)
+
   it("a (re)connect refreshes the session list, so a missed Ready event cannot stick", function()
     with_sse(function(sagefs, cap)
       local transport = require("sagefs.transport")

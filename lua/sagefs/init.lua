@@ -462,6 +462,13 @@ local function build_handlers()
       fire_user_event("workflow_switched", data)
     elseif event_type == "workflow_switching" then
       fire_user_event("workflow_switching", data)
+    elseif event_type == "session_created" or event_type == "session_stopped" then
+      -- The daemon says the session list moved. These are numbered in its replay log, so a client that
+      -- was away is told, in order, what happened to the list while it was gone: a session stopped during
+      -- the gap would otherwise stay on screen. The list itself is /api/sessions, and a burst (a replay)
+      -- shares one GET through the coalescing window.
+      refresh_sessions_soon()
+      fire_user_event(event_type, data)
     end
   end
   handlers.bindings_snapshot = function(raw)
