@@ -135,6 +135,8 @@ function M.classify_event(event)
     -- File annotations (inline feedback: CodeLens, failures, coverage detail)
     file_annotations = "file_annotations",
     FileAnnotationsUpdated = "file_annotations",
+    -- Which files have annotations; the editor asks for the ones it has open (annotations_fetch.lua)
+    annotations_available = "annotations_available",
     -- File watching
     HotReloadTriggered = "hot_reload_triggered",
     FileChanged = "file_changed",

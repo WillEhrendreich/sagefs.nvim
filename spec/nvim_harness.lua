@@ -1117,6 +1117,115 @@ describe("session lifecycle over SSE", function()
     end)
   end)
 
+  -- `annotations_available` says which files have annotations; the editor asks for the ones it has open,
+  -- and the answer (annotations plus CoverageViews) goes through the handlers the file_annotations and
+  -- coverage_view frames use.
+  describe("annotations_available", function()
+    local function open_buffer(path)
+      local existing = vim.fn.bufnr(path)
+      if existing > 0 then vim.api.nvim_buf_delete(existing, { force = true }) end
+      local buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(buf, path)
+      return buf
+    end
+
+    local function answer(path, generation)
+      return vim.json.encode({
+        FilePath = path, TestAnnotations = {}, CoverageAnnotations = {}, CodeLenses = {}, InlineFailures = {},
+        CoverageViews = { { SessionId = "s1", Generation = generation, Symbol = "A.f", FilePath = path,
+          DefinitionLine = 3, TotalCount = 2, Overflow = "Within", InlineBadgeText = "✓ 2", Health = "Healthy" } },
+      })
+    end
+
+    local function with_fake_daemon(fn)
+      local transport = require("sagefs.transport")
+      local original = transport.http_json
+      local asked = {}
+      transport.http_json = function(opts) table.insert(asked, opts) end
+      local ok, err = pcall(fn, asked)
+      transport.http_json = original
+      if not ok then error(err, 0) end
+    end
+
+    it("asks for the open file only, and the answer reaches the annotation and coverage state", function()
+      with_sse(function(sagefs, cap)
+        with_fake_daemon(function(asked)
+          sagefs.active_session = starting_session("s1")
+          local buf = open_buffer("/repo/src/A.fs")
+          send(cap, "annotations_available", { SessionId = "s1", Generation = 2, Files = { "/repo/src/A.fs", "/repo/src/B.fs" } })
+          assert_eq(1, #asked, "one request: B is on the list but not open")
+          assert_contains(asked[1].url, "file=%2Frepo%2Fsrc%2FA.fs", "the open file")
+          assert_contains(asked[1].url, "session=s1", "for the session")
+          asked[1].callback(true, answer("/repo/src/A.fs", 2))
+          assert_truthy(sagefs.annotations_state.files["/repo/src/A.fs"], "the annotations were stored")
+          assert_truthy(sagefs.coverage_state.views["s1"], "and the view reached the coverage state")
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end)
+      end)
+    end)
+
+    it("ignores another session's list", function()
+      with_sse(function(sagefs, cap)
+        with_fake_daemon(function(asked)
+          sagefs.active_session = starting_session("s1")
+          local buf = open_buffer("/repo/src/A.fs")
+          send(cap, "annotations_available", { SessionId = "someone-else", Generation = 1, Files = { "/repo/src/A.fs" } })
+          assert_eq(0, #asked, "not this editor's session")
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end)
+      end)
+    end)
+
+    it("drops the answer of an older request for a file once a newer one has been made", function()
+      with_sse(function(sagefs, cap)
+        with_fake_daemon(function(asked)
+          sagefs.active_session = starting_session("s1")
+          local buf = open_buffer("/repo/src/A.fs")
+          local list = { SessionId = "s1", Generation = 2, Files = { "/repo/src/A.fs" } }
+          send(cap, "annotations_available", list)
+          send(cap, "annotations_available", list)
+          assert_eq(2, #asked, "two asks")
+          -- The newer answer lands first, then the older one.
+          asked[2].callback(true, answer("/repo/src/A.fs", 5))
+          asked[1].callback(true, answer("/repo/src/A.fs", 4))
+          local entry = sagefs.coverage_state.views["s1"] and next(sagefs.coverage_state.views["s1"])
+          assert_truthy(entry, "a view is stored")
+          local _, bucket = next(sagefs.coverage_state.views["s1"])
+          assert_eq(5, bucket.generation, "the newer generation stands")
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end)
+      end)
+    end)
+
+    it("fetches a file whose buffer opens after the list arrived", function()
+      with_sse(function(sagefs, cap)
+        with_fake_daemon(function(asked)
+          sagefs.active_session = starting_session("s1")
+          send(cap, "annotations_available", { SessionId = "s1", Generation = 2, Files = { "/repo/src/B.fs" } })
+          assert_eq(0, #asked, "nothing open yet")
+          local buf = open_buffer("/repo/src/B.fs")
+          sagefs.fetch_annotations_for_buffer(buf)
+          assert_eq(1, #asked, "the buffer that opened is asked for")
+          assert_contains(asked[1].url, "file=%2Frepo%2Fsrc%2FB.fs", "that file")
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end)
+      end)
+    end)
+
+    it("does not ask for a buffer whose file is not on the list", function()
+      with_sse(function(sagefs, cap)
+        with_fake_daemon(function(asked)
+          sagefs.active_session = starting_session("s1")
+          send(cap, "annotations_available", { SessionId = "s1", Generation = 2, Files = { "/repo/src/B.fs" } })
+          local buf = open_buffer("/repo/src/Z.fs")
+          sagefs.fetch_annotations_for_buffer(buf)
+          assert_eq(0, #asked, "Z has no annotations")
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end)
+      end)
+    end)
+  end)
+
   it("session_created and session_stopped ask for the session list once, so a stop heard after a replay is not left on screen", function()
     with_sse(function(sagefs, cap)
       local original_list_sessions = sagefs.list_sessions

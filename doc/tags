@@ -67,6 +67,7 @@
 :SageFsWatchAll	sagefs.txt	/*:SageFsWatchAll*
 :SageFsWorkflow	sagefs.txt	/*:SageFsWorkflow*
 SageFsAffectedTestsComputed	sagefs.txt	/*SageFsAffectedTestsComputed*
+SageFsAnnotationsAvailable	sagefs.txt	/*SageFsAnnotationsAvailable*
 SageFsBindingScopeMap	sagefs.txt	/*SageFsBindingScopeMap*
 SageFsBindingsSnapshot	sagefs.txt	/*SageFsBindingsSnapshot*
 SageFsCellDependencies	sagefs.txt	/*SageFsCellDependencies*

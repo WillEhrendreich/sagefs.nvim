@@ -391,6 +391,85 @@ local function build_handlers()
     end
   end
 
+  -- `annotations_available`: the daemon says which files have annotations, and the editor asks for the
+  -- ones it has open instead of being sent every file's on connect. The answer is a file's annotations
+  -- plus its CoverageViews, handed to the same reducers the `file_annotations` and `coverage_view` frames
+  -- use. A request for a file that a newer request has superseded is dropped, as hydration's are.
+  local fetch = require("sagefs.annotations_fetch")
+  local annotations_gate = hydration.new_gate()
+  local def_for = {}
+  for _, def in ipairs(SSE_HANDLER_DEFS) do def_for[def.action] = def end
+
+  local function apply_answer(session_id, answer)
+    local annotations, views = fetch.split_answer(answer)
+    if not annotations then return end
+    -- A frame names its session; the route's answer does not, so the file's annotations take the request's.
+    annotations.SessionId = annotations.SessionId or session_id
+    run_def(def_for.file_annotations, annotations)
+    for _, view in ipairs(views) do
+      view.SessionId = view.SessionId or session_id
+      run_def(def_for.coverage_view, view)
+    end
+    schedule_render()
+  end
+
+  local function fetch_file(session_id, file)
+    local key = session_id .. "|" .. file
+    local ticket = hydration.take_ticket(annotations_gate, key)
+    require("sagefs.transport").http_json({
+      url = fetch.url(M.config.port or 37749, session_id, file),
+      callback = function(ok, raw_body)
+        if not ok or type(raw_body) ~= "string" or raw_body == "" then return end
+        if not hydration.is_current(annotations_gate, key, ticket) then return end
+        local decoded_ok, answer = pcall(vim.json.decode, raw_body)
+        if not decoded_ok then return end
+        apply_answer(session_id, answer)
+      end,
+    })
+  end
+
+  local function open_buffer_paths(only_buf)
+    local paths = {}
+    local bufs = only_buf and { only_buf } or vim.api.nvim_list_bufs()
+    for _, buf in ipairs(bufs) do
+      if vim.api.nvim_buf_is_loaded(buf) then
+        local name = vim.api.nvim_buf_get_name(buf)
+        if name ~= "" then paths[#paths + 1] = name end
+      end
+    end
+    return paths
+  end
+
+  local function fetch_available(only_buf)
+    local available = M.available_annotations
+    if not available then return end
+    for _, file in ipairs(fetch.files_to_fetch(available.files, open_buffer_paths(only_buf))) do
+      fetch_file(available.session_id, file)
+    end
+  end
+
+  handlers.annotations_available = function(raw)
+    local data = decode_event_data(raw)
+    if not data then return end
+    local session_id = data.SessionId or data.sessionId
+    if type(session_id) ~= "string" or session_id == "" then return end
+    if not session_matches({ SessionId = session_id }) then return end
+    M.available_annotations = { session_id = session_id, files = data.Files or data.files or {} }
+    fire_user_event("annotations_available", data)
+    fetch_available(nil)
+  end
+
+  --- Ask for one buffer's annotations if the daemon listed its file. Called when a buffer opens, since the
+  --- list may have arrived before it did.
+  M.fetch_annotations_for_buffer = function(bufnr)
+    fetch_available(bufnr)
+  end
+  local annotations_group = vim.api.nvim_create_augroup("SageFsAnnotationsFetch", { clear = true })
+  vim.api.nvim_create_autocmd("BufReadPost", {
+    group = annotations_group,
+    callback = function(args) M.fetch_annotations_for_buffer(args.buf) end,
+  })
+
   -- Custom handlers that don't fit the pattern
   -- Daemon 0.6 folds most lifecycle changes into a single `state` SSE event whose
   -- real discriminant is a field inside the JSON. Decode the envelope, classify it,

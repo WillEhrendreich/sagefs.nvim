@@ -9,8 +9,8 @@ describe("events", function()
       assert.is_true(#events.EVENT_NAMES > 0)
     end)
 
-    it("contains 46 event names", function()
-      assert.are.equal(46, #events.EVENT_NAMES)
+    it("contains 47 event names", function()
+      assert.are.equal(47, #events.EVENT_NAMES)
     end)
 
     it("all names start with SageFs", function()

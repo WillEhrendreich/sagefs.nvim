@@ -1259,6 +1259,13 @@ Event reference ~
     Fired with per-file annotation data (coverage signs, CodeLens,
     inline failure messages).
 
+*SageFsAnnotationsAvailable*
+    Fired when the daemon lists the files of a session that have annotations
+    (`Files`, with `SessionId` and `Generation`). The plugin asks for the
+    ones it has open, and for a buffer that opens later, with
+    GET /api/live-testing/file-annotations; the answer is handled as a
+    file_annotations event followed by one coverage_view event per symbol.
+
 *SageFsCoverageView*
     Fired with one per-symbol coverage badge (symbol, definition line, total
     covering tests, one-line badge text, health, run generation).

@@ -26,6 +26,7 @@ local EVENT_CATALOG = {
   { "run_tests_requested", "SageFsRunTestsRequested" },
   { "test_summary", "SageFsTestSummary" },
   { "file_annotations", "SageFsFileAnnotations" },
+  { "annotations_available", "SageFsAnnotationsAvailable" },
   { "bindings_snapshot", "SageFsBindingsSnapshot" },
   { "test_trace", "SageFsTestTrace" },
   { "reconnecting", "SageFsReconnecting" },
