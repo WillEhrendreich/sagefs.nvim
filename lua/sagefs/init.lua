@@ -333,6 +333,9 @@ local function build_handlers()
 
   -- Generate handlers from data-driven definitions
   local hydration = require("sagefs.batch_hydration")
+  -- Which list fetch may still be applied: a frame that owes one takes a ticket for its session, and an
+  -- answer that is no longer the newest is dropped (see batch_hydration.is_current).
+  local hydration_gate = hydration.new_gate()
 
   -- One dispatch of a decoded frame, kept as a named function so the hydration below can dispatch the
   -- SAME frame a second time once its list has arrived. Re-encoding a synthetic SSE line to go back
@@ -368,10 +371,14 @@ local function build_handlers()
       if def.hydrate_entries and hydration.needs_entries(data) then
         local sid = hydration.session_of(data)
         if sid then
+          local ticket = hydration.take_ticket(hydration_gate, sid)
           require("sagefs.transport").http_json({
             url = string.format("http://localhost:%d/api/live-testing/entries?session=%s", M.config.port or 37749, sid),
             callback = function(ok, raw_body)
               if not ok or type(raw_body) ~= "string" or raw_body == "" then return end
+              -- A newer frame for this session asked after this one; its own answer is coming, and
+              -- applying this one now would put its older generation over the newer.
+              if not hydration.is_current(hydration_gate, sid, ticket) then return end
               local decoded_ok, entries = pcall(vim.json.decode, raw_body)
               if not decoded_ok or type(entries) ~= "table" then return end
               run_def(def, hydration.with_entries(data, entries))

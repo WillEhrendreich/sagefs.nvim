@@ -43,4 +43,32 @@ function M.with_entries(data, entries)
   return enriched
 end
 
+--- A fresh gate: the newest ticket taken for each session.
+---@return table
+function M.new_gate()
+  return {}
+end
+
+--- Take the next ticket for a session. Tickets only grow. The gate is changed in place, because the
+--- dispatcher owns one for the life of the connection and every fetch callback has to see the same one.
+---@param gate table
+---@param session_id string
+---@return integer
+function M.take_ticket(gate, session_id)
+  local ticket = (gate[session_id] or 0) + 1
+  gate[session_id] = ticket
+  return ticket
+end
+
+--- Is this still the newest ticket taken for the session? A newer frame has its own fetch coming, so
+--- an older answer that lands after it would put an older generation, freshness and completion over
+--- the newer ones.
+---@param gate table
+---@param session_id string
+---@param ticket integer
+---@return boolean
+function M.is_current(gate, session_id, ticket)
+  return gate[session_id] == ticket
+end
+
 return M

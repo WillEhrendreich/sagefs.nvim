@@ -45,4 +45,42 @@ describe("batch_hydration", function()
       assert.is_nil(frame.Entries, "a hydrator that rewrote its input would be the reason a later render showed the wrong list")
     end)
   end)
+
+  -- After a reconnect the stream can replay several summary-only batch frames, each firing its own
+  -- fetch, and the answers land in any order. The one that landed last decided the generation,
+  -- freshness and completion the panel showed, even when it belonged to an older frame. A frame that
+  -- owes a fetch takes a ticket for its session; only the newest ticket's answer may be applied.
+  describe("ticket gate", function()
+    it("lets a frame's own answer through when no newer frame has asked since", function()
+      local gate = hydration.new_gate()
+      local ticket = hydration.take_ticket(gate, "s1")
+      assert.is_true(hydration.is_current(gate, "s1", ticket))
+    end)
+
+    it("drops an older frame's answer once a newer frame has asked", function()
+      local gate = hydration.new_gate()
+      local first = hydration.take_ticket(gate, "s1")
+      local second = hydration.take_ticket(gate, "s1")
+      assert.is_false(hydration.is_current(gate, "s1", first), "the second ask supersedes the first")
+      assert.is_true(hydration.is_current(gate, "s1", second))
+    end)
+
+    it("keeps one session's asks apart from another's", function()
+      local gate = hydration.new_gate()
+      local mine = hydration.take_ticket(gate, "s1")
+      hydration.take_ticket(gate, "s2")
+      assert.is_true(hydration.is_current(gate, "s1", mine))
+    end)
+
+    it("does not count a ticket for a session that never asked", function()
+      assert.is_false(hydration.is_current(hydration.new_gate(), "s1", 1))
+    end)
+
+    it("hands out tickets that only grow", function()
+      local gate = hydration.new_gate()
+      local a = hydration.take_ticket(gate, "s1")
+      local b = hydration.take_ticket(gate, "s1")
+      assert.is_true(b > a)
+    end)
+  end)
 end)
