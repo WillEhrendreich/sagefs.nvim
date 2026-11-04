@@ -258,8 +258,9 @@ local SSE_HANDLER_DEFS = {
   { action = "run_tests_requested", event = "run_tests_requested" },
   { action = "eval_completed", event = "eval_completed" },
   { action = "hot_reload_triggered", event = "hot_reload_triggered" },
-  -- Cohort rows: one cohort spans every session, so none is session-scoped.
-  -- :SageFsCohort refreshes on these (cohort_view.lua).
+  -- Cohort rows: a cohort spans every session of one scope, so none is session-scoped. The daemon sends
+  -- the matrix of every cohort it runs (`CohortScope` names which), so a frame can be another
+  -- repository's; :SageFsCohort refreshes on these and reads its own cohort when it does (cohort_view.lua).
   { action = "cohort_matrix", event = "cohort_matrix" },
   { action = "claim_changed", event = "claim_changed" },
   { action = "landing_changed", event = "landing_changed" },

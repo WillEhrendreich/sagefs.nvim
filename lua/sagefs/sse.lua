@@ -166,7 +166,9 @@ function M.classify_event(event)
     file_reloaded = "file_reloaded",
     SystemAlarm = "system_alarm",
     system_alarm = "system_alarm",
-    -- Cohort wire rows (one cohort spans every session, so none carries a SessionId)
+    -- Cohort wire rows. A cohort spans every session of one scope (a repository), so none carries a
+    -- SessionId. The daemon runs one cohort per scope and sends the matrix of each, naming it in
+    -- `CohortScope`; claim_changed, landing_changed and save_observed come from the launch cohort only.
     cohort_matrix = "cohort_matrix",
     claim_changed = "claim_changed",
     landing_changed = "landing_changed",
