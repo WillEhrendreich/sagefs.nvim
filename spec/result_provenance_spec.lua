@@ -118,3 +118,24 @@ describe("the mark shows where the status is coloured", function()
     assert.are.equal("Passed", marked.status)
   end)
 end)
+describe("a confirmation the daemon did not attempt says so in words", function()
+  -- A session that holds REPL state is confirmed in a throwaway worker. When the machine has no room for one, or the
+  -- session's startup would fight it for a port, the daemon runs no build and marks the rows BuildDisagrees with the
+  -- case NotConfirmed. The row must say that no build ran, not that one disagreed.
+  it("carries NotConfirmed as the why", function()
+    local state = testing.new()
+    testing.handle_results_batch(state, {
+      entries = {
+        entry("t1", "Passed", du("BuildDisagrees", { du("NotConfirmed", { "the machine is short on memory" }) })),
+      },
+      summary = { total = 1, passed = 1, failed = 0, stale = 0, running = 0 },
+    })
+    assert.are.equal("NotConfirmed", state.tests["t1"].provenanceReason)
+  end)
+
+  it("says no real build ran, with its own words rather than the generic disagreement", function()
+    local words = testing.provenance_words("BuildDisagrees", "NotConfirmed")
+    assert.is_truthy(words:find("no real build", 1, true))
+    assert.are_not.equal(testing.provenance_words("BuildDisagrees", "SomeCaseTheDaemonGrewLater"), words)
+  end)
+end)

@@ -757,6 +757,7 @@ local DISAGREEMENT_WORDS = {
   BuildFailed = "the real build failed, so this result is not confirmed",
   ResultDiffers = "the real build disagreed with the result the session produced",
   BuildUnanswered = "the real build did not answer, so this result is not confirmed",
+  NotConfirmed = "no real build ran for this result, so it is not confirmed",
 }
 
 function M.provenance_words(provenance, reason)
