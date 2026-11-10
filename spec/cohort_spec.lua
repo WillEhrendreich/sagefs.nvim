@@ -441,3 +441,52 @@ describe("cohort events from the SSE stream", function()
     assert.is_nil(text:find("AAAAAAAAAAAAAAAAAAAAAA", 1, true))
   end)
 end)
+
+-- The daemon marks a claim the conductor may clear (CohortStatusText.claimClearableText): its state is followed by
+-- ` | clearable: <who> has been silent for N min; the conductor clears this claim with release_claim ...`.
+local CLEARABLE_STATUS = table.concat({
+  "Cohort ledger head: v21",
+  "Conductor: mcp:m-0123456789abcdef",
+  "Members (2):",
+  "  - mcp:m-0123456789abcdef [Implementer] present",
+  "  - cap:00112233445566ff [Implementer] present",
+  "Claims (2):",
+  '  - c-1 File "src/Foo/a.fs" held-by=cap:00112233445566ff fence=2 state=Held "cap:00112233445566ff" | clearable: cap:00112233445566ff has been silent for 7 min; the conductor clears this claim with release_claim (this claim id and fence)',
+  '  - c-2 File "src/Foo/b.fs" held-by=mcp:m-0123456789abcdef fence=3 state=Held "mcp:m-0123456789abcdef"',
+  "Integration head: 09e824af17c04b884be4132353111a44801975d1",
+  "Landings: (none)",
+  "Integration session: pending",
+  "",
+}, "\n")
+
+describe("cohort.parse_status: a clearable claim", function()
+  local model = C.parse_status(CLEARABLE_STATUS)
+
+  it("keeps the claim's state as its case name and carries the clearable clause apart from it", function()
+    assert.are.equal("Held", model.claims[1].state)
+    assert.truthy(model.claims[1].clearable:find("has been silent for 7 min", 1, true))
+    assert.truthy(model.claims[1].clearable:find("release_claim", 1, true))
+  end)
+
+  it("leaves a claim that is not clearable with no clause", function()
+    assert.are.equal("Held", model.claims[2].state)
+    assert.is_nil(model.claims[2].clearable)
+  end)
+end)
+
+describe("cohort.render: a clearable claim", function()
+  local lines = line_texts(C.render(C.parse_status(CLEARABLE_STATUS)))
+  local text = table.concat(lines, "\n")
+
+  it("says under the claim that the conductor can clear it, and who has gone quiet", function()
+    assert.truthy(text:find("clearable: cap:00112233445566ff has been silent for 7 min", 1, true))
+  end)
+
+  it("says it once: the other claim has no such line", function()
+    local count = 0
+    for _, line in ipairs(lines) do
+      if line:find("clearable:", 1, true) then count = count + 1 end
+    end
+    assert.are.equal(1, count)
+  end)
+end)

@@ -203,7 +203,13 @@ end
 local function parse_claim(line)
   local id, scope, holder, fence, state = line:match("^%s+%- (%S+) (.-) held%-by=(%S+) fence=(%d+) state=(.*)$")
   if not id then return nil end
-  return { id = id, scope = scope, held_by = holder, fence = tonumber(fence), state = state:match("^%a+") or state }
+  -- A claim the conductor may clear carries ` | clearable: <clause>` after its state (CohortStatusText.claimClearableText).
+  local head, clearable = state:match("^(.-) | clearable: (.*)$")
+  if head then state = head end
+  return {
+    id = id, scope = scope, held_by = holder, fence = tonumber(fence),
+    state = state:match("^%a+") or state, clearable = clearable,
+  }
 end
 
 local QUEUE_SUFFIXES = { " not queued$", " front of queue$", " position %d+ in queue$" }
@@ -442,6 +448,12 @@ function M.render(model)
   add(string.format("Claims (%d)", model.claims_total), "Title")
   for _, c in ipairs(model.claims) do
     add(string.format("  %s  %s  held by %s  fence %d  %s", c.id, c.scope, M.mask_member(c.held_by), c.fence, c.state))
+    -- The clause names the member who went quiet first; its id is masked like every other id on the page.
+    if c.clearable then
+      local who, rest = c.clearable:match("^(%S+) (.*)$")
+      local clause = who and (M.mask_member(who) .. " " .. rest) or c.clearable
+      add("        clearable: " .. clause, "SageFsReloadWarn")
+    end
   end
   add("")
   if model.landings_total == 0 then
