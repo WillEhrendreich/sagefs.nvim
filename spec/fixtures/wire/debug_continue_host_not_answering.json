@@ -1,0 +1,16 @@
+{
+  "status": "host_not_answering",
+  "message": "The test host (process 301375) did not answer in 25 seconds. A host answers nothing while a debugger has stopped it at a breakpoint or an inspector has suspended it. Process 301380 (dotnet-debug) names it as its target. Continue it in the debugger, or detach the debugger or quit the inspector, then ask again: the ticket is still valid. If nothing is attached and the host stays silent, hard reset the session to start a new host.",
+  "pid": 0,
+  "ticket": "",
+  "testId": "",
+  "testName": "",
+  "symbols": "",
+  "symbolsNote": "",
+  "access": "",
+  "accessNote": "",
+  "holdMs": 0,
+  "outcome": "",
+  "detail": "",
+  "durationMs": 0
+}

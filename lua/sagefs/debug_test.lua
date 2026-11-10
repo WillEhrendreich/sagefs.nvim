@@ -25,6 +25,7 @@ local LEVELS = (vim and vim.log and vim.log.levels) or { INFO = 1, WARN = 2, ERR
 M.KNOWN_STATUSES = {
   held = true,
   still_running = true,
+  host_not_answering = true,
   attached = true,
   no_debugger_within = true,
   released_without_debugger = true,
@@ -232,8 +233,12 @@ function M.classify_hold(answer)
   return answer.status == "held" and "held" or "refused"
 end
 
+--- A host that did not answer is stopped (this debugger at a breakpoint, or something else
+--- holding it) and its hold is intact: the ticket is still valid, so it is asked about again
+--- ("host_silent") for as long as our debug session lives.
 function M.classify_continue(answer)
   if answer.status == "still_running" then return "still_running" end
+  if answer.status == "host_not_answering" then return "host_silent" end
   if answer.status == "attached" then return "finished" end
   return "refused"
 end
@@ -464,6 +469,7 @@ local function new_run(deps)
   end
 
   local retried = false
+  local said_silent = false
 
   local function poll()
     ask_continue(function(ok, raw)
@@ -483,6 +489,16 @@ local function new_run(deps)
         else
           poll()
         end
+        return
+      end
+      -- A stopped host: say what the daemon says once, and ask again while our debugger lives. With it gone nothing of
+      -- ours holds the host, so the run ends below with the daemon's words (what holds it, and what to do next).
+      if kind == "host_silent" and not debug_ended then
+        if not said_silent then
+          said_silent = true
+          notify("SageFs debug: " .. answer.message, LEVELS.WARN)
+        end
+        poll()
         return
       end
       local text, level = M.format_final(answer, held and held.testName)
