@@ -208,6 +208,17 @@ local function health_marker(health)
   return ""
 end
 
+-- Why a session faulted, in the daemon's words: " — <reason>", or "" when the
+-- session is not faulted, the daemon sent no reason, or the health marker beside
+-- it already says the same thing. Cut to `limit` characters when given.
+local function fault_text(s, limit)
+  local reason = s.fault_reason
+  if s.status ~= "Faulted" or type(reason) ~= "string" or reason == "" then return "" end
+  if s.health and s.health.reason == reason then return "" end
+  if limit and #reason > limit then reason = reason:sub(1, limit) .. "…" end
+  return " — " .. reason
+end
+
 function M.format_session_line(s)
   local proj = #s.projects > 0
     and table.concat(s.projects, ", ")
@@ -215,7 +226,7 @@ function M.format_session_line(s)
   local evals = s.eval_count > 0
     and string.format(" [%d evals]", s.eval_count)
     or ""
-  return string.format("%s  %s%s%s", proj, s.status, evals, health_suffix(s.health))
+  return string.format("%s  %s%s%s%s", proj, s.status, evals, health_suffix(s.health), fault_text(s))
 end
 
 function M.format_statusline(s, conn_status)
@@ -235,7 +246,7 @@ function M.format_statusline(s, conn_status)
   if s.health and (s.health.status == "Degraded" or s.health.status == "Failed") and s.health.reason then
     health_str = health_str .. " " .. s.health.reason
   end
-  return string.format("%s %s (%s)%s", icon, name, s.status or "?", health_str)
+  return string.format("%s %s (%s)%s%s", icon, name, s.status or "?", health_str, fault_text(s, 60))
 end
 
 -- ─── Lifecycle updates (SSE) ─────────────────────────────────────────────────

@@ -218,6 +218,34 @@ describe("sagefs.sessions", function()
 
   -- ─── format_session_line ─────────────────────────────────────────────────
 
+  describe("a faulted session says why", function()
+    local faulted = {
+      id = "abc", status = "Faulted", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0,
+      fault_reason = "FSI worker exited with code 139",
+    }
+
+    it("the session line carries the reason the daemon sent", function()
+      assert.is_truthy(sessions.format_session_line(faulted):find("FSI worker exited with code 139", 1, true))
+    end)
+
+    it("the statusline carries the reason the daemon sent", function()
+      assert.is_truthy(sessions.format_statusline(faulted, "connected"):find("FSI worker exited with code 139", 1, true))
+    end)
+
+    it("the statusline bounds a very long reason", function()
+      local long = vim.deepcopy and vim.deepcopy(faulted) or { id = "abc", status = "Faulted", projects = {} }
+      long.fault_reason = string.rep("x", 400)
+      assert.is_true(#sessions.format_statusline(long, "connected") < 200)
+    end)
+
+    it("a healthy session shows no reason, and a faulted one without a reason is unchanged", function()
+      local ready = { id = "abc", status = "Ready", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0, fault_reason = "stale" }
+      assert.is_nil(sessions.format_statusline(ready, "connected"):find("stale", 1, true))
+      local bare = { id = "abc", status = "Faulted", projects = { "MyApp.fsproj" }, eval_count = 0, avg_duration_ms = 0 }
+      assert.equals("⚡ MyApp (Faulted)", sessions.format_statusline(bare, "connected"))
+    end)
+  end)
+
   describe("format_session_line", function()
     it("shows project name and status", function()
       local s = {

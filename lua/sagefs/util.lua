@@ -40,6 +40,43 @@ function M.json_decode(s)
   return false, "no JSON decoder available"
 end
 
+--- The failures transport.lua reports when no reply came back at all:
+--- "timeout", "connect: <libuv>", "write: <libuv>", "read: <libuv>" and
+--- "empty response". Returns one sentence that says what happened and the
+--- command to run next, or nil when `raw` is not one of them (a reply from the
+--- daemon, which has its own words).
+---@param raw string|nil
+---@return string|nil
+function M.transport_failure(raw)
+  if type(raw) ~= "string" then return nil end
+  if raw:find("^connect: ") then
+    return "SageFs is not reachable. Run :SageFsStart to start it, or :SageFsConnect if it is already running."
+  end
+  if raw == "timeout" then
+    return "SageFs did not answer in time. Run :SageFsConnect to check the daemon."
+  end
+  if raw:find("^write: ") or raw:find("^read: ") or raw == "empty response" then
+    return "The connection to SageFs dropped. Run :SageFsConnect to reconnect."
+  end
+  return nil
+end
+
+--- The text a command appends after "Failed to <do thing>": ": <reason>", or ""
+--- when there is no body. A transport failure reads as its sentence; a daemon
+--- reply as `message → suggestedAction`, parsed before any cut so the remedy
+--- survives; anything else as the raw text, bounded to 300 characters.
+---@param raw string|nil
+---@return string
+function M.error_detail(raw)
+  if not raw or raw == "" then return "" end
+  local transport = M.transport_failure(raw)
+  if transport then return ": " .. transport end
+  local decode_ok, parsed = M.json_decode(raw)
+  local msg = M.format_server_error(decode_ok and parsed or nil, raw)
+  if #msg > 300 then msg = msg:sub(1, 300) .. "…" end
+  return ": " .. msg
+end
+
 --- Extract a human-facing error message from a decoded JSON error body,
 --- preferring the server's structured remedy (`suggestedAction`) wherever
 --- the shape carries one, so callers stop discarding it. Handles the two

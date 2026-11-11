@@ -102,10 +102,42 @@ describe("commands.lua error sites surface suggestedAction (§5.8)", function()
   describe(":SageFsTestTrace — err_detail on a plain fetch failure", function()
     it("falls back to raw text when the body isn't JSON (no crash, no silent swallow)", function()
       registered["SageFsTestTrace"].handler({})
-      http_calls[1].callback(false, "connect: refused")
+      http_calls[1].callback(false, "upstream proxy exploded")
 
       assert.equals(1, #notifications)
-      assert.is_truthy(notifications[1].msg:find("connect: refused", 1, true))
+      assert.is_truthy(notifications[1].msg:find("upstream proxy exploded", 1, true))
+    end)
+  end)
+
+  -- A transport failure used to reach the user as the libuv string
+  -- ("Failed to trigger tests: connect: ECONNREFUSED"). It is now one sentence that
+  -- names what failed (the prefix) and the command to run next.
+  describe("transport failures read as a sentence with the next command", function()
+    local function assert_sentence(msg)
+      assert.is_nil(msg:find("ECONNREFUSED", 1, true), msg)
+      assert.is_nil(msg:find("connect:", 1, true), msg)
+      assert.is_truthy(msg:find(":SageFs", 1, true), "names the next command: " .. msg)
+    end
+
+    it(":SageFsRunTests", function()
+      registered["SageFsRunTests"].handler({ args = "" })
+      http_calls[1].callback(false, "connect: ECONNREFUSED")
+      assert.is_truthy(notifications[1].msg:find("Failed to trigger tests", 1, true))
+      assert_sentence(notifications[1].msg)
+    end)
+
+    it(":SageFsEnableTesting", function()
+      registered["SageFsEnableTesting"].handler({})
+      http_calls[1].callback(false, "connect: ECONNREFUSED")
+      assert.is_truthy(notifications[1].msg:find("Failed to enable live testing", 1, true))
+      assert_sentence(notifications[1].msg)
+    end)
+
+    it(":SageFsTestTrace", function()
+      registered["SageFsTestTrace"].handler({})
+      http_calls[1].callback(false, "connect: ECONNREFUSED")
+      assert.is_truthy(notifications[1].msg:find("Failed to fetch test trace", 1, true))
+      assert_sentence(notifications[1].msg)
     end)
   end)
 end)

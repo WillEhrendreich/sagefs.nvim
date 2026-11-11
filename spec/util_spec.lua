@@ -60,6 +60,28 @@ describe("sagefs.util", function()
   -- threw `suggestedAction` away. This is the one shared function every
   -- site should route through instead.
 
+  describe("transport_failure", function()
+    it("turns a refused connection into a sentence with the next command", function()
+      local m = util.transport_failure("connect: ECONNREFUSED")
+      assert.is_nil(m:find("ECONNREFUSED", 1, true))
+      assert.is_truthy(m:find(":SageFsStart", 1, true))
+      assert.is_truthy(m:find(":SageFsConnect", 1, true))
+    end)
+
+    it("covers a timeout and a dropped connection", function()
+      assert.is_truthy(util.transport_failure("timeout"):find(":SageFsConnect", 1, true))
+      assert.is_truthy(util.transport_failure("read: ECONNRESET"):find(":SageFsConnect", 1, true))
+      assert.is_truthy(util.transport_failure("write: EPIPE"):find(":SageFsConnect", 1, true))
+      assert.is_truthy(util.transport_failure("empty response"):find(":SageFsConnect", 1, true))
+    end)
+
+    it("leaves a daemon's own reply alone", function()
+      assert.is_nil(util.transport_failure('{"message":"No session"}'))
+      assert.is_nil(util.transport_failure("upstream proxy exploded"))
+      assert.is_nil(util.transport_failure(nil))
+    end)
+  end)
+
   describe("format_server_error", function()
     it("appends suggestedAction to message when both are present (flat shape)", function()
       local msg = util.format_server_error({ message = "No session", suggestedAction = "Create one first" }, nil)

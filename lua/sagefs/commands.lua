@@ -144,13 +144,7 @@ function M.register_commands(plugin, helpers)
   -- `message → suggestedAction`, and only bound the final human-readable
   -- string (generous enough that a real message+action always fits; still a
   -- backstop against an oversized non-JSON body, e.g. a raw stack dump).
-  local function err_detail(raw)
-    if not raw or raw == "" then return "" end
-    local decode_ok, parsed = util.json_decode(raw)
-    local msg = util.format_server_error(decode_ok and parsed or nil, raw)
-    if #msg > 300 then msg = msg:sub(1, 300) .. "…" end
-    return ": " .. msg
-  end
+  local err_detail = util.error_detail
 
   vim.api.nvim_create_user_command("SageFsCellStyle", function(cmd)
     local ch = require("sagefs.cell_highlight")
@@ -1565,14 +1559,7 @@ function M.register_keymaps(plugin, helpers, bufnr)
   local testing = require("sagefs.testing")
   local util = require("sagefs.util")
 
-  -- See the identical helper (and its rationale) in register_commands above.
-  local function err_detail(raw)
-    if not raw or raw == "" then return "" end
-    local decode_ok, parsed = util.json_decode(raw)
-    local msg = util.format_server_error(decode_ok and parsed or nil, raw)
-    if #msg > 300 then msg = msg:sub(1, 300) .. "…" end
-    return ": " .. msg
-  end
+  local err_detail = util.error_detail
 
   local function km(mode, lhs, rhs, desc)
     vim.keymap.set(mode, lhs, rhs, { desc = desc, silent = true, buffer = bufnr })
