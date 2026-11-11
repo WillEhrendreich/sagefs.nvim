@@ -648,7 +648,7 @@ end
 
 -- ─── Parse server responses ──────────────────────────────────────────────────
 
---- Parse the response from get_live_test_status MCP tool
+--- Parse a live-testing status response (a JSON object)
 ---@param json_str string
 ---@return table|nil parsed, string|nil error
 function M.parse_status_response(json_str)
@@ -662,7 +662,7 @@ function M.parse_status_response(json_str)
   return data, nil
 end
 
---- Parse the response from get_test_trace MCP tool
+--- Parse the response of the test-trace endpoint (/api/live-testing/test-trace)
 ---@param json_str string
 ---@return table|nil parsed, string|nil error
 function M.parse_test_trace_response(json_str)
@@ -1216,10 +1216,11 @@ end
 
 -- ─── State Recovery ──────────────────────────────────────────────────────────
 
---- Build a request to recover full test status after SSE reconnect
+--- Build a request to recover full test status after SSE reconnect. `list_tests` is the
+--- daemon's tool for the session's discovered tests; the daemon has no `get_live_test_status`.
 ---@return table
 function M.build_recovery_request()
-  return { tool = "get_live_test_status" }
+  return { tool = "list_tests" }
 end
 
 --- Check if testing state needs recovery (after reconnect)

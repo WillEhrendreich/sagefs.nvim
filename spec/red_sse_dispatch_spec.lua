@@ -361,7 +361,7 @@ describe("testing.build_recovery_request [RED]", function()
     assert.is_function(testing.build_recovery_request)
     local req = testing.build_recovery_request()
     assert.is_table(req)
-    -- Should produce params for get_live_test_status
+    -- Should produce params for the daemon's list_tests tool
     assert.is_not_nil(req.method or req.tool)
   end)
 end)
