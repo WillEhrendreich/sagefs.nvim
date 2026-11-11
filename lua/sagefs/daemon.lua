@@ -71,6 +71,15 @@ function M.unavailable_message(port)
     .. " Otherwise run :SageFsStart, or start SageFs externally and then run :SageFsConnect."
 end
 
+-- What :SageFsStop says when this Neovim holds no daemon job. A daemon started in a
+-- terminal, by a service or by another editor is shared, so :SageFsStop leaves it up.
+function M.not_started_here_message(port)
+  return "This Neovim did not start the SageFs daemon on port " .. tostring(port)
+    .. ", so :SageFsStop leaves it running (other editors and agents may be using it)."
+    .. " To stop it, run `sagefs stop` in a terminal, with `--mcp-port " .. tostring(port)
+    .. "` if that is not the default port."
+end
+
 function M.format_statusline(state)
   if state.status == "running" then
     local name = state.project and state.project:match("([^/\\]+)$") or "?"

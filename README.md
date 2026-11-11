@@ -298,7 +298,7 @@ Every keymap here is buffer-local: it is set in `fsharp` and `fsx` buffers and i
 | `:SageFsCreateSession` | Discover projects and create session |
 | `:SageFsConfig` | Create or open `.SageFs/config.fsx` and disable warmup namespace auto-open |
 | `:SageFsStart` | Start SageFs daemon from Neovim |
-| `:SageFsStop` | Stop the managed SageFs daemon |
+| `:SageFsStop` | Stop the daemon this Neovim started. A daemon started elsewhere is left running; stop it with `sagefs stop` |
 | `:SageFsRunApp [project]` | Run the session's application (optional project name; default target otherwise) |
 | `:SageFsStopApp` | Stop the session's running application |
 | `:SageFsHotReload` | Hot reload file picker |

@@ -1066,7 +1066,7 @@ function M.register_commands(plugin, helpers)
   vim.api.nvim_create_user_command("SageFsStop", function()
     local daemon = require("sagefs.daemon")
     if not daemon.is_running(plugin.daemon_state) then
-      helpers.notify("SageFs daemon is not running", vim.log.levels.WARN)
+      helpers.notify(daemon.not_started_here_message(plugin.config and plugin.config.port or 37749), vim.log.levels.WARN)
       return
     end
     helpers.stop_sse()

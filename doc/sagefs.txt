@@ -382,7 +382,10 @@ Analysis ~
     command asks you to pick one with |:SageFsSessions|.
 
 :SageFsStop                                             *:SageFsStop*
-    Stop the managed SageFs daemon.
+    Stop the SageFs daemon this Neovim started with |:SageFsStart|. A daemon
+    started elsewhere (a terminal, a service, another editor) is shared, so
+    the command says so and leaves it running; stop that one with
+    `sagefs stop` in a terminal.
 
 :SageFsSwitchProject                                    *:SageFsSwitchProject*
     Re-scan for .fsproj/.sln/.slnx files and let the user pick which
