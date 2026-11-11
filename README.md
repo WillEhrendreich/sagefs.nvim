@@ -213,7 +213,7 @@ This plugin provides the Neovim integration layer: a command for each thing it d
 
 ## ⌨️ Keymaps
 
-Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace. The test-run keymaps use `<leader>t` (`<leader>tf` filter, `<leader>tF` run-all, `<leader>tp` pick-test).
+Every keymap here is buffer-local: it is set in `fsharp` and `fsx` buffers and in no other buffer, so your maps in other filetypes stay yours. Use the `:SageFs*` commands elsewhere. Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyVim's `<leader>s` (Search) namespace. The test-run keymaps use `<leader>t` (`<leader>tf` filter, `<leader>tF` run-all, `<leader>tp` pick-test).
 
 | Key | Mode | Description |
 |-----|------|-------------|
@@ -242,6 +242,9 @@ Most keymaps use the `<leader>r` prefix (**R**EPL) to avoid conflicts with LazyV
 | `<leader>rtd` | n | Disable live testing |
 | `<leader>rtg` | n | Debug the failing test on this line (nvim-dap) |
 | `<leader>rtc` | n | Tests that cover this line (float, `<CR>` jumps) |
+| `<leader>tf` | n | Filter tests by name pattern (prompts for input) |
+| `<leader>tF` | n | Run all tests (clears any active filter) |
+| `<leader>tp` | n | Fuzzy-pick and run a test (telescope, `:SageFsPickTest`) |
 | **Nudge a value** | | |
 | `<leader>rk+` / `<leader>rk-` | n | Bump the number under the cursor up / down (a count repeats: `5<leader>rk+`) |
 | `<leader>rks` / `<leader>rke` | n | Set it to a typed literal / replace it with an F# expression |

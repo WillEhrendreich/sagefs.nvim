@@ -2829,6 +2829,111 @@ describe("dashboard in a real window", function()
   end)
 end)
 
+-- ─── Documented keymaps are the registered keymaps ───────────────────────────
+-- README.md and doc/sagefs.txt list the keys. The plugin registers them per F#
+-- buffer (see "scopes eval keymaps to F# buffers" above), so the docs must say
+-- buffer-local, and the two lists must match what an F# buffer really holds.
+
+describe("documented keymaps match the registered ones", function()
+  local function read_all(path)
+    local f = assert(io.open(path, "r"))
+    local s = f:read("*a")
+    f:close()
+    return s
+  end
+
+  -- Docs spell Alt as <A-..>, <Alt-..>, <S-A-..>, <Shift-Alt-..>; Neovim reports <M-..>.
+  local function normalize(key)
+    key = key:gsub("^<Shift%-Alt%-Enter>$", "<M-S-CR>")
+    key = key:gsub("^<Alt%-Enter>$", "<M-CR>")
+    key = key:gsub("^<S%-A%-CR>$", "<M-S-CR>")
+    key = key:gsub("^<A%-(.+)>$", "<M-%1>")
+    return key
+  end
+
+  -- Keys that live in an F# buffer: the leader maps and the Alt maps. The panel
+  -- and telescope keys (<CR>, D, <C-g> ...) belong to other buffers.
+  local function in_fsharp_buffer(key)
+    return key:find("^<leader>") ~= nil or key:find("^<M%-") ~= nil
+  end
+
+  local function add(set, key)
+    key = normalize(key)
+    if in_fsharp_buffer(key) then set[key] = true end
+  end
+
+  local function readme_keys()
+    local text = read_all(plugin_root .. "/README.md")
+    local section = text:match("## [^\n]*Keymaps\n(.-)\n## ")
+    assert_truthy(section, "README has a Keymaps section")
+    local set = {}
+    for cell in section:gmatch("\n| ([^\n|]+)|") do
+      for key in cell:gmatch("`([^`]+)`") do add(set, key) end
+    end
+    return set
+  end
+
+  local function help_keys()
+    local text = read_all(plugin_root .. "/doc/sagefs.txt")
+    local section = text:match("%*sagefs%-keymaps%*\n(.-)%*sagefs%-config%*")
+    assert_truthy(section, "doc/sagefs.txt has a keymaps section")
+    local set = {}
+    for key in section:gmatch("\n  (%S+)  ") do add(set, key) end
+    return set, section
+  end
+
+  local function registered_keys()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false })
+    local buf = make_buffer({ "let x = 1" })
+    vim.bo[buf].filetype = "fsharp"
+    local leader = vim.g.mapleader or "\\"
+    local set = {}
+    for _, mode in ipairs({ "n", "v", "x" }) do
+      for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+        if m.desc and m.desc:find("SageFs", 1, true) then
+          local lhs = m.lhs
+          if lhs:sub(1, #leader) == leader then lhs = "<leader>" .. lhs:sub(#leader + 1) end
+          set[lhs] = true
+        end
+      end
+    end
+    return set
+  end
+
+  local function diff(a, b)
+    local out = {}
+    for k in pairs(a) do if not b[k] then out[#out + 1] = k end end
+    table.sort(out)
+    return table.concat(out, " ")
+  end
+
+  it("README.md lists exactly the keys an F# buffer holds", function()
+    local registered, documented = registered_keys(), readme_keys()
+    assert_eq("", diff(registered, documented), "registered but missing from README.md")
+    assert_eq("", diff(documented, registered), "in README.md but not registered")
+  end)
+
+  it("doc/sagefs.txt lists exactly the keys an F# buffer holds", function()
+    local registered, documented = registered_keys(), help_keys()
+    assert_eq("", diff(registered, documented), "registered but missing from doc/sagefs.txt")
+    assert_eq("", diff(documented, registered), "in doc/sagefs.txt but not registered")
+  end)
+
+  it("doc/sagefs.txt says the keymaps are buffer-local to F# buffers", function()
+    local _, section = help_keys()
+    assert_falsy(section:find("global, not buffer-local", 1, true), "the keymaps are buffer-local")
+    assert_falsy(section:find("registered globally", 1, true), "the keymaps are buffer-local")
+    assert_truthy(section:find("buffer-local", 1, true), "the section names the scope")
+  end)
+
+  it("README.md says the keymaps are buffer-local to F# buffers", function()
+    local text = read_all(plugin_root .. "/README.md")
+    local section = text:match("## [^\n]*Keymaps\n(.-)\n## ")
+    assert_truthy(section:find("buffer-local", 1, true), "the section names the scope")
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))

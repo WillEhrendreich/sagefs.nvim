@@ -509,14 +509,17 @@ Analysis ~
 ==============================================================================
 5. KEYMAPS                                               *sagefs-keymaps*
 
-Always-on keymaps (global, not buffer-local): >
+Always-on keymaps (buffer-local: set in every `fsharp` and `fsx` buffer, and
+in no other buffer): >
 
   <A-CR>       (n) Evaluate cell under cursor (smart: prompts for session)
   <A-CR>       (v) Evaluate visual selection
   <S-A-CR>     (n) Evaluate cell and advance to next cell
 <
 The `<leader>r` namespace is used for all REPL bindings (**R**EPL prefix).
-All leader keymaps are registered globally via `setup()`.
+Every keymap below is buffer-local. `setup()` registers them when an F#
+buffer opens, so a Markdown or Lua buffer keeps its own `<leader>r` maps.
+From any other buffer, use the `:SageFs*` commands.
 
 Core eval ~
 >
@@ -567,6 +570,8 @@ Server & reload ~
   <leader>rR   Hard reset (rebuild) FSI session
   <leader>rS   Start SageFs daemon
   <leader>rQ   Stop SageFs daemon
+  <leader>ru   Run app
+  <leader>rU   Stop app
   <leader>rD   Cycle display density (minimal → normal → full)
 <
 Misc ~
