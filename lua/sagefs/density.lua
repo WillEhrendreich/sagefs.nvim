@@ -39,6 +39,17 @@ function M.set(state, name)
   }
 end
 
+--- The state the `density` setup option names. An absent option is "normal".
+--- Returns the state and whether the name was known, so setup can say so when a
+--- configured name is not a preset.
+---@param name string|nil
+---@return table state, boolean known
+function M.from_config(name)
+  if name == nil then return M.new(), true end
+  if presets[name] then return M.set(M.new(), name), true end
+  return M.new(), false
+end
+
 --- Cycle to the next preset.
 ---@param state table
 ---@return table

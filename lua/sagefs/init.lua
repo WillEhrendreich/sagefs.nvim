@@ -2139,6 +2139,15 @@ function M.setup(opts)
   wire = nil -- rebuilt with this config on next use
   reload_ui.setup()
 
+  -- The `density` option picks the starting preset (<leader>rD still cycles it).
+  if M.config.density ~= nil then
+    local state, known = density.from_config(M.config.density)
+    M.density_state = state
+    if not known then
+      notify("Unknown density '" .. tostring(M.config.density) .. "'. Use minimal, normal or full; using normal.", vim.log.levels.WARN)
+    end
+  end
+
   render.get_namespace()
   render.setup_highlights(M.config.highlight)
   require("sagefs.wire_testing").define_highlights()

@@ -109,6 +109,14 @@ describe("plugin setup", function()
     sagefs.setup({ auto_connect = false, port = 37749, dashboard_port = 37750 })
   end)
 
+  it("reads the documented `density` option", function()
+    local sagefs = require("sagefs")
+    sagefs.setup({ auto_connect = false, port = 37749, dashboard_port = 37750, density = "minimal" })
+    assert_eq("minimal", sagefs.density_state.preset, "setup({ density = 'minimal' }) must reach the density state")
+    sagefs.setup({ auto_connect = false, port = 37749, dashboard_port = 37750, density = "normal" })
+    assert_eq("normal", sagefs.density_state.preset)
+  end)
+
   it("registers all expected user commands", function()
     local cmds = vim.api.nvim_get_commands({})
     local expected = {

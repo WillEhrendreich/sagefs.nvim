@@ -609,7 +609,6 @@ Pass configuration to setup(): >lua
     member_token = nil,          -- Cohort member token (see |sagefs-member-token|)
     cell_highlight = {
       style = "normal",          -- "off" | "minimal" | "normal" | "full"
-      flash_duration_ms = 300,   -- Flash fade duration
     },
   })
 <
