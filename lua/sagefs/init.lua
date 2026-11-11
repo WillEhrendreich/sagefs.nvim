@@ -1831,7 +1831,7 @@ local function smart_eval_with_session_check(eval_fn)
       -- rendered the opposite of the truth. Say what's actually wrong and
       -- name the one command that fixes it.
       if not result.ok then
-        notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
+        notify(daemon.unavailable_message(M.config.port), vim.log.levels.ERROR)
         return
       end
 
@@ -1980,7 +1980,7 @@ function M.health_check(callback)
         notify("Connected to SageFs on port " .. M.config.port)
         if callback then callback(true) end
       else
-        notify("SageFs not available on port " .. M.config.port .. ". Run :SageFsStart or start SageFs externally.", vim.log.levels.ERROR)
+        notify(daemon.unavailable_message(M.config.port), vim.log.levels.ERROR)
         if callback then callback(false) end
       end
     end)

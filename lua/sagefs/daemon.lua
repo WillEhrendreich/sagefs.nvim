@@ -62,6 +62,15 @@ function M.is_running(state)
   return state.status == "running"
 end
 
+-- What to say when nothing answers on the port. A daemon that :SageFsStart
+-- spawned a moment ago is usually still booting, so the first way forward is
+-- :SageFsConnect; a daemon that was never started needs :SageFsStart.
+function M.unavailable_message(port)
+  return "SageFs not available on port " .. tostring(port)
+    .. ". If :SageFsStart was just run, wait a few seconds and run :SageFsConnect."
+    .. " Otherwise run :SageFsStart, or start SageFs externally and then run :SageFsConnect."
+end
+
 function M.format_statusline(state)
   if state.status == "running" then
     local name = state.project and state.project:match("([^/\\]+)$") or "?"

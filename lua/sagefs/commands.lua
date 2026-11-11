@@ -952,7 +952,10 @@ function M.register_commands(plugin, helpers)
   vim.api.nvim_create_user_command("SageFsStart", function(opts)
     local daemon = require("sagefs.daemon")
     if daemon.is_running(plugin.daemon_state) then
-      helpers.notify("SageFs daemon already running", vim.log.levels.WARN)
+      helpers.notify("SageFs daemon already started from this Neovim. Connecting to it; if it is still booting, run :SageFsConnect in a few seconds.", vim.log.levels.INFO)
+      plugin.health_check(function(healthy)
+        if healthy then helpers.start_sse() end
+      end)
       return
     end
     -- Check if SageFs is already running externally (health check)
