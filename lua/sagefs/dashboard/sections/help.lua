@@ -10,19 +10,10 @@ M.id = "help"
 M.label = "Help"
 M.events = {} -- static content, never triggered by SSE events
 
-local bindings = {
-  { "q",       "Close dashboard" },
-  { "<Tab>",   "Next section" },
-  { "<S-Tab>", "Previous section" },
-  { "1-9",     "Toggle section N" },
-  { "e",       "Enable live testing" },
-  { "d",       "Disable live testing" },
-  { "h",       "Toggle hot reload" },
-  { "r",       "Run all tests" },
-  { "R",       "Refresh dashboard" },
-  { "<CR>",    "Context action at cursor" },
-  { "?",       "Toggle this help" },
-}
+local bindings = {}
+for _, k in ipairs(require("sagefs.dashboard.keys").all) do
+  table.insert(bindings, { k.key, k.help })
+end
 
 --- Render the keybinding help section.
 --- @param _ table state (unused — help is static content)

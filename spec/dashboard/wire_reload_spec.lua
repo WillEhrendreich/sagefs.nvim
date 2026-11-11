@@ -66,11 +66,11 @@ describe("hot reload section", function()
     assert.truthy(text:find(":SageFsHardReset", 1, true))
   end)
 
-  it("keeps the old toggle and file count", function()
+  it("keeps the status-row action and the file count", function()
     local s = state_mod.update(state_mod.new(), "hotreload_snapshot", { enabled = true, files = { "A.fs" }, totalFiles = 3 })
     local out = hot_reload.render(s)
     assert.truthy(text_of(out):find("1 / 3", 1, true))
-    assert.are.equal("h", out.keymaps[1].key)
+    assert.are.equal("<CR>", out.keymaps[1].key)
   end)
 end)
 

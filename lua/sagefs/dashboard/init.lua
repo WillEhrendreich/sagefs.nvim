@@ -12,6 +12,8 @@ local section_mod = require("sagefs.dashboard.section")
 local state_mod = require("sagefs.dashboard.state")
 local compositor = require("sagefs.dashboard.compositor")
 local event_index_mod = require("sagefs.dashboard.event_index")
+local keys_mod = require("sagefs.dashboard.keys")
+local actions_mod = require("sagefs.dashboard.actions")
 
 local M = {}
 
@@ -97,6 +99,12 @@ function M.open()
 
   -- Re-enable auto-open on explicit user open
   state_mod.mark_explicit_open(M._state)
+
+  -- Show the sessions the plugin already knows, not an empty list until the next change
+  local plugin = package.loaded["sagefs"]
+  if type(plugin) == "table" then
+    M.sync_sessions(plugin.session_list, plugin.active_session)
+  end
 
   -- Clear section cache on fresh open
   M._section_cache = {}
@@ -286,33 +294,31 @@ function M._setup_keymaps()
   local buf = M._bufnr
   local opts = { noremap = true, silent = true, buffer = buf }
 
-  -- q: close dashboard
-  vim.keymap.set("n", "q", function() M.close() end, opts)
-
-  -- Tab: cycle focus to next section
-  vim.keymap.set("n", "<Tab>", function() M._cycle_section(1) end, opts)
-  vim.keymap.set("n", "<S-Tab>", function() M._cycle_section(-1) end, opts)
-
-  -- 1-9: toggle section visibility by position
-  for i = 1, 9 do
-    vim.keymap.set("n", tostring(i), function()
-      local all = section_mod.all()
-      if all[i] then M.toggle_section(all[i].id) end
-    end, opts)
+  -- The keys come from dashboard/keys.lua, the list the help section reads too.
+  local by_how = {
+    close = function() M.close() end,
+    next_section = function() M._cycle_section(1) end,
+    prev_section = function() M._cycle_section(-1) end,
+    refresh = function() M.render() end,
+    context = function() M._action_at_cursor() end,
+    -- help is a section like any other, not a vim.notify
+    toggle_help = function() M.toggle_section("help") end,
+  }
+  for _, k in ipairs(keys_mod.all) do
+    if k.how == "toggle_section" then
+      -- 1-9: toggle section visibility by position
+      for i = 1, 9 do
+        vim.keymap.set("n", tostring(i), function()
+          local all = section_mod.all()
+          if all[i] then M.toggle_section(all[i].id) end
+        end, opts)
+      end
+    elseif k.how == "action" then
+      vim.keymap.set("n", k.key, function() M._dispatch_action(k.action) end, opts)
+    else
+      vim.keymap.set("n", k.key, assert(by_how[k.how], "no handler for dashboard key kind " .. tostring(k.how)), opts)
+    end
   end
-
-  -- Section-specific keys
-  vim.keymap.set("n", "e", function() M._dispatch_action({ type = "enable_testing" }) end, opts)
-  vim.keymap.set("n", "d", function() M._dispatch_action({ type = "disable_testing" }) end, opts)
-  vim.keymap.set("n", "h", function() M._dispatch_action({ type = "switch_workflow" }) end, opts)
-  vim.keymap.set("n", "r", function() M._dispatch_action({ type = "run_tests" }) end, opts)
-  vim.keymap.set("n", "R", function() M.render() end, opts)
-
-  -- CR: context action at cursor
-  vim.keymap.set("n", "<CR>", function() M._action_at_cursor() end, opts)
-
-  -- ?: toggle inline help section (not vim.notify — help is a section like any other)
-  vim.keymap.set("n", "?", function() M.toggle_section("help") end, opts)
 end
 
 -- ─── Internal: Autocmds ──────────────────────────────────────────────────────
@@ -422,24 +428,35 @@ function M._dispatch_action(action)
   if not action then return end
 
   local sagefs = require("sagefs")
+  local effect = actions_mod.resolve(action, { testing_state = sagefs.testing_state })
 
-  if action.type == "enable_testing" then
-    if sagefs.enable_live_testing then sagefs.enable_live_testing() end
-  elseif action.type == "disable_testing" then
-    if sagefs.disable_live_testing then sagefs.disable_live_testing() end
-  elseif action.type == "run_tests" then
-    if sagefs.run_tests then sagefs.run_tests() end
-  elseif action.type == "switch_workflow" then
-    if sagefs.switch_workflow then sagefs.switch_workflow() end
-  elseif action.type == "switch_session" then
-    if sagefs.switch_session then sagefs.switch_session(action.session_id) end
-  elseif action.type == "jump_to_test" then
-    if sagefs.jump_to_test then sagefs.jump_to_test(action.test_name) end
-  elseif action.type == "inspect_binding" then
-    if sagefs.inspect_binding then sagefs.inspect_binding(action.name) end
-  elseif action.type == "jump_to_eval" then
-    if sagefs.jump_to_eval then sagefs.jump_to_eval(action.index) end
+  if not effect then
+    -- Never a silent no-op: an action nothing handles is a defect, and says so.
+    vim.notify("[SageFs] The dashboard has no handler for the action '" .. tostring(action.type) .. "'.", vim.log.levels.ERROR)
+    return
   end
+
+  if effect.kind == "call" then
+    sagefs[effect.fn](unpack(effect.args))
+  elseif effect.kind == "command" then
+    vim.cmd(effect.name)
+  elseif effect.kind == "open" then
+    vim.cmd("wincmd p")
+    vim.cmd("edit +" .. effect.line .. " " .. vim.fn.fnameescape(effect.file))
+  elseif effect.kind == "notify" then
+    vim.notify("[SageFs] " .. effect.message, vim.log.levels.INFO)
+  end
+end
+
+--- Give the dashboard the plugin's session list and the session it evaluates in.
+--- Called by the plugin whenever either changes, and when the dashboard opens.
+--- @param session_list table[]|nil sessions.lua shape
+--- @param active_session table|nil
+function M.sync_sessions(session_list, active_session)
+  M.on_event("sessions_changed", {
+    sessions = session_list or {},
+    active_id = active_session and active_session.id or nil,
+  })
 end
 
 -- ─── Setup (called from plugin init) ─────────────────────────────────────────

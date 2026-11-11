@@ -46,12 +46,6 @@ function M.render(state)
       line = #lines - 1, col_start = 1, col_end = 1 + #icon, hl_group = hl_group,
     })
 
-    -- Navigate to eval
-    table.insert(keymaps, {
-      line = #lines - 1, key = "<CR>",
-      action = { type = "jump_to_eval", index = idx },
-    })
-
     if i >= 15 then
       table.insert(lines, string.format("  ... and %d more", #entries - 15))
       break

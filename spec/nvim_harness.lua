@@ -2799,6 +2799,28 @@ describe("nudge in a real buffer (fake daemon)", function()
   end)
 end)
 
+describe("dashboard in a real window", function()
+  it("shows the plugin's sessions and maps exactly the keys the help lists", function()
+    local sagefs = require("sagefs")
+    local dashboard = require("sagefs.dashboard")
+    sagefs.session_list = { { id = "abc12345-long", name = "App", status = "Ready", projects = { "App.fsproj" } } }
+    sagefs.active_session = sagefs.session_list[1]
+    dashboard.open()
+    local text = table.concat(vim.api.nvim_buf_get_lines(dashboard._bufnr, 0, -1, false), "\n")
+    assert_falsy(text:find("No sessions", 1, true), "the Sessions section must list the session the statusline shows")
+    assert_truthy(text:find("abc12345", 1, true), "the session id is on a row")
+    dashboard.toggle_section("help")
+    local help_text = table.concat(vim.api.nvim_buf_get_lines(dashboard._bufnr, 0, -1, false), "\n")
+    local mapped = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(dashboard._bufnr, "n")) do mapped[m.lhs:lower()] = true end
+    for _, lhs in ipairs(require("sagefs.dashboard.keys").lhs_list()) do
+      assert_truthy(mapped[lhs:lower()], "the key " .. lhs .. " is in the help and must be mapped")
+    end
+    assert_truthy(help_text:find("Switch workflow", 1, true), "h is documented as the workflow switch")
+    dashboard.close()
+  end)
+end)
+
 -- ─── Report ──────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n═══ Results: %d passed, %d failed ═══\n", passed, failed))

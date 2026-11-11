@@ -305,6 +305,12 @@ local function refresh_sessions_soon()
 end
 M.refresh_sessions_soon = refresh_sessions_soon
 
+--- Tell the dashboard panel (when there is one) the session list and the active
+--- session, so its Sessions section shows what the statusline shows.
+local function sync_dashboard_sessions()
+  if M._dashboard then M._dashboard.sync_sessions(M.session_list, M.active_session) end
+end
+
 --- Fold a session lifecycle announcement (sessions.lifecycle_update) into
 --- the session list and the active session. Returns whether the session was
 --- known, plus its id.
@@ -317,6 +323,7 @@ local function fold_session_update(data)
   M.session_event_stamp[sid] = M.session_event_seq
   local found
   M.session_list, M.active_session, found = sessions.apply_update(M.session_list, M.active_session, sid, fields)
+  sync_dashboard_sessions()
   return found, sid
 end
 
@@ -1369,6 +1376,7 @@ function M.list_sessions(callback)
       M.session_list = result.sessions
       local active_id = M.active_session and M.active_session.id or nil
       M.active_session = sessions.select_active_session(result.sessions, active_id, vim.fn.getcwd())
+      sync_dashboard_sessions()
       poll_while_warming()
       M.wire_runtime().on_sessions(result.sessions)
     end

@@ -287,9 +287,34 @@ handlers.session_faulted = function(state, payload)
   local sid = payload.sessionId or payload.SessionId
   if sid then
     for _, s in ipairs(state.sessions) do
-      if s.id == sid then s.status = "Faulted" end
+      if s.id == sid then
+        s.status = "Faulted"
+        s.fault_reason = payload.error or payload.Error or s.fault_reason
+      end
     end
   end
+  return state
+end
+
+-- The plugin's own session list (sessions.lua shape: `projects` array,
+-- `fault_reason`), pushed by the plugin whenever it changes. `active_id` is the
+-- session the plugin evaluates in.
+handlers.sessions_changed = function(state, payload)
+  if not payload then return state end
+  local rows = {}
+  for _, s in ipairs(payload.sessions or {}) do
+    local projects = s.projects or {}
+    local project = #projects > 0 and table.concat(projects, ", ") or s.name or ""
+    table.insert(rows, {
+      id = s.id,
+      status = s.status,
+      project = project,
+      health = s.health,
+      fault_reason = s.fault_reason,
+    })
+  end
+  state.sessions = rows
+  state.active_session_id = payload.active_id
   return state
 end
 

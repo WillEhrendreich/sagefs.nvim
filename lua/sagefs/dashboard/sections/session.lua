@@ -5,7 +5,7 @@ local M = {}
 
 M.id = "session"
 M.label = "Sessions"
-M.events = { "connected", "session_faulted" }
+M.events = { "connected", "session_faulted", "sessions_changed" }
 
 --- Render the session section from dashboard state.
 --- @param state table
@@ -44,7 +44,12 @@ function M.render(state)
     if health and (health.status == "Degraded" or health.status == "Failed") then
       health_suffix = string.format("  [%s%s]", health.status, health.reason and (" — " .. health.reason) or "")
     end
-    local line_text = string.format("%s %s %s %s%s", marker, short_id, status, proj, health_suffix)
+    -- A faulted session says why, in the daemon's words.
+    local fault_suffix = ""
+    if status == "Faulted" and type(s.fault_reason) == "string" and s.fault_reason ~= "" then
+      fault_suffix = " — " .. s.fault_reason
+    end
+    local line_text = string.format("%s %s %s %s%s%s", marker, short_id, status, proj, health_suffix, fault_suffix)
     table.insert(lines, line_text)
 
     local line_idx = #lines - 1

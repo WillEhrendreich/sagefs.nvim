@@ -37,12 +37,12 @@ describe("Hot reload section", function()
     assert.truthy(joined:find("2 / 10"))
   end)
 
-  it("has toggle keymap", function()
+  it("opens the watched-files picker on <CR> at the status row", function()
     local s = state_mod.new()
     local out = hot_reload.render(s)
     local found = false
     for _, km in ipairs(out.keymaps) do
-      if km.action.type == "toggle_hot_reload" then found = true end
+      if km.action.type == "open_hot_reload" and km.key == "<CR>" then found = true end
     end
     assert.is_true(found)
   end)

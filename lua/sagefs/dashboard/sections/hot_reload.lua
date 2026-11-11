@@ -38,10 +38,10 @@ function M.render(state)
   end
   table.insert(lines, status_line)
 
-  -- Toggle keymap
+  -- <CR> on the status row opens the picker of watched files (:SageFsHotReload)
   table.insert(keymaps, {
-    line = 1, key = "h",
-    action = { type = "toggle_hot_reload" },
+    line = 1, key = "<CR>",
+    action = { type = "open_hot_reload" },
   })
 
   -- File count
