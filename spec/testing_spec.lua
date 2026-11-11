@@ -47,6 +47,10 @@ describe("testing.is_valid_status", function()
     end
   end)
 
+  it("accepts Quarantined, the daemon's word for a flaky test it leaves out", function()
+    assert.is_true(testing.is_valid_status("Quarantined"))
+  end)
+
   it("rejects invalid statuses", function()
     assert.is_false(testing.is_valid_status("banana"))
     assert.is_false(testing.is_valid_status("passed")) -- case matters
@@ -725,6 +729,12 @@ describe("testing.gutter_sign", function()
     local sign = testing.gutter_sign("PolicyDisabled")
     assert.are.equal("⊘", sign.text)
     assert.are.equal("SageFsTestDisabled", sign.hl)
+  end)
+
+  it("returns ? for Quarantined, never the pass mark", function()
+    local sign = testing.gutter_sign("Quarantined")
+    assert.are.equal("?", sign.text)
+    assert.are.equal("SageFsTestStale", sign.hl)
   end)
 
   it("returns ⊘ for Skipped", function()
@@ -1696,6 +1706,20 @@ describe("testing.normalize_entry", function()
       local entry = testing.normalize_entry({ TestId = "t1", Status = { Case = s } })
       assert.are.equal(s, entry.status, "failed for " .. s)
     end
+  end)
+
+  it("keeps a Quarantined row's reason, and the list says it in words, not as a pass", function()
+    local entry = testing.normalize_entry({
+      TestId = "q1", DisplayName = "flaky one",
+      Status = { Case = "Quarantined", Fields = { "flaky: its verdict flipped 2 times with no edit between runs" } },
+    })
+    assert.are.equal("Quarantined", entry.status)
+    local s = testing.update_test(testing.new(), entry)
+    local summary = testing.compute_summary(s)
+    assert.are.equal(0, summary.passed)
+    assert.are.equal(1, summary.stale)
+    local lines = testing.format_test_list(s)
+    assert.are.equal("? flaky one (quarantined: flaky: its verdict flipped 2 times with no edit between runs)", lines[1])
   end)
 
   it("unwraps PreviousStatus DU", function()

@@ -18,6 +18,7 @@ M.STATUS_PREFIX = {
   Detected       = "[NEW ]",
   Skipped        = "[SKIP]",
   PolicyDisabled = "[OFF ]",
+  Quarantined    = "[FLKY]",
 }
 
 M.STATUS_HL = {
@@ -26,6 +27,7 @@ M.STATUS_HL = {
   Running = "SageFsTestRunning",
   Queued  = "SageFsTestRunning",
   Stale   = "SageFsStale",
+  Quarantined = "SageFsStale",
 }
 
 --- Format the status prefix bracket label for a test entry.
@@ -173,7 +175,7 @@ function M.pick_test(opts)
   -- Sort: failed → running/queued → stale → detected → passed → skipped → disabled
   local order = {
     Failed = 1, Running = 2, Queued = 2, Stale = 3,
-    Detected = 4, Passed = 5, Skipped = 6, PolicyDisabled = 7,
+    Detected = 4, Passed = 5, Skipped = 6, PolicyDisabled = 7, Quarantined = 3,
   }
   table.sort(all_tests, function(a, b)
     local oa = order[a.status] or 99

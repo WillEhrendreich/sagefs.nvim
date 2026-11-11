@@ -89,6 +89,8 @@ M.VALID_TEST_STATUSES = {
   Skipped = true,
   Stale = true,
   PolicyDisabled = true,
+  -- Flaky with no edit between its flips: left out of automatic runs, never shown as its last verdict.
+  Quarantined = true,
 }
 
 M.VALID_CATEGORIES = {
@@ -242,7 +244,7 @@ function M.update_test(state, entry)
     policy = entry.currentPolicy or "OnEveryChange",
     status = entry.status or "Detected",
     -- Why the daemon skipped it ("pending (ptest)", "not focused"); only while Skipped.
-    skip_reason = entry.status == "Skipped" and entry.skipReason or nil,
+    skip_reason = (entry.status == "Skipped" or entry.status == "Quarantined") and entry.skipReason or nil,
     -- What code produced this verdict, and (for BuildDisagrees) why the build
     -- disagreed. Rendered by gutter_sign, next to the status colour.
     provenance = provenance,
@@ -324,10 +326,10 @@ end
 --- Also unwraps F# DU values (e.g. Status = {Case="Stale"} → status = "Stale")
 ---@param entry table
 ---@return table normalized entry
---- The reason the daemon gave for a Skipped status ({Case="Skipped", Fields={reason}}),
+--- The reason the daemon gave for a Skipped or Quarantined status ({Case="Skipped", Fields={reason}}),
 --- read before the status is unwrapped to its case name. nil when there is none.
 local function skip_reason_of(status)
-  if type(status) ~= "table" or status.Case ~= "Skipped" or type(status.Fields) ~= "table" then return nil end
+  if type(status) ~= "table" or (status.Case ~= "Skipped" and status.Case ~= "Quarantined") or type(status.Fields) ~= "table" then return nil end
   local reason = status.Fields[1]
   if type(reason) == "string" and reason ~= "" then return reason end
   return nil
@@ -545,7 +547,7 @@ function M.compute_summary(state)
     s.total = s.total + 1
     if test.status == "Passed" then s.passed = s.passed + 1
     elseif test.status == "Failed" then s.failed = s.failed + 1
-    elseif test.status == "Stale" then s.stale = s.stale + 1
+    elseif test.status == "Stale" or test.status == "Quarantined" then s.stale = s.stale + 1
     elseif test.status == "Running" or test.status == "Queued" then s.running = s.running + 1
     elseif test.status == "PolicyDisabled" then s.disabled = s.disabled + 1
     end
@@ -826,6 +828,8 @@ function M.gutter_sign(status, provenance)
     base = { text = "~", hl = "SageFsTestStale" }
   elseif status == "PolicyDisabled" then
     base = { text = "⊘", hl = "SageFsTestDisabled" }
+  elseif status == "Quarantined" then
+    base = { text = "?", hl = "SageFsTestStale" }
   elseif status == "Skipped" then
     base = { text = "⊘", hl = "SageFsTestSkipped" }
   elseif status == "Detected" then
@@ -1190,6 +1194,7 @@ local status_to_icon = {
   Skipped = "TestSkipped",
   Stale = "TestDiscovered",
   PolicyDisabled = "TestSkipped",
+  Quarantined = "TestFlaky",
 }
 
 --- Generate line annotations for tests in a specific file (uses _file_index)
@@ -1241,12 +1246,12 @@ end
 
 local STATUS_ORDER = {
   Failed = 1, Running = 2, Queued = 3, Stale = 4,
-  Detected = 5, Passed = 6, Skipped = 7, PolicyDisabled = 8,
+  Detected = 5, Passed = 6, Skipped = 7, PolicyDisabled = 8, Quarantined = 4,
 }
 
 local STATUS_ICON = {
   Passed = "✓", Failed = "✖", Running = "⏳", Queued = "⏳",
-  Stale = "~", Detected = "◦", Skipped = "⊘", PolicyDisabled = "⊘",
+  Stale = "~", Detected = "◦", Skipped = "⊘", PolicyDisabled = "⊘", Quarantined = "?",
 }
 
 --- The text after a test's name: why the daemon skipped it, when it said.
@@ -1254,8 +1259,11 @@ local STATUS_ICON = {
 ---@param reason string|nil
 ---@return string
 local function skip_suffix(status, reason)
-  if status == "Skipped" and type(reason) == "string" and reason ~= "" then
+  if type(reason) ~= "string" or reason == "" then return "" end
+  if status == "Skipped" then
     return string.format(" (skipped: %s)", reason)
+  elseif status == "Quarantined" then
+    return string.format(" (quarantined: %s)", reason)
   end
   return ""
 end

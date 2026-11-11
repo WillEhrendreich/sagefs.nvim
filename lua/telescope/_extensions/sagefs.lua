@@ -29,6 +29,7 @@ local status_icon = {
   Queued = "⋯",
   Skipped = "⊘",
   PolicyDisabled = "—",
+  Quarantined = "?",
   NotRun = "·",
 }
 
@@ -37,6 +38,7 @@ local status_hl = {
   Failed = "SageFsTestFailed",
   Running = "SageFsTestRunning",
   Stale = "SageFsStale",
+  Quarantined = "SageFsStale",
 }
 
 local function make_entry(displayer)
