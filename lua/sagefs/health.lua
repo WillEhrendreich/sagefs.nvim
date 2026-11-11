@@ -200,7 +200,9 @@ function M.check()
     end
     vim.health.ok(#session_list .. " session(s) found:\n" .. table.concat(lines, "\n"))
   elseif active then
-    vim.health.ok("Active session: " .. tostring(active))
+    local who = active.name or active.id or "?"
+    vim.health.ok("Active session: " .. who .. (active.id and active.name and (" (" .. active.id .. ")") or "")
+      .. (active.status and (" [" .. active.status .. "]") or ""))
   else
     vim.health.info("No active sessions. Run :SageFsCreateSession to create one")
   end
@@ -241,7 +243,7 @@ function M.check()
         vim.health.info("Live testing: enabled, no tests discovered yet")
       end
     else
-      vim.health.info("Live testing: not enabled. Run :SageFsRunTests to trigger discovery")
+      vim.health.info("Live testing: not enabled. Run :SageFsEnableTesting to turn it on")
     end
   end
 
