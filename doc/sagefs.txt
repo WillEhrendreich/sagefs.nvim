@@ -351,6 +351,17 @@ Analysis ~
 :SageFsEvalLine                                         *:SageFsEvalLine*
     Evaluate only the current line (not the enclosing cell).
 
+:SageFsWriteBack                                       *:SageFsWriteBack*
+    Evaluate the declaration under the cursor and write it back to source.
+    A quiet end-of-line mark says "persisted" or "not persisted"; the full
+    verdict is shown as a message. Undo a written declaration with
+    |:SageFsNudge| action=undo and the same file.
+
+:SageFsPlanWriteBack                               *:SageFsPlanWriteBack*
+    Split the block under the cursor into the declarations it would write, then
+    let you choose which ones land. Each chosen chunk is evaluated and written
+    through the same journaled door as |:SageFsWriteBack|.
+
 :SageFsBindings                                         *:SageFsBindings*
     Open the live bindings pane: a scratch split with the daemon's value
     tree for the current session. See |sagefs-bindings|.

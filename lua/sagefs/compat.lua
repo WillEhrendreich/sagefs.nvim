@@ -21,8 +21,9 @@ local M = {}
 M.api_range = {
   min = 3,
   min_reason = "api 3 added POST /api/sessions/{sid}/run-app and /stop-app, which :SageFsRunApp and :SageFsStopApp call",
-  max = 4,
-  max_reason = "api 4 made GET /api/dependency-graph answer for one session (a session parameter, a State, and a 400 when several sessions are open and none is named), which :SageFsSymbolTests sends and reads",
+  max = 5,
+  max_reason = "api 5 added the writeBack field to POST /exec, which :SageFsWriteBack reads to say whether the file changed",
+  prior_max_reason = "api 4 made GET /api/dependency-graph answer for one session (a session parameter, a State, and a 400 when several sessions are open and none is named), which :SageFsSymbolTests sends and reads",
 }
 
 --- What this plugin release reads off the wire, declared as the question "if a

@@ -39,6 +39,7 @@
 :SageFsNotebook	sagefs.txt	/*:SageFsNotebook*
 :SageFsNudge	sagefs.txt	/*:SageFsNudge*
 :SageFsPickTest	sagefs.txt	/*:SageFsPickTest*
+:SageFsPlanWriteBack	sagefs.txt	/*:SageFsPlanWriteBack*
 :SageFsPlayground	sagefs.txt	/*:SageFsPlayground*
 :SageFsReloadStatus	sagefs.txt	/*:SageFsReloadStatus*
 :SageFsReset	sagefs.txt	/*:SageFsReset*
@@ -66,6 +67,7 @@
 :SageFsUnwatchAll	sagefs.txt	/*:SageFsUnwatchAll*
 :SageFsWatchAll	sagefs.txt	/*:SageFsWatchAll*
 :SageFsWorkflow	sagefs.txt	/*:SageFsWorkflow*
+:SageFsWriteBack	sagefs.txt	/*:SageFsWriteBack*
 SageFsAffectedTestsComputed	sagefs.txt	/*SageFsAffectedTestsComputed*
 SageFsAnnotationsAvailable	sagefs.txt	/*SageFsAnnotationsAvailable*
 SageFsBindingScopeMap	sagefs.txt	/*SageFsBindingScopeMap*

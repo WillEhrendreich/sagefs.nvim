@@ -47,6 +47,12 @@ function M.parse_exec_response(json_str)
     result.diagnostics = data.diagnostics
   end
 
+  -- Whether the eval changed its source file. A string only; the daemon's
+  -- sentence is the whole answer. Older daemons omit it and the field stays nil.
+  if type(data.writeBack) == "string" then
+    result.writeBack = data.writeBack
+  end
+
   -- Whether the REPL and live tests run the same build as the app, as the daemon
   -- answered on this very eval. Only a JSON OBJECT with a `state` string counts:
   -- anything else (absent, a string, a number) leaves the field absent, so an

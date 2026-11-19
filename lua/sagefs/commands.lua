@@ -54,6 +54,20 @@ function M.register_simple_commands(plugin, helpers, create_user_command)
       end,
     },
     {
+      name = "SageFsWriteBack",
+      desc = "Evaluate the declaration under the cursor and write it back to source",
+      handler = function()
+        plugin.write_back()
+      end,
+    },
+    {
+      name = "SageFsPlanWriteBack",
+      desc = "Choose which declarations from this block to write back to source",
+      handler = function()
+        plugin.plan_write_back()
+      end,
+    },
+    {
       name = "SageFsClear",
       desc = "Clear all cell results",
       handler = function()

@@ -1279,6 +1279,146 @@ function M.eval_current_line()
   post_exec(code, buf, 0, nil, fp, "block", line_nr)
 end
 
+--- Ask the daemon which declarations a submission would write, then let the
+--- user pick a subset. Each chosen chunk is applied through /exec with its own
+--- start line, so there is one journaled write door.
+function M.plan_write_back()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local lines = vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)
+  local text = lines[1]
+  if not text or text:match("^%s*$") then
+    notify("Current line is empty", vim.log.levels.WARN)
+    return
+  end
+  local code = cells.prepare_code(text)
+  if not code then return end
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/exec",
+    body = {
+      code = code,
+      plan = true,
+      working_directory = eval_working_directory(),
+      sessionId = M.active_session and M.active_session.id or nil,
+      file_path = vim.api.nvim_buf_get_name(buf),
+    },
+    timeout = 60,
+    callback = function(ok, raw, _meta)
+      if not ok then
+        notify("Write-back plan failed: " .. tostring(raw), vim.log.levels.WARN)
+        return
+      end
+      local data = vim.json.decode(raw)
+      local chunks = (data and data.chunks) or {}
+      if #chunks == 0 then
+        notify("No declarations in this block can be written back", vim.log.levels.INFO)
+        return
+      end
+      local chosen = {}
+      local remaining = {}
+      for _, c in ipairs(chunks) do table.insert(remaining, c) end
+      local function apply_selected()
+        for _, c in ipairs(chosen) do
+          transport.http_json({
+            method = "POST", url = base_url() .. "/exec", timeout = 60,
+            body = {
+              code = c.replacement or "",
+              working_directory = eval_working_directory(),
+              sessionId = M.active_session and M.active_session.id or nil,
+              format = "json", file_path = vim.api.nvim_buf_get_name(buf),
+              eval_mode = "block", block_start_line = c.startLine,
+            },
+            callback = function(applied, answer, _m)
+              local verdict = ""
+              if applied then
+                local parsed = format.parse_exec_response(answer)
+                verdict = parsed.writeBack or ""
+              end
+              notify((c.name or "chunk") .. ": " .. (verdict ~= "" and verdict or "no verdict"),
+                applied and vim.log.levels.INFO or vim.log.levels.WARN)
+            end,
+          })
+        end
+      end
+      local function pick()
+        if #remaining == 0 then apply_selected(); return end
+        local items = {}
+        for _, c in ipairs(remaining) do
+          table.insert(items, (c.name or "?") .. "  line " .. tostring(c.startLine or 0) .. "  " .. (c.status or ""))
+        end
+        table.insert(items, "Done - apply the chosen chunks")
+        vim.ui.select(items, { prompt = "Write back (" .. #chosen .. " chosen)" }, function(_, idx)
+          if not idx then return end
+          if idx == #items then apply_selected(); return end
+          table.insert(chosen, remaining[idx])
+          table.remove(remaining, idx)
+          pick()
+        end)
+      end
+      vim.schedule(pick)
+    end,
+  })
+end
+
+--- Evaluate the declaration under the cursor and write it back to its source.
+--- The verdict is a field on /exec, so the marker says exactly whether the file
+--- changed. It is one quiet end-of-line mark, cleared on the next write.
+local write_back_ns = vim.api.nvim_create_namespace("sagefs_write_back")
+function M.write_back()
+  local buf = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line_nr = cursor[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)
+  local text = lines[1]
+  if not text or text:match("^%s*$") then
+    notify("Current line is empty", vim.log.levels.WARN)
+    return
+  end
+  local code = cells.prepare_code(text)
+  if not code then
+    notify("Current line is empty", vim.log.levels.WARN)
+    return
+  end
+  transport.http_json({
+    method = "POST",
+    url = base_url() .. "/exec",
+    body = {
+      code = code,
+      working_directory = eval_working_directory(),
+      sessionId = M.active_session and M.active_session.id or nil,
+      format = "json",
+      file_path = vim.api.nvim_buf_get_name(buf),
+      eval_mode = "block",
+      block_start_line = line_nr,
+    },
+    timeout = 60,
+    callback = function(ok, raw, _meta)
+      if not ok then
+        notify("Write back failed: " .. tostring(raw), vim.log.levels.WARN)
+        return
+      end
+      local parsed = format.parse_exec_response(raw)
+      local verdict = parsed.writeBack or ""
+      if verdict == "" then
+        notify("No write-back verdict in the daemon reply", vim.log.levels.WARN)
+        return
+      end
+      local wrote = verdict:match("^written back to") ~= nil
+      vim.schedule(function()
+        vim.api.nvim_buf_clear_namespace(buf, write_back_ns, line_nr - 1, line_nr)
+        local glyph = wrote and "  ✓ persisted" or "  ⊘ not persisted"
+        local hl = wrote and "DiagnosticOk" or "DiagnosticWarn"
+        vim.api.nvim_buf_set_extmark(buf, write_back_ns, line_nr - 1, #text, {
+          virt_text = { { glyph, hl } },
+          virt_text_pos = "eol",
+        })
+      end)
+      notify(verdict, wrote and vim.log.levels.INFO or vim.log.levels.WARN)
+    end,
+  })
+end
+
 function M.eval_file()
   local buf = vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
