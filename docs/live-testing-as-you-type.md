@@ -72,23 +72,23 @@ The plugin handles these test-related SSE events:
 | `test_summary` | Update overall test counts |
 | `test_results_batch` | Update individual test pass/fail state and gutter signs |
 | `test_trace` | Update the three-speed pipeline state display |
-| `SageFsTestRunStarted` | Mark tests as running |
-| `SageFsTestRunCompleted` | Finalize test run |
-| `SageFsProvidersDetected` | Show which test frameworks are active |
-| `SageFsAffectedTestsComputed` | Show dependency graph analysis results |
-| `SageFsTestCycleTimingRecorded` | Record pipeline timing for the test trace |
+| `test_run_started` | Mark tests as running |
+| `test_run_completed` | Finalize test run |
+| `providers_detected` | Show which test frameworks are active |
+| `affected_tests_computed` | Show dependency graph analysis results |
+| `test_cycle_timing_recorded` | Record pipeline timing for the test trace |
 
 ## Coverage Integration
 
-When live testing is enabled, FCS-based code coverage runs alongside tests. Coverage results appear as separate gutter signs (see [coverage documentation](./coverage.md) or the main README).
+When live testing is enabled, FCS-based code coverage runs alongside tests. Coverage results appear as separate gutter signs (see the main README).
 
 ## Architecture
 
 The testing subsystem spans several modules:
 
-- **`testing.lua`** (~1200 lines). Core testing state machine: SSE handlers, gutter sign management, panel formatting, policy configuration, pipeline state, annotation integration
-- **`test_trace.lua`** (~65 lines). Test trace parsing and formatting for the three-speed pipeline display
-- **`annotations.lua`** (~240 lines). Coverage annotation formatting, branch coverage signs, CodeLens-style markers, inline failure display
+- **`testing.lua`** (~1700 lines). Core testing state machine: SSE handlers, gutter sign management, panel formatting, policy configuration, pipeline state, annotation integration
+- **`test_trace.lua`** (~90 lines). Test trace parsing and formatting for the three-speed pipeline display
+- **`annotations.lua`** (~260 lines). Coverage annotation formatting, branch coverage signs, CodeLens-style markers, inline failure display
 - **`events.lua`**. Defines 10+ test-related User autocmd events for scripting integration
 
 All test modules are pure Lua with zero vim API dependencies, they're fully testable under busted without Neovim.

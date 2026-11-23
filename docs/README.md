@@ -42,13 +42,13 @@ lua/sagefs/
 │   ├── density.lua        — Display density presets (minimal/normal/full)
 │   ├── cell_highlight.lua — Dynamic eval region visuals (4 styles; uses vim.api/uv — integration-tested)
 │   ├── daemon.lua         — Daemon lifecycle state machine
-│   ├── events.lua         — 37 User autocmd event definitions
+│   ├── events.lua         — 47 User autocmd event definitions
 │   ├── health.lua         — :checkhealth sagefs validation (uses vim.health)
 │   └── ...more pure modules (config, daemon_discovery, telescope_picker, treesitter_cells, ...)
 │
 ├── Integration layer (requires Neovim APIs)
 │   ├── init.lua           — Coordinator: SSE dispatch, eval, session API
-│   ├── commands.lua       — 51 user commands, keymaps, autocmds
+│   ├── commands.lua       — user commands, keymaps, autocmds
 │   ├── transport.lua      — HTTP via curl, SSE with exponential backoff
 │   ├── render.lua         — Extmarks, gutter signs, floating windows
 │   ├── hotreload.lua      — Hot reload file toggle API
@@ -74,7 +74,7 @@ All state flows from daemon to plugin via SSE. POST responses carry only acknowl
 |-------|--------|-------|-------------|
 | Busted | `busted` (LuaRocks) | 1372 passed / 0 failed / 4 pending (latest run) | Pure module logic: state machines, parsing, formatting |
 | Integration | Headless Neovim (`nvim -l`) | 56 passed / 0 failed (latest run) | Real vim APIs: commands, extmarks, keymaps |
-| E2E | Neovim + real SageFs | 28 cases across 6 spec files (requires running daemon) | Full daemon lifecycle: eval, SSE, sessions, testing |
+| E2E | Neovim + real SageFs | 28 cases across 13 spec files (requires running daemon) | Full daemon lifecycle: eval, SSE, sessions, testing |
 
 Run with:
 ```cmd
